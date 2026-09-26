@@ -1,0 +1,13 @@
+.gradle/
+.gradle-user/
+.android-user/
+.idea/
+*.iml
+local.properties
+**/build/
+.DS_Store
+reference-apks/*.apk
+reference-apks/oneOS_Launcher3/
+artifacts/*.apk
+qa/**/*.png
+qa/**/*.txt
