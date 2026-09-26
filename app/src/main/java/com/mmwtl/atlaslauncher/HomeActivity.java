@@ -11,7 +11,9 @@ import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.content.pm.PackageManager;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -21,11 +23,13 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Bundle;
 import android.os.Build;
 import android.provider.Settings;
 import android.net.Uri;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -43,6 +47,9 @@ import android.widget.LinearLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.SeekBar;
+import android.widget.ScrollView;
+import android.widget.Switch;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -64,20 +71,33 @@ public final class HomeActivity extends Activity {
     private static final int ACCENT = Color.rgb(46, 150, 246);
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
+    private static final int NEUTRAL_SURFACE = Color.rgb(35, 37, 40);
+    private static final int NEUTRAL_RAISED = Color.rgb(64, 67, 71);
+    private static final int NEUTRAL_TEXT = Color.rgb(241, 242, 244);
+    private static final int NEUTRAL_MUTED = Color.rgb(196, 199, 202);
     private static final int HOST_ID = 240925;
     private static final int BIND_WIDGET = 1;
     private static final int CONFIGURE_WIDGET = 2;
     private static final int PICK_WALLPAPER = 3;
+    private static final int RECONFIGURE_WIDGET = 4;
     private static final int CLOCK_WIDGET_ID = -2;
+    private static final int DOCK_WIDGET_ID = -3;
     private static final int WIDGET_CELL_DP = 96;
+    private static final int MAX_ICON_DP = 160;
+    private static final int CATALOG_ICON_DP = 96;
     private static final String PREFS = "home";
     private static final String FAVORITES = "favorites";
     private static final String WIDGETS = "widgets";
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
     private static final String WALLPAPER = "wallpaper";
     private static final String DOCK_VISIBLE = "dock_visible";
+    private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     private static final String DOCK_APPS = "dock_apps";
     private static final String DOCK_COMPACT = "dock_compact";
+    private static final String DRAWER_ICON_SIZE = "drawer_icon_size";
+    private static final String DOCK_LABELS = "drawer_labels";
+    private static final String DRAWER_ACTIVITY = "drawer_activity";
+    private static final String GIB_LAUNCHER = "com.salat.gbinder/com.salat.gbinder.AppLauncher";
     private static final String CLOCK_FORMAT = "clock_format";
     private static final String CLOCK_WEIGHT = "clock_weight";
     private static final String CLOCK_FONT = "clock_font";
@@ -101,8 +121,19 @@ public final class HomeActivity extends Activity {
         super.onCreate(state);
         widgetManager = AppWidgetManager.getInstance(this);
         widgetHost = new AppWidgetHost(this, HOST_ID);
+        if (state != null) {
+            editingWidgets = state.getBoolean("editingWidgets");
+            pendingWidgetId = state.getInt("pendingWidgetId", AppWidgetManager.INVALID_APPWIDGET_ID);
+        }
         loadSavedState();
         buildHome();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putBoolean("editingWidgets", editingWidgets);
+        // Only a newly allocated widget belongs to the add/cancel lifecycle.
+        state.putInt("pendingWidgetId", pendingWidgetId);
     }
 
     @Override public void onStart() {
@@ -124,7 +155,7 @@ public final class HomeActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (editingWidgets) setEditingWidgets(false);
-        else super.onBackPressed();
+        // Keep the HOME surface open; dialogs handle Back in their own windows.
     }
 
     private void buildHome() {
@@ -160,7 +191,7 @@ public final class HomeActivity extends Activity {
 
         widgetControls = new LinearLayout(this);
         widgetControls.setGravity(Gravity.CENTER_VERTICAL);
-        widgetControls.setVisibility(View.GONE);
+        widgetControls.setVisibility(editingWidgets ? View.VISIBLE : View.GONE);
         FrameLayout.LayoutParams controlsParams = new FrameLayout.LayoutParams(-2, dp(76), Gravity.TOP | Gravity.LEFT);
         controlsParams.setMargins(dp(20), dp(16), 0, 0);
         backdrop.addView(widgetControls, controlsParams);
@@ -179,44 +210,29 @@ public final class HomeActivity extends Activity {
         editParams.setMargins(dp(8), 0, 0, 0);
         widgetControls.addView(done, editParams);
 
-        favoritePanel = panel();
-        favoritePanel.setOrientation(LinearLayout.HORIZONTAL);
+    }
+
+    private View createDockWidget() {
+        favoritePanel = new LinearLayout(this);
         favoritePanel.setGravity(Gravity.CENTER_VERTICAL);
-        FrameLayout.LayoutParams favoritePanelParams = new FrameLayout.LayoutParams(-1, dp(184), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        favoritePanelParams.setMargins(dp(20), 0, dp(20), dp(16));
-        backdrop.addView(favoritePanel, favoritePanelParams);
+        favoritePanel.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 32));
+        favoritePanel.setElevation(editingWidgets ? 0 : dp(8));
         HorizontalScrollView favoriteScroll = new HorizontalScrollView(this);
         favoriteScroll.setFillViewport(true);
         favoriteScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout.LayoutParams favoriteScrollParams = new LinearLayout.LayoutParams(0, -1, 1);
-        favoritePanel.addView(favoriteScroll, favoriteScrollParams);
+        favoritePanel.addView(favoriteScroll, new LinearLayout.LayoutParams(-1, -1));
         favoriteRow = new LinearLayout(this);
         favoriteRow.setGravity(Gravity.CENTER_VERTICAL);
-        favoriteScroll.addView(favoriteRow);
-        appsTile = new LinearLayout(this);
-        appsTile.setOrientation(LinearLayout.VERTICAL);
-        appsTile.setGravity(Gravity.CENTER);
-        TextView appsIcon = label("▦", 52, TEXT, false);
-        appsIcon.setGravity(Gravity.CENTER);
-        appsIcon.setBackground(round(SURFACE_RAISED, Color.TRANSPARENT, 20));
-        appsTile.addView(appsIcon, new LinearLayout.LayoutParams(dp(88), dp(88)));
-        TextView appsLabel = label("Приложения", 16, TEXT, false);
-        appsLabel.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams appsLabelParams = new LinearLayout.LayoutParams(-1, -2);
-        appsLabelParams.topMargin = dp(8);
-        appsTile.addView(appsLabel, appsLabelParams);
-        appsTile.setContentDescription("Все приложения");
-        appsTile.setOnClickListener(v -> showAppDrawer());
-        favoritePanel.addView(appsTile, new LinearLayout.LayoutParams(dp(124), dp(140)));
+        favoriteScroll.addView(favoriteRow, new FrameLayout.LayoutParams(-2, -1));
+        appsTile = dockTile(getDrawable(R.drawable.ic_apps), "Все приложения");
+        ImageView appsIcon = (ImageView) appsTile.getChildAt(0);
+        appsIcon.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 34));
+        appsIcon.setPadding(dp(18), dp(18), dp(18), dp(18));
+        appsTile.setOnClickListener(v -> openAllApps());
+        appsTile.setOnLongClickListener(v -> { showDockSettings(); return true; });
         updateDock();
-    }
-
-    private LinearLayout panel() {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(18), dp(20), dp(18));
-        panel.setBackground(round(Color.argb(223, 6, 19, 37), Color.argb(120, 110, 152, 199), 28));
-        return panel;
+        showFavorites();
+        return favoritePanel;
     }
 
     private Button button(String title) {
@@ -271,87 +287,122 @@ public final class HomeActivity extends Activity {
     }
 
     private void showFavorites() {
+        if (favoriteRow == null) return;
         favoriteRow.removeAllViews();
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
+        boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
+        int tilePadding = prefs.getBoolean(DOCK_COMPACT, false) && !showLabels ? 4 : 8;
+        int tileWidth = Math.max(112, iconSize + 12);
+        int tileHeight = iconSize + 2 * tilePadding + (showLabels ? 44 : 0);
+        ((ImageView) appsTile.getChildAt(0)).setLayoutParams(new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
+        appsTile.setPadding(dp(6), dp(tilePadding), dp(6), dp(tilePadding));
+        ((TextView) appsTile.getChildAt(1)).setVisibility(showLabels ? View.VISIBLE : View.GONE);
         if (favorites.isEmpty()) {
-            TextView empty = label("Удерживайте приложение в каталоге, чтобы закрепить его здесь", 15, MUTED, false);
+            TextView empty = label("Откройте настройки дока, чтобы добавить приложения", 14, NEUTRAL_MUTED, false);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(14), dp(14), dp(14), dp(14));
-            favoriteRow.addView(empty, new LinearLayout.LayoutParams(-1, -2));
-            return;
+            favoriteRow.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
         }
         for (String name : favorites) {
             AppEntry app = findApp(name);
             if (app == null) continue;
             View item = appTile(app, false);
             item.setOnClickListener(v -> launch(app));
-            item.setOnLongClickListener(v -> { favoriteActions(app); return true; });
-            LinearLayout.LayoutParams itemParams = favorites.size() <= 4
-                    ? new LinearLayout.LayoutParams(0, dp(140), 1)
-                    : new LinearLayout.LayoutParams(dp(124), dp(140));
-            favoriteRow.addView(item, itemParams);
+            item.setOnLongClickListener(v -> { showDockSettings(); return true; });
+            favoriteRow.addView(item, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
         }
+        favoriteRow.addView(appsTile, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
+        int visibleTiles = favorites.size() + (appsTile.getVisibility() == View.VISIBLE ? 1 : 0);
+        favoriteRow.setMinimumWidth(dp(visibleTiles * tileWidth + (favorites.isEmpty() ? 240 : 0)));
+    }
+
+    private LinearLayout dockTile(Drawable drawable, String title) {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
+        int verticalPadding = prefs.getBoolean(DOCK_COMPACT, false) && !showLabels ? 4 : 8;
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setGravity(Gravity.CENTER);
+        tile.setPadding(dp(6), dp(verticalPadding), dp(6), dp(verticalPadding));
+        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+                null, round(Color.WHITE, Color.TRANSPARENT, 24)));
+        tile.setFocusable(true);
+        tile.setContentDescription(title);
+        ImageView icon = new ImageView(this);
+        icon.setImageDrawable(drawable);
+        int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
+        tile.addView(icon, new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
+        TextView titleView = label(title, 14, NEUTRAL_TEXT, false);
+        titleView.setGravity(Gravity.CENTER);
+        titleView.setMaxLines(2);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        titleView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        titleView.setVisibility(showLabels ? View.VISIBLE : View.GONE);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, dp(36));
+        titleParams.topMargin = dp(8);
+        tile.addView(titleView, titleParams);
+        return tile;
     }
 
     private View appTile(AppEntry app, boolean card) {
+        if (!card) return dockTile(app.icon, app.label);
         LinearLayout tile = new LinearLayout(this);
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(Gravity.CENTER);
         tile.setPadding(dp(6), dp(6), dp(6), dp(6));
-        if (card) tile.setBackground(round(SURFACE_RAISED, Color.TRANSPARENT, 18));
+        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+                null, round(Color.WHITE, Color.TRANSPARENT, 20)));
+        int iconSize = CATALOG_ICON_DP;
         ImageView icon = new ImageView(this);
         icon.setImageDrawable(app.icon);
-        if (card) {
-            tile.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        } else {
-            FrameLayout iconSurface = new FrameLayout(this);
-            iconSurface.setBackground(round(SURFACE_RAISED, Color.TRANSPARENT, 20));
-            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(68), dp(68), Gravity.CENTER);
-            iconSurface.addView(icon, iconParams);
-            tile.addView(iconSurface, new LinearLayout.LayoutParams(dp(88), dp(88)));
-        }
-        TextView label = label(app.label, 16, TEXT, false);
+        tile.addView(icon, new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
+        TextView label = label(app.label, 14, NEUTRAL_TEXT, false);
         label.setGravity(Gravity.CENTER);
         label.setMaxLines(2);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-1, -2);
-        labelParams.setMargins(0, dp(card ? 6 : 8), 0, 0);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        tile.setContentDescription(app.label);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-1, dp(40));
+        labelParams.setMargins(0, dp(8), 0, 0);
         tile.addView(label, labelParams);
         return tile;
     }
 
     private void showAppDrawer() {
+        loadApps();
+        int iconSize = CATALOG_ICON_DP;
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(22), dp(20), dp(22), dp(20));
-        content.setBackground(round(Color.rgb(9, 25, 46), Color.argb(130, 96, 143, 192), 26));
+        content.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 32));
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         content.addView(titleRow, new LinearLayout.LayoutParams(-1, dp(76)));
         LinearLayout titleText = new LinearLayout(this);
         titleText.setOrientation(LinearLayout.VERTICAL);
-        titleText.addView(label("Приложения", 22, TEXT, true));
-        titleText.addView(label("Удерживайте значок, чтобы закрепить", 13, MUTED, false));
+        titleText.addView(label("Все приложения", 24, NEUTRAL_TEXT, true));
         titleRow.addView(titleText, new LinearLayout.LayoutParams(0, -2, 1));
         Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        Button close = button("×");
+        Button close = neutralButton("×");
         close.setContentDescription("Закрыть список приложений");
         close.setTextSize(22);
         close.setOnClickListener(v -> dialog.dismiss());
-        titleRow.addView(close, new LinearLayout.LayoutParams(dp(76), dp(76)));
+        titleRow.addView(close, new LinearLayout.LayoutParams(dp(64), dp(64)));
         EditText search = new EditText(this);
         search.setSingleLine(true);
         search.setHint("Поиск приложений");
-        search.setTextColor(TEXT);
-        search.setHintTextColor(MUTED);
+        search.setTextColor(NEUTRAL_TEXT);
+        search.setHintTextColor(NEUTRAL_MUTED);
         search.setTextSize(16);
         search.setPadding(dp(18), 0, dp(18), 0);
-        search.setBackground(round(SURFACE_RAISED, Color.TRANSPARENT, 16));
+        search.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 20));
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, dp(76));
         searchParams.setMargins(0, dp(8), 0, dp(18));
         content.addView(search, searchParams);
         GridView grid = new GridView(this);
         grid.setNumColumns(GridView.AUTO_FIT);
-        grid.setColumnWidth(dp(135));
+        grid.setColumnWidth(dp(iconSize + 64));
         grid.setHorizontalSpacing(dp(10));
         grid.setVerticalSpacing(dp(10));
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
@@ -364,7 +415,7 @@ public final class HomeActivity extends Activity {
             @Override public long getItemId(int position) { return position; }
             @Override public View getView(int position, View old, ViewGroup parent) {
                 View tile = appTile(visible.get(position), true);
-                tile.setLayoutParams(new android.widget.AbsListView.LayoutParams(-1, dp(112)));
+                tile.setLayoutParams(new android.widget.AbsListView.LayoutParams(-1, dp(iconSize + 64)));
                 return tile;
             }
         };
@@ -373,16 +424,6 @@ public final class HomeActivity extends Activity {
             AppEntry app = visible.get(position);
             dialog.dismiss();
             launch(app);
-        });
-        grid.setOnItemLongClickListener((parent, view, position, id) -> {
-            AppEntry app = visible.get(position);
-            String key = app.component.flattenToString();
-            if (favorites.contains(key)) favorites.remove(key);
-            else favorites.add(key);
-            saveFavorites();
-            showFavorites();
-            Toast.makeText(this, favorites.contains(key) ? "Добавлено в избранное" : "Удалено из избранного", Toast.LENGTH_SHORT).show();
-            return true;
         });
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
@@ -399,25 +440,118 @@ public final class HomeActivity extends Activity {
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawableResource(android.R.color.transparent);
-            window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels - dp(32), dp(1100)),
-                    Math.min(getResources().getDisplayMetrics().heightPixels - dp(32), dp(620)));
+            window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels - dp(32), dp(1200)),
+                    Math.min(getResources().getDisplayMetrics().heightPixels - dp(64), dp(1400)));
         }
     }
 
-    private void favoriteActions(AppEntry app) {
-        String key = app.component.flattenToString();
-        int index = favorites.indexOf(key);
-        String[] actions = {"Передвинуть влево", "Передвинуть вправо", "Убрать из избранного"};
-        new AlertDialog.Builder(this).setTitle(app.label).setItems(actions, (dialog, which) -> {
-            if (which == 2) favorites.remove(index);
-            else {
-                int target = index + (which == 0 ? -1 : 1);
-                if (target < 0 || target >= favorites.size()) return;
-                Collections.swap(favorites, index, target);
+    private Button neutralButton(String title) {
+        Button button = button(title);
+        button.setTextColor(NEUTRAL_TEXT);
+        button.setMinimumHeight(0);
+        button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+                round(NEUTRAL_RAISED, Color.TRANSPARENT, 20), null));
+        return button;
+    }
+
+    private void openAllApps() {
+        String target = getSharedPreferences(PREFS, MODE_PRIVATE).getString(DRAWER_ACTIVITY, "");
+        if (target.isEmpty()) {
+            showAppDrawer();
+            return;
+        }
+        ComponentName component = ComponentName.unflattenFromString(target);
+        try {
+            if (component == null) throw new ActivityNotFoundException();
+            startActivity(new Intent(Intent.ACTION_MAIN).setComponent(component)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Toast.makeText(this, "Выбранная Activity недоступна. Открыт встроенный каталог.", Toast.LENGTH_LONG).show();
+            showAppDrawer();
+        }
+    }
+
+    private void chooseDrawerAction(Runnable onChanged) {
+        String[] choices = {"Встроенный каталог", "GLauncher (GIB)", "Activity установленного приложения", "Указать Activity вручную"};
+        new AlertDialog.Builder(this).setTitle("Открывать по кнопке «Все приложения»")
+                .setItems(choices, (dialog, which) -> {
+                    if (which == 0) {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(DRAWER_ACTIVITY).apply();
+                        onChanged.run();
+                    } else if (which == 1) {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(DRAWER_ACTIVITY, GIB_LAUNCHER).apply();
+                        onChanged.run();
+                    } else if (which == 2) {
+                        chooseActivityPackage(onChanged);
+                    } else {
+                        enterDrawerActivity(onChanged);
+                    }
+                }).show();
+    }
+
+    private void chooseActivityPackage(Runnable onChanged) {
+        loadApps();
+        List<String> packages = new ArrayList<>();
+        List<String> titles = new ArrayList<>();
+        for (AppEntry app : apps) {
+            String name = app.component.getPackageName();
+            if (packages.contains(name)) continue;
+            packages.add(name);
+            titles.add(app.label + "\n" + name);
+        }
+        new AlertDialog.Builder(this).setTitle("Выберите приложение")
+                .setItems(titles.toArray(new String[0]), (dialog, which) -> choosePackageActivity(packages.get(which), onChanged)).show();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void choosePackageActivity(String packageName, Runnable onChanged) {
+        List<ComponentName> components = new ArrayList<>();
+        List<String> titles = new ArrayList<>();
+        try {
+            ActivityInfo[] activities = getPackageManager().getPackageInfo(packageName, PackageManager.GET_ACTIVITIES).activities;
+            if (activities != null) for (ActivityInfo activity : activities) {
+                if (!activity.exported || !activity.enabled || !activity.applicationInfo.enabled) continue;
+                if (activity.permission != null && checkSelfPermission(activity.permission) != PackageManager.PERMISSION_GRANTED) continue;
+                ComponentName component = new ComponentName(packageName, activity.name);
+                components.add(component);
+                titles.add(activity.loadLabel(getPackageManager()) + "\n" + activity.name);
             }
-            saveFavorites();
-            showFavorites();
-        }).show();
+        } catch (PackageManager.NameNotFoundException e) {
+            Toast.makeText(this, "Приложение больше не установлено", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (components.isEmpty()) {
+            Toast.makeText(this, "Нет доступных для внешнего запуска Activity", Toast.LENGTH_LONG).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Activity для запуска")
+                .setItems(titles.toArray(new String[0]), (dialog, which) -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putString(DRAWER_ACTIVITY, components.get(which).flattenToString()).apply();
+                    onChanged.run();
+                }).show();
+    }
+
+    private void enterDrawerActivity(Runnable onChanged) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("package.name/.ActivityName");
+        input.setText(getSharedPreferences(PREFS, MODE_PRIVATE).getString(DRAWER_ACTIVITY, ""));
+        input.setPadding(dp(24), dp(16), dp(24), dp(16));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Activity для запуска")
+                .setMessage("Укажите пакет и класс Activity через /. Приложение должно разрешать её внешний запуск.")
+                .setView(input).setNegativeButton("Отмена", null).setPositiveButton("Сохранить", null).create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            ComponentName component = ComponentName.unflattenFromString(input.getText().toString().trim());
+            if (component == null || component.getPackageName().isEmpty() || component.getClassName().isEmpty()) {
+                input.setError("Формат: package.name/.ActivityName");
+                return;
+            }
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(DRAWER_ACTIVITY, component.flattenToString()).apply();
+            onChanged.run();
+            dialog.dismiss();
+        }));
+        dialog.show();
     }
 
     private void launch(AppEntry app) {
@@ -435,21 +569,19 @@ public final class HomeActivity extends Activity {
     }
 
     private void showSettings() {
-        String[] choices = {"Редактировать рабочий стол", "Сменить фон", "Настроить нижний док",
-                "Приложения", "Настройки HOME в Android", "Открыть штатный Launcher3", "Настройки устройства"};
+        String[] choices = {"Редактировать рабочий стол", "Сменить фон", "Приложения",
+                "Настройки HOME в Android", "Открыть штатный Launcher3", "Настройки устройства"};
         new AlertDialog.Builder(this).setTitle("AtlasLauncher").setItems(choices, (d, which) -> {
             if (which == 0) {
                 setEditingWidgets(true);
             } else if (which == 1) {
                 showWallpaperSettings();
             } else if (which == 2) {
-                showDockSettings();
-            } else if (which == 3) {
                 showAppDrawer();
-            } else if (which == 4) {
+            } else if (which == 3) {
                 try { startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)); }
                 catch (ActivityNotFoundException e) { Toast.makeText(this, "Настройки HOME недоступны", Toast.LENGTH_SHORT).show(); }
-            } else if (which == 5) {
+            } else if (which == 4) {
                 Intent intent = getPackageManager().getLaunchIntentForPackage("com.android.launcher3");
                 if (intent != null) startActivity(intent);
                 else Toast.makeText(this, "Штатный Launcher3 недоступен", Toast.LENGTH_SHORT).show();
@@ -463,7 +595,6 @@ public final class HomeActivity extends Activity {
     private void setEditingWidgets(boolean editing) {
         editingWidgets = editing;
         widgetControls.setVisibility(editing ? View.VISIBLE : View.GONE);
-        updateDock();
         showWidgets();
     }
 
@@ -513,41 +644,201 @@ public final class HomeActivity extends Activity {
     }
 
     private void showDockSettings() {
+        loadApps();
+        showFavorites();
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        String[] choices = {"Показывать док", "Кнопка приложений", "Компактный док"};
-        boolean[] selected = {prefs.getBoolean(DOCK_VISIBLE, true), prefs.getBoolean(DOCK_APPS, true),
-                prefs.getBoolean(DOCK_COMPACT, false)};
-        new AlertDialog.Builder(this).setTitle("Нижний док")
-                .setMultiChoiceItems(choices, selected, (dialog, which, checked) -> {
-                    selected[which] = checked;
-                    prefs.edit().putBoolean(which == 0 ? DOCK_VISIBLE : which == 1 ? DOCK_APPS : DOCK_COMPACT, checked).apply();
-                    updateDock();
-                })
-                .setNeutralButton("Приложения дока", (dialog, which) -> showAppDrawer())
-                .setPositiveButton("Готово", null).show();
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(12), dp(20), dp(12));
+        Switch appsSwitch = new Switch(this);
+        appsSwitch.setText("Кнопка «Все приложения»");
+        appsSwitch.setTextColor(NEUTRAL_TEXT);
+        appsSwitch.setTextSize(18);
+        appsSwitch.setChecked(prefs.getBoolean(DOCK_APPS, true));
+        appsSwitch.setOnCheckedChangeListener((button, checked) -> {
+            prefs.edit().putBoolean(DOCK_APPS, checked).apply();
+            updateDock();
+        });
+        content.addView(appsSwitch, new LinearLayout.LayoutParams(-1, dp(64)));
+        Button action = neutralButton("");
+        action.setTextSize(17);
+        action.setMaxLines(2);
+        Runnable refreshAction = () -> {
+            String target = prefs.getString(DRAWER_ACTIVITY, "");
+            action.setText("Открывать: " + (target.isEmpty() ? "встроенный каталог"
+                    : target.equals(GIB_LAUNCHER) ? "GLauncher (GIB)" : target));
+        };
+        refreshAction.run();
+        action.setOnClickListener(v -> chooseDrawerAction(refreshAction));
+        content.addView(action, new LinearLayout.LayoutParams(-1, dp(64)));
+        Switch compactSwitch = new Switch(this);
+        compactSwitch.setText("Компактный док");
+        compactSwitch.setTextColor(NEUTRAL_TEXT);
+        compactSwitch.setTextSize(18);
+        compactSwitch.setChecked(prefs.getBoolean(DOCK_COMPACT, false));
+        compactSwitch.setOnCheckedChangeListener((button, checked) -> {
+            prefs.edit().putBoolean(DOCK_COMPACT, checked).apply();
+            updateDock();
+            showWidgets();
+        });
+        content.addView(compactSwitch, new LinearLayout.LayoutParams(-1, dp(64)));
+        int size = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
+        TextView sizeLabel = label("Размер значков дока: " + size + " dp", 18, NEUTRAL_TEXT, false);
+        LinearLayout.LayoutParams sizeParams = new LinearLayout.LayoutParams(-1, -2);
+        sizeParams.topMargin = dp(12);
+        content.addView(sizeLabel, sizeParams);
+        SeekBar sizeSlider = new SeekBar(this);
+        sizeSlider.setMax((MAX_ICON_DP - 40) / 8);
+        sizeSlider.setProgress((size - 40) / 8);
+        sizeSlider.setProgressTintList(ColorStateList.valueOf(NEUTRAL_MUTED));
+        sizeSlider.setThumbTintList(ColorStateList.valueOf(NEUTRAL_TEXT));
+        sizeSlider.setContentDescription("Размер значков дока");
+        content.addView(sizeSlider, new LinearLayout.LayoutParams(-1, dp(56)));
+        sizeSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int value = 40 + progress * 8;
+                sizeLabel.setText("Размер значков дока: " + value + " dp");
+                if (fromUser) {
+                    prefs.edit().putInt(DRAWER_ICON_SIZE, value).apply();
+                    showFavorites();
+                }
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) { showWidgets(); }
+        });
+        Switch labels = new Switch(this);
+        labels.setText("Подписи в доке");
+        labels.setTextColor(NEUTRAL_TEXT);
+        labels.setTextSize(18);
+        labels.setChecked(prefs.getBoolean(DOCK_LABELS, true));
+        labels.setThumbTintList(ColorStateList.valueOf(NEUTRAL_TEXT));
+        labels.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
+                new int[]{Color.rgb(126, 132, 139), NEUTRAL_RAISED}));
+        labels.setOnCheckedChangeListener((view, checked) -> {
+            prefs.edit().putBoolean(DOCK_LABELS, checked).apply();
+            showWidgets();
+        });
+        content.addView(labels, new LinearLayout.LayoutParams(-1, dp(64)));
+        TextView title = label("Закреплённые приложения", 20, NEUTRAL_TEXT, true);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
+        titleParams.topMargin = dp(16);
+        content.addView(title, titleParams);
+        LinearLayout selectedApps = new LinearLayout(this);
+        selectedApps.setOrientation(LinearLayout.VERTICAL);
+        content.addView(selectedApps, new LinearLayout.LayoutParams(-1, -2));
+        refreshDockFavoriteSettings(selectedApps);
+        Button add = neutralButton("＋  Добавить приложение");
+        add.setTextSize(18);
+        add.setOnClickListener(v -> showDockAppPicker(selectedApps));
+        content.addView(add, new LinearLayout.LayoutParams(-1, dp(64)));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(content);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Док приложений")
+                .setView(scroll).setPositiveButton("Готово", null).create();
+        dialog.show();
+        if (dialog.getWindow() != null)
+            dialog.getWindow().setBackgroundDrawable(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 24));
+    }
+
+    private void refreshDockFavoriteSettings(LinearLayout selectedApps) {
+        selectedApps.removeAllViews();
+        if (favorites.isEmpty()) {
+            selectedApps.addView(label("Нет закреплённых приложений", 16, NEUTRAL_MUTED, false),
+                    new LinearLayout.LayoutParams(-1, dp(48)));
+            return;
+        }
+        Runnable refresh = () -> {
+            saveFavorites();
+            showFavorites();
+            refreshDockFavoriteSettings(selectedApps);
+        };
+        for (int i = 0; i < favorites.size(); i++) {
+            AppEntry app = findApp(favorites.get(i));
+            if (app == null) continue;
+            int index = i;
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            ImageView icon = new ImageView(this);
+            icon.setImageDrawable(app.icon);
+            row.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            TextView name = label(app.label, 18, NEUTRAL_TEXT, false);
+            name.setSingleLine(true);
+            name.setEllipsize(TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1);
+            nameParams.leftMargin = dp(8);
+            row.addView(name, nameParams);
+            Button left = neutralButton("←");
+            left.setTextSize(22);
+            left.setContentDescription("Передвинуть " + app.label + " влево");
+            left.setEnabled(i > 0);
+            left.setOnClickListener(v -> { Collections.swap(favorites, index, index - 1); refresh.run(); });
+            row.addView(left, new LinearLayout.LayoutParams(dp(56), dp(56)));
+            Button right = neutralButton("→");
+            right.setTextSize(22);
+            right.setContentDescription("Передвинуть " + app.label + " вправо");
+            right.setEnabled(i < favorites.size() - 1);
+            right.setOnClickListener(v -> { Collections.swap(favorites, index, index + 1); refresh.run(); });
+            row.addView(right, new LinearLayout.LayoutParams(dp(56), dp(56)));
+            Button remove = neutralButton("×");
+            remove.setTextSize(22);
+            remove.setContentDescription("Убрать " + app.label + " из дока");
+            remove.setOnClickListener(v -> { favorites.remove(index); refresh.run(); });
+            row.addView(remove, new LinearLayout.LayoutParams(dp(56), dp(56)));
+            selectedApps.addView(row, new LinearLayout.LayoutParams(-1, dp(64)));
+        }
+    }
+
+    private void showDockAppPicker(LinearLayout selectedApps) {
+        List<AppEntry> available = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        for (AppEntry app : apps) {
+            if (favorites.contains(app.component.flattenToString())) continue;
+            available.add(app);
+            names.add(app.label + " · " + app.component.getPackageName());
+        }
+        if (available.isEmpty()) {
+            Toast.makeText(this, "Все приложения уже добавлены", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Добавить в док")
+                .setItems(names.toArray(new String[0]), (dialog, which) -> {
+                    favorites.add(available.get(which).component.flattenToString());
+                    saveFavorites();
+                    showFavorites();
+                    refreshDockFavoriteSettings(selectedApps);
+                }).show();
     }
 
     private void updateDock() {
+        if (favoritePanel == null) return;
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         boolean compact = prefs.getBoolean(DOCK_COMPACT, false);
-        favoritePanel.setVisibility(!editingWidgets && prefs.getBoolean(DOCK_VISIBLE, true) ? View.VISIBLE : View.GONE);
-        favoritePanel.setPadding(dp(16), dp(compact ? 4 : 14), dp(16), dp(compact ? 4 : 14));
-        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) favoritePanel.getLayoutParams();
-        params.height = dp(compact ? 156 : 184);
-        favoritePanel.setLayoutParams(params);
+        int verticalPadding = compact ? (prefs.getBoolean(DOCK_LABELS, true) ? 8 : 4) : 16;
+        favoritePanel.setPadding(dp(12), dp(verticalPadding), dp(12), dp(verticalPadding));
         appsTile.setVisibility(prefs.getBoolean(DOCK_APPS, true) ? View.VISIBLE : View.GONE);
+    }
+
+    private int dockRequiredHeight(SharedPreferences prefs) {
+        int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
+        boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
+        boolean compact = prefs.getBoolean(DOCK_COMPACT, false);
+        int tilePadding = compact && !showLabels ? 4 : 8;
+        int panelPadding = compact ? (showLabels ? 8 : 4) : 16;
+        return iconSize + 2 * tilePadding + (showLabels ? 44 : 0) + 2 * panelPadding;
     }
 
     private void chooseWidget() {
         List<AppWidgetProviderInfo> providers = widgetManager.getInstalledProviders();
         Collator collator = Collator.getInstance(Locale.getDefault());
         Collections.sort(providers, (a, b) -> collator.compare(String.valueOf(a.loadLabel(getPackageManager())), String.valueOf(b.loadLabel(getPackageManager()))));
-        String[] names = new String[providers.size() + 1];
+        String[] names = new String[providers.size() + 2];
         names[0] = "Часы AtlasLauncher";
-        for (int i = 0; i < providers.size(); i++) names[i + 1] = String.valueOf(providers.get(i).loadLabel(getPackageManager()));
+        names[1] = "Док приложений AtlasLauncher";
+        for (int i = 0; i < providers.size(); i++) names[i + 2] = String.valueOf(providers.get(i).loadLabel(getPackageManager()));
         new AlertDialog.Builder(this).setTitle("Добавить виджет").setItems(names, (dialog, which) -> {
             if (which == 0) { addClockWidget(); return; }
-            AppWidgetProviderInfo provider = providers.get(which - 1);
+            if (which == 1) { addDockWidget(); return; }
+            AppWidgetProviderInfo provider = providers.get(which - 2);
             pendingWidgetId = widgetHost.allocateAppWidgetId();
             if (widgetManager.bindAppWidgetIdIfAllowed(pendingWidgetId, provider.provider)) {
                 configureWidget(provider);
@@ -573,8 +864,23 @@ public final class HomeActivity extends Activity {
         catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Настройка виджета недоступна", Toast.LENGTH_SHORT).show(); }
     }
 
+    private void reconfigureWidget(WidgetPlacement placement, AppWidgetProviderInfo provider) {
+        Intent configure = new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE);
+        configure.setComponent(provider.configure);
+        configure.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, placement.id);
+        try { startActivityForResult(configure, RECONFIGURE_WIDGET); }
+        catch (ActivityNotFoundException | SecurityException e) {
+            Toast.makeText(this, "Настройка виджета недоступна", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == RECONFIGURE_WIDGET) {
+            // Both Done and Back keep the existing ID and placement, even after recreation.
+            setEditingWidgets(true);
+            return;
+        }
         if (request == BIND_WIDGET) {
             if (result != RESULT_OK) { cancelPendingWidget(); return; }
             int id = data == null ? pendingWidgetId : data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId);
@@ -608,13 +914,51 @@ public final class HomeActivity extends Activity {
         if (grid == null) return;
         int columns = Math.min(4, grid.columns);
         int rows = Math.min(2, grid.rows);
+        WidgetPlacement placement = new WidgetPlacement(CLOCK_WIDGET_ID, 0, 0,
+                columns * grid.cellWidth, rows * grid.cellHeight);
+        compactClockWidget(placement, grid);
+        columns = grid.span(placement.width, grid.cellWidth, grid.columns);
         Point slot = findGridSlot(grid, 0, 0, columns, rows, widgets);
         if (slot == null) {
             Toast.makeText(this, "Недостаточно места для часов", Toast.LENGTH_SHORT).show();
             return;
         }
-        WidgetPlacement placement = new WidgetPlacement(CLOCK_WIDGET_ID, 0, 0, 0, 0);
         setGridPlacement(placement, grid, slot, columns, rows);
+        widgets.add(placement);
+        saveWidgets();
+        showWidgets();
+    }
+
+    private WidgetPlacement newDockPlacement(WidgetGrid grid) {
+        int iconSize = Math.max(40, Math.min(MAX_ICON_DP, getSharedPreferences(PREFS, MODE_PRIVATE).getInt(DRAWER_ICON_SIZE, 64)));
+        int tileWidth = Math.max(112, iconSize + 12);
+        int contentWidth = favorites.isEmpty() ? 240 + tileWidth : (favorites.size() + 1) * tileWidth;
+        int columns = Math.min(grid.columns, Math.max(2,
+                (int) Math.ceil((double) (contentWidth + 24) / grid.cellWidth)));
+        int rows = grid.span(dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)), grid.cellHeight, grid.rows);
+        int x = (grid.columns - columns) * grid.cellWidth / 2;
+        int y = Math.max(0, grid.rows - rows - 1) * grid.cellHeight;
+        Point slot = findGridSlot(grid, x, y, columns, rows, widgets);
+        if (slot == null) return null;
+        WidgetPlacement placement = new WidgetPlacement(DOCK_WIDGET_ID, 0, 0, 0, 0);
+        setGridPlacement(placement, grid, slot, columns, rows);
+        return placement;
+    }
+
+    private void addDockWidget() {
+        for (WidgetPlacement placement : widgets) {
+            if (placement.id == DOCK_WIDGET_ID) {
+                Toast.makeText(this, "Док уже добавлен", Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+        WidgetGrid grid = widgetGrid();
+        if (grid == null) return;
+        WidgetPlacement placement = newDockPlacement(grid);
+        if (placement == null) {
+            Toast.makeText(this, "Недостаточно места для дока", Toast.LENGTH_SHORT).show();
+            return;
+        }
         widgets.add(placement);
         saveWidgets();
         showWidgets();
@@ -655,13 +999,28 @@ public final class HomeActivity extends Activity {
         WidgetGrid grid = widgetGrid();
         if (grid == null) return;
         boolean changed = false;
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (!prefs.getBoolean(DOCK_WIDGET_MIGRATED, false)) {
+            if (prefs.getBoolean(DOCK_VISIBLE, true)) {
+                WidgetPlacement dock = newDockPlacement(grid);
+                if (dock != null) {
+                    widgets.add(dock);
+                    changed = true;
+                }
+            }
+            prefs.edit().putBoolean(DOCK_WIDGET_MIGRATED, true).apply();
+        }
+        favoritePanel = null;
+        favoriteRow = null;
+        appsTile = null;
         List<WidgetPlacement> occupied = new ArrayList<>();
         Iterator<WidgetPlacement> iterator = widgets.iterator();
         while (iterator.hasNext()) {
             WidgetPlacement placement = iterator.next();
             boolean clockWidget = placement.id == CLOCK_WIDGET_ID;
-            AppWidgetProviderInfo info = clockWidget ? null : widgetManager.getAppWidgetInfo(placement.id);
-            if (!clockWidget && info == null) {
+            boolean dockWidget = placement.id == DOCK_WIDGET_ID;
+            AppWidgetProviderInfo info = clockWidget || dockWidget ? null : widgetManager.getAppWidgetInfo(placement.id);
+            if (!clockWidget && !dockWidget && info == null) {
                 widgetHost.deleteAppWidgetId(placement.id);
                 iterator.remove();
                 changed = true;
@@ -669,18 +1028,23 @@ public final class HomeActivity extends Activity {
             }
             int availableWidth = grid.width;
             int availableHeight = grid.height;
-            Point padding = clockWidget ? new Point(0, 0) : widgetPaddingDp(info);
+            Point padding = info == null ? new Point(0, 0) : widgetPaddingDp(info);
             int oldX = placement.x, oldY = placement.y;
             int oldWidth = placement.width, oldHeight = placement.height;
             if (placement.width == 0 || placement.height == 0) {
-                placement.width = Math.min(availableWidth, clockWidget ? 4 * WIDGET_CELL_DP
+                placement.width = Math.min(availableWidth, clockWidget ? 4 * WIDGET_CELL_DP : dockWidget ? 3 * WIDGET_CELL_DP
                         : pxToDp(Math.max(info.minWidth, info.minResizeWidth)) + padding.x);
                 placement.height = Math.min(availableHeight, clockWidget ? 2 * WIDGET_CELL_DP
+                        : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows) * grid.cellHeight
                         : Math.max(96, pxToDp(Math.max(info.minHeight, info.minResizeHeight))) + padding.y);
                 changed = true;
             }
             if (!clockWidget && placement.height < 96 + padding.y && availableHeight >= 96 + padding.y) {
                 placement.height = 96 + padding.y;
+                changed = true;
+            }
+            if (clockWidget && placement.clockSize == 0) {
+                compactClockWidget(placement, grid);
                 changed = true;
             }
             placement.width = Math.min(placement.width, availableWidth);
@@ -689,8 +1053,10 @@ public final class HomeActivity extends Activity {
             placement.y = Math.max(0, Math.min(placement.y, availableHeight - placement.height));
             int fallbackX = placement.x, fallbackY = placement.y;
             int fallbackWidth = placement.width, fallbackHeight = placement.height;
-            int minColumns = clockWidget ? 1 : grid.span(Math.max(56, pxToDp(info.minResizeWidth)) + padding.x, grid.cellWidth, grid.columns);
-            int minRows = clockWidget ? 1 : grid.span(Math.max(96, pxToDp(info.minResizeHeight)) + padding.y, grid.cellHeight, grid.rows);
+            int minColumns = clockWidget ? 1 : dockWidget ? Math.min(2, grid.columns)
+                    : grid.span(Math.max(56, pxToDp(info.minResizeWidth)) + padding.x, grid.cellWidth, grid.columns);
+            int minRows = clockWidget ? 1 : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows)
+                    : grid.span(Math.max(96, pxToDp(info.minResizeHeight)) + padding.y, grid.cellHeight, grid.rows);
             int columns = Math.max(minColumns, grid.span(placement.width, grid.cellWidth, grid.columns));
             int rows = Math.max(minRows, grid.span(placement.height, grid.cellHeight, grid.rows));
             Point slot = null;
@@ -714,13 +1080,16 @@ public final class HomeActivity extends Activity {
             View hostView;
             if (clockWidget) {
                 hostView = createClockWidget(placement);
+            } else if (dockWidget) {
+                hostView = createDockWidget();
             } else {
                 AppWidgetHostView widgetView = widgetHost.createView(this, placement.id, info);
                 widgetView.setAppWidget(placement.id, info);
                 hostView = widgetView;
             }
             hostView.setOnLongClickListener(v -> {
-                setEditingWidgets(true);
+                if (dockWidget) showDockSettings();
+                else setEditingWidgets(true);
                 return true;
             });
             container.addView(hostView, new FrameLayout.LayoutParams(-1, -1));
@@ -739,6 +1108,19 @@ public final class HomeActivity extends Activity {
             empty.setOnClickListener(v -> chooseWidget());
             widgetRow.addView(empty, new FrameLayout.LayoutParams(dp(220), dp(64), Gravity.CENTER));
         }
+    }
+
+    private void compactClockWidget(WidgetPlacement placement, WidgetGrid grid) {
+        LinearLayout clock = (LinearLayout) createClockWidget(placement);
+        TextClock time = (TextClock) ((LinearLayout) clock.getChildAt(0)).getChildAt(0);
+        TextClock period = (TextClock) ((LinearLayout) clock.getChildAt(0)).getChildAt(1);
+        TextClock date = (TextClock) clock.getChildAt(1);
+        float contentWidth = clockTimeWidth(time, period);
+        if (date.getVisibility() == View.VISIBLE)
+            contentWidth = Math.max(contentWidth, date.getPaint().measureText(date.getText().toString()));
+        int columns = grid.span((int) Math.ceil(contentWidth / getResources().getDisplayMetrics().density) + 16,
+                grid.cellWidth, grid.columns);
+        placement.width = Math.min(placement.width, columns * grid.cellWidth);
     }
 
     private View createClockWidget(WidgetPlacement placement) {
@@ -776,8 +1158,11 @@ public final class HomeActivity extends Activity {
         LinearLayout group = (LinearLayout) hostView;
         LinearLayout timeLine = (LinearLayout) group.getChildAt(0);
         boolean showDate = placement.height >= 2 * WIDGET_CELL_DP;
-        int clockSize = Math.max(28, Math.min(placement.width / 5,
-                Math.round(placement.height / (showDate ? 2.2f : 1.3f))));
+        if (placement.clockSize == 0)
+            placement.clockSize = Math.max(28, Math.min(placement.width / 5,
+                    Math.round(placement.height / (showDate ? 2.2f : 1.3f))));
+        int clockSize = Math.min(placement.clockSize,
+                Math.max(28, Math.round(placement.height / (showDate ? 2.2f : 1.3f))));
         ((TextClock) timeLine.getChildAt(0)).setTextSize(clockSize);
         if (timeLine.getChildCount() > 1)
             ((TextClock) timeLine.getChildAt(1)).setTextSize(Math.max(16, clockSize / 4));
@@ -802,6 +1187,29 @@ public final class HomeActivity extends Activity {
         ((TextClock) timeLine.getChildAt(1)).setTypeface(face);
         date.setTypeface(face);
         date.setVisibility(showDate && prefs.getBoolean(CLOCK_DATE, true) ? View.VISIBLE : View.GONE);
+        TextClock period = (TextClock) timeLine.getChildAt(1);
+        float availableWidth = dp(Math.max(1, placement.width - 16));
+        float timeWidth = clockTimeWidth(clock, period);
+        if (timeWidth > availableWidth) {
+            float scale = availableWidth / timeWidth;
+            clock.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, clock.getTextSize() * scale);
+            period.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, period.getTextSize() * scale);
+        }
+    }
+
+    private float clockTimeWidth(TextClock clock, TextClock period) {
+        // Reserve the widest digits so the block does not change width every minute.
+        float digitWidth = 0;
+        for (int digit = 0; digit <= 9; digit++)
+            digitWidth = Math.max(digitWidth, clock.getPaint().measureText(Integer.toString(digit)));
+        float width = digitWidth * 4 + clock.getPaint().measureText(":");
+        if (period.getVisibility() == View.VISIBLE) {
+            float periodWidth = 0;
+            for (String label : new java.text.DateFormatSymbols().getAmPmStrings())
+                periodWidth = Math.max(periodWidth, period.getPaint().measureText(label));
+            width += dp(6) + periodWidth;
+        }
+        return width;
     }
 
     private void showClockSettings(View hostView, WidgetPlacement placement) {
@@ -897,14 +1305,19 @@ public final class HomeActivity extends Activity {
                                        WidgetPlacement placement, AppWidgetProviderInfo info) {
         container.setForeground(round(Color.TRANSPARENT, ACCENT, 12));
         View dragSurface = new View(this);
-        String title = info == null ? "часы" : String.valueOf(info.loadLabel(getPackageManager()));
+        String title = placement.id == CLOCK_WIDGET_ID ? "часы" : placement.id == DOCK_WIDGET_ID
+                ? "док приложений" : String.valueOf(info.loadLabel(getPackageManager()));
         dragSurface.setContentDescription("Перетащить " + title);
         dragSurface.setOnTouchListener(widgetTouch(container, hostView, placement, info, false));
         container.addView(dragSurface, new FrameLayout.LayoutParams(-1, -1));
-        if (info == null) {
+        if (info == null || info.configure != null) {
             Button settings = button("⚙");
-            settings.setContentDescription("Настроить часы");
-            settings.setOnClickListener(v -> showClockSettings(hostView, placement));
+            settings.setContentDescription("Настроить " + title);
+            settings.setOnClickListener(v -> {
+                if (placement.id == CLOCK_WIDGET_ID) showClockSettings(hostView, placement);
+                else if (placement.id == DOCK_WIDGET_ID) showDockSettings();
+                else reconfigureWidget(placement, info);
+            });
             container.addView(settings, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.LEFT));
         }
         Button delete = button("×");
@@ -928,6 +1341,11 @@ public final class HomeActivity extends Activity {
                                              WidgetPlacement placement,
                                              AppWidgetProviderInfo info, boolean resizing) {
         Point padding = info == null ? new Point(0, 0) : widgetPaddingDp(info);
+        int minWidth = info == null ? (placement.id == DOCK_WIDGET_ID ? 2 : 1) * WIDGET_CELL_DP
+                : Math.max(56, pxToDp(info.minResizeWidth)) + padding.x;
+        int minHeight = info == null ? placement.id == DOCK_WIDGET_ID
+                ? dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)) : WIDGET_CELL_DP
+                : Math.max(96, pxToDp(info.minResizeHeight)) + padding.y;
         return new View.OnTouchListener() {
             float startX;
             float startY;
@@ -935,6 +1353,7 @@ public final class HomeActivity extends Activity {
             int originalY;
             int originalWidth;
             int originalHeight;
+            int originalClockSize;
 
             @Override public boolean onTouch(View view, MotionEvent event) {
                 if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
@@ -944,6 +1363,7 @@ public final class HomeActivity extends Activity {
                     originalY = placement.y;
                     originalWidth = placement.width;
                     originalHeight = placement.height;
+                    originalClockSize = placement.clockSize;
                     return true;
                 }
                 if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
@@ -953,9 +1373,9 @@ public final class HomeActivity extends Activity {
                     int areaHeight = pxToDp(widgetRow.getHeight());
                     if (resizing) {
                         if (info == null || (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0)
-                            placement.width = Math.min(areaWidth - placement.x, Math.max(info == null ? WIDGET_CELL_DP : Math.max(pxToDp(info.minResizeWidth), 56) + padding.x, originalWidth + dx));
+                            placement.width = Math.min(areaWidth - placement.x, Math.max(minWidth, originalWidth + dx));
                         if (info == null || (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0)
-                            placement.height = Math.min(areaHeight - placement.y, Math.max(info == null ? WIDGET_CELL_DP : Math.max(pxToDp(info.minResizeHeight), 96) + padding.y, originalHeight + dy));
+                            placement.height = Math.min(areaHeight - placement.y, Math.max(minHeight, originalHeight + dy));
                     } else {
                         placement.x = Math.max(0, Math.min(areaWidth - placement.width, originalX + dx));
                         placement.y = Math.max(0, Math.min(areaHeight - placement.height, originalY + dy));
@@ -966,7 +1386,10 @@ public final class HomeActivity extends Activity {
                     params.leftMargin = dp(placement.x);
                     params.topMargin = dp(placement.y);
                     container.setLayoutParams(params);
-                    if (resizing && info == null) updateClockWidget(hostView, placement);
+                    if (resizing && placement.id == CLOCK_WIDGET_ID) {
+                        placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
+                        updateClockWidget(hostView, placement);
+                    }
                     return true;
                 }
                 if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
@@ -985,10 +1408,8 @@ public final class HomeActivity extends Activity {
                                 : grid.span(placement.height, grid.cellHeight, grid.rows);
                         Point slot;
                         if (resizing) {
-                            columns = Math.max(columns, grid.span(info == null ? WIDGET_CELL_DP : Math.max(56, pxToDp(info.minResizeWidth)) + padding.x,
-                                    grid.cellWidth, grid.columns));
-                            rows = Math.max(rows, grid.span(info == null ? WIDGET_CELL_DP : Math.max(96, pxToDp(info.minResizeHeight)) + padding.y,
-                                    grid.cellHeight, grid.rows));
+                            columns = Math.max(columns, grid.span(minWidth, grid.cellWidth, grid.columns));
+                            rows = Math.max(rows, grid.span(minHeight, grid.cellHeight, grid.rows));
                             int column = originalX / grid.cellWidth;
                             int row = originalY / grid.cellHeight;
                             slot = column + columns <= grid.columns && row + rows <= grid.rows &&
@@ -1004,8 +1425,13 @@ public final class HomeActivity extends Activity {
                             placement.height = originalHeight;
                         } else {
                             setGridPlacement(placement, grid, slot, columns, rows);
+                            if (placement.id == CLOCK_WIDGET_ID && resizing)
+                                placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
                             saveWidgets();
                         }
+                    }
+                    if (placement.id == CLOCK_WIDGET_ID && resizing) {
+                        placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
                     }
                     FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) container.getLayoutParams();
                     params.width = dp(placement.width);
@@ -1015,7 +1441,7 @@ public final class HomeActivity extends Activity {
                     container.setLayoutParams(params);
                     if (resizing) {
                         if (hostView instanceof AppWidgetHostView) updateWidgetSize((AppWidgetHostView) hostView, placement);
-                        else updateClockWidget(hostView, placement);
+                        else if (placement.id == CLOCK_WIDGET_ID) updateClockWidget(hostView, placement);
                     }
                     return true;
                 }
@@ -1034,8 +1460,10 @@ public final class HomeActivity extends Activity {
                 Object saved = savedWidgets.get(i);
                 if (saved instanceof JSONObject) {
                     JSONObject item = (JSONObject) saved;
-                    widgets.add(new WidgetPlacement(item.getInt("id"), item.getInt("x"), item.getInt("y"),
-                            item.getInt("width"), item.getInt("height")));
+                    WidgetPlacement placement = new WidgetPlacement(item.getInt("id"), item.getInt("x"), item.getInt("y"),
+                            item.getInt("width"), item.getInt("height"));
+                    placement.clockSize = item.optInt("clockSize", 0);
+                    widgets.add(placement);
                 } else {
                     int id = savedWidgets.getInt(i);
                     widgets.add(new WidgetPlacement(id, 0, i * 210, 0, 0));
@@ -1072,6 +1500,7 @@ public final class HomeActivity extends Activity {
                 item.put("y", widget.y);
                 item.put("width", widget.width);
                 item.put("height", widget.height);
+                if (widget.id == CLOCK_WIDGET_ID) item.put("clockSize", widget.clockSize);
                 saved.put(item);
             } catch (JSONException e) { throw new IllegalStateException(e); }
         }
@@ -1116,6 +1545,7 @@ public final class HomeActivity extends Activity {
         int y;
         int width;
         int height;
+        int clockSize;
 
         WidgetPlacement(int id, int x, int y, int width, int height) {
             this.id = id;
