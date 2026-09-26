@@ -37,3 +37,11 @@
 - Монохромный вариант API 33+ включён в ресурсы, но на Android 11 визуально не проверяется.
 - ГУ OneOS не подключено; OEM UI не проверялся.
 - Сборки сделаны из текущей рабочей копии, включая ранее существовавшие незакоммиченные изменения HomeActivity. Эти изменения не входят в коммит иконки/сборки.
+
+## Уточнение цветов, 2026-09-27
+
+Цвет знака исправлен на `#7893A0` — точное значение непрозрачных пикселей foreground PNG AtlasMediaWidget. Фон исправлен на `#171717` из его `icon_background`. Геометрия не менялась.
+
+Debug и release 0.4.0 (4) пересобраны успешно (`:app:assembleDebug :app:assembleRelease -x :app:lintVitalRelease`). Release-подпись проверена apksigner, сертификат прежний. Debug установлен обновлением на emulator-5554 (Android 11); цвета проверены рядом с AtlasMediaWidget в каталоге Launcher3. `git diff --check` пройден.
+
+![Исправленные цвета рядом с AtlasMediaWidget](app-drawer-colors.png)
