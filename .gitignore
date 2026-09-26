@@ -4,6 +4,9 @@
 .idea/
 *.iml
 local.properties
+secure.signing.gradle
+*.jks
+*.keystore
 **/build/
 .DS_Store
 reference-apks/*.apk
