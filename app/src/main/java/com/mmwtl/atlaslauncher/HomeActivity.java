@@ -745,6 +745,48 @@ public final class HomeActivity extends Activity {
         preview.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 16));
         preview.setClipToOutline(true);
         wallpaper.addView(preview, new LinearLayout.LayoutParams(-1, dp(180)));
+        TextView presetsLabel = label("Встроенные фоны · листайте в сторону", 14, NEUTRAL_MUTED, false);
+        presetsLabel.setPadding(0, dp(16), 0, dp(8));
+        wallpaper.addView(presetsLabel);
+        HorizontalScrollView presetsScroll = new HorizontalScrollView(this);
+        LinearLayout presets = new LinearLayout(this);
+        int[] presetImages = {
+                R.drawable.wallpaper_car_suv, R.drawable.wallpaper_orange_trails,
+                R.drawable.wallpaper_graphite, R.drawable.wallpaper_purple_sky,
+                R.drawable.wallpaper_car_sedan, R.drawable.wallpaper_red_carbon,
+                R.drawable.wallpaper_blue_trails, R.drawable.wallpaper_teal_glass,
+                R.drawable.wallpaper_mountain_road, R.drawable.wallpaper_night_city,
+                R.drawable.wallpaper_dark_marble, R.drawable.wallpaper_mountain_sunset
+        };
+        String[] presetNames = {"Внедорожник", "Огни дороги", "Графит", "Звёздная ночь",
+                "Седан", "Красный карбон", "Синий поток", "Бирюза", "Горная дорога",
+                "Ночной город", "Тёмный мрамор", "Горный закат"};
+        for (int i = 0; i < presetImages.length; i++) {
+            int resource = presetImages[i];
+            ImageView thumbnail = new ImageView(this);
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeResource(getResources(), resource, options);
+            options.inSampleSize = 1;
+            while (options.outWidth / (options.inSampleSize * 2) >= dp(108)) options.inSampleSize *= 2;
+            options.inJustDecodeBounds = false;
+            thumbnail.setImageBitmap(BitmapFactory.decodeResource(getResources(), resource, options));
+            thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            thumbnail.setContentDescription(presetNames[i]);
+            thumbnail.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 12));
+            thumbnail.setClipToOutline(true);
+            thumbnail.setOnClickListener(v -> {
+                String uri = "android.resource://" + getPackageName() + "/drawable/"
+                        + getResources().getResourceEntryName(resource);
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri).apply();
+                showWallpaper();
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(108), dp(144));
+            params.rightMargin = dp(8);
+            presets.addView(thumbnail, params);
+        }
+        presetsScroll.addView(presets);
+        wallpaper.addView(presetsScroll, new LinearLayout.LayoutParams(-1, -2));
         settingsAction(wallpaper, "Выбрать изображение", () -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
