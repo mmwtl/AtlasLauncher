@@ -1372,6 +1372,8 @@ public final class HomeActivity extends Activity {
         widgetRow.removeAllViews();
         WidgetGrid grid = widgetGrid();
         if (grid == null) return;
+        // Whole rows end at the climate panel; the leftover goes above them.
+        widgetRow.setPadding(0, widgetRow.getHeight() - dp(grid.height), 0, 0);
         boolean changed = false;
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (!prefs.getBoolean(DOCK_WIDGET_MIGRATED, false)) {
@@ -1768,7 +1770,7 @@ public final class HomeActivity extends Activity {
                     int dx = pxToDp(event.getRawX() - startX);
                     int dy = pxToDp(event.getRawY() - startY);
                     int areaWidth = pxToDp(widgetRow.getWidth());
-                    int areaHeight = pxToDp(widgetRow.getHeight());
+                    int areaHeight = pxToDp(widgetRow.getHeight() - widgetRow.getPaddingTop());
                     if (resizing) {
                         if (info == null || (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0)
                             placement.width = Math.min(areaWidth - placement.x, Math.max(minWidth, originalWidth + dx));
@@ -1921,11 +1923,11 @@ public final class HomeActivity extends Activity {
 
         WidgetGrid(int width, int height) {
             this.width = width;
-            this.height = height;
             columns = Math.max(1, width / WIDGET_CELL_DP);
             rows = Math.max(1, height / WIDGET_CELL_DP);
             cellWidth = Math.min(width, WIDGET_CELL_DP);
             cellHeight = Math.min(height, WIDGET_CELL_DP);
+            this.height = rows * cellHeight;
         }
 
         int span(int size, int cell, int count) {
