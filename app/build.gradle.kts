@@ -21,7 +21,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.mmwtl.atlaslauncher"
+        applicationId = "com.geely.atlaslauncher"
         minSdk = 26
         targetSdk = 30
         versionCode = appVersionCode

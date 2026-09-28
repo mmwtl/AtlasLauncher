@@ -2,7 +2,7 @@
 
 ## Назначение и структура
 
-AtlasLauncher — портретный Android HOME для автомобильного ГУ OneOS, пакет `com.mmwtl.atlaslauncher`. Это обычная Activity с Android AppWidgetHost, встроенными часами и доком приложений.
+AtlasLauncher — портретный Android HOME для автомобильного ГУ OneOS, пакет приложения (`applicationId`) `com.geely.atlaslauncher`, Java-пакет и `namespace` — `com.mmwtl.atlaslauncher`. Префикс `com.geely` нужен OEM-плагину SystemUI, чтобы на HOME показывалась полная климатическая панель; не меняй его без проверки на ГУ. Это обычная Activity с Android AppWidgetHost, встроенными часами и доком приложений.
 
 - `app/` — единственный модуль. Весь код — `app/src/main/java/com/mmwtl/atlaslauncher/HomeActivity.java` (~2000 строк): программный UI без XML-разметки, каталог и поиск приложений, сетка виджетов (`WidgetGrid`, `WidgetPlacement`), встроенные часы и док, окна настроек, выбор фона и сохранение состояния.
 - `app/src/main/res/` — встроенные фоны WebP 1086×1448 в `drawable-nodpi/`, адаптивная иконка (`mipmap-anydpi/`, монохромный вариант в `mipmap-anydpi-v33/`), векторные значки, цвета и строки. Следи за размером APK при добавлении изображений.
@@ -33,7 +33,7 @@ Release-сборка: `./gradlew :app:assembleRelease -x :app:lintVitalRelease` 
 
 ```sh
 adb -s SERIAL install -r "app/build/outputs/apk/debug/0.5.0[15]AtlasLauncher-debug.apk"
-adb -s SERIAL shell am start -n com.mmwtl.atlaslauncher/.HomeActivity
+adb -s SERIAL shell am start -n com.geely.atlaslauncher/com.mmwtl.atlaslauncher.HomeActivity
 ```
 
 ## Стиль кода и состояние

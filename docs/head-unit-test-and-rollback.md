@@ -67,7 +67,7 @@ ORIGINAL_HOME='com.android.launcher3'
 ```sh
 shasum -a 256 artifacts/AtlasLauncher-0.4.0-debug.apk
 "$ADB" -s "$GU_SERIAL" install -r artifacts/AtlasLauncher-0.4.0-debug.apk
-"$ADB" -s "$GU_SERIAL" shell dumpsys package com.mmwtl.atlaslauncher > "$GU_LOG/atlas-package.txt"
+"$ADB" -s "$GU_SERIAL" shell dumpsys package com.geely.atlaslauncher > "$GU_LOG/atlas-package.txt"
 ```
 
 Ожидаемый SHA-256 APK: `7feae925769d6c2ad93fdd1c63c3ecad9d665c786a5fd0d785663c2a4a297635`. `install -r` сохраняет данные существующей установки. При `INSTALL_FAILED_UPDATE_INCOMPATIBLE` **остановиться**: это несовпадение подписи; не делать `uninstall` или `pm clear`, если нужно сохранить виджеты/настройки старой установки.
@@ -93,13 +93,13 @@ shasum -a 256 artifacts/AtlasLauncher-0.4.0-debug.apk
 Если повторное назначение не проходит или меняет поведение штатного экрана, не переключать HOME на Atlas. `set-home-activity` меняет системную роль HOME для указанного пользователя; повторное назначение `ORIGINAL_HOME` ниже возвращает прежний выбор.
 
 ```sh
-"$ADB" -s "$GU_SERIAL" shell cmd package set-home-activity --user "$GU_USER" com.mmwtl.atlaslauncher
+"$ADB" -s "$GU_SERIAL" shell cmd package set-home-activity --user "$GU_USER" com.geely.atlaslauncher
 "$ADB" -s "$GU_SERIAL" shell input keyevent KEYCODE_HOME
 "$ADB" -s "$GU_SERIAL" shell cmd package resolve-activity --user "$GU_USER" --brief -a android.intent.action.MAIN -c android.intent.category.HOME
 "$ADB" -s "$GU_SERIAL" shell dumpsys role > "$GU_LOG/roles-atlas.txt"
 ```
 
-Ожидать `Success` и `com.mmwtl.atlaslauncher/.HomeActivity` как resolved HOME. Если результат другой, **не продолжать тест**, выполнить откат. Проверить вручную по пунктам:
+Ожидать `Success` и `com.geely.atlaslauncher/com.mmwtl.atlaslauncher.HomeActivity` как resolved HOME. Если результат другой, **не продолжать тест**, выполнить откат. Проверить вручную по пунктам:
 
 1. Низ: климат/dock видны, кнопки нажимаются, панель не закрывает виджеты или список приложений.
 2. Верх: свайп открывает штатную панель, быстрые настройки работают, панель закрывается и повторно открывается.
@@ -128,7 +128,7 @@ shasum -a 256 artifacts/AtlasLauncher-0.4.0-debug.apk
 
 ```sh
 "$ADB" -s "$GU_SERIAL" shell cmd package set-home-activity --user "$GU_USER" "$ORIGINAL_HOME"
-"$ADB" -s "$GU_SERIAL" shell am force-stop com.mmwtl.atlaslauncher
+"$ADB" -s "$GU_SERIAL" shell am force-stop com.geely.atlaslauncher
 "$ADB" -s "$GU_SERIAL" shell input keyevent KEYCODE_HOME
 "$ADB" -s "$GU_SERIAL" shell cmd package resolve-activity --user "$GU_USER" --brief -a android.intent.action.MAIN -c android.intent.category.HOME
 "$ADB" -s "$GU_SERIAL" shell dumpsys role > "$GU_LOG/roles-restored.txt"
@@ -150,13 +150,13 @@ shasum -a 256 artifacts/AtlasLauncher-0.4.0-debug.apk
 Если OEM не принимает обе команды, временно отключить **только Atlas** для текущего пользователя — это исключает его из HOME-кандидатов без удаления данных. Затем открыть штатную Activity; после диагностики Atlas можно вернуть командой `pm enable`:
 
 ```sh
-"$ADB" -s "$GU_SERIAL" shell pm disable-user --user "$GU_USER" com.mmwtl.atlaslauncher
+"$ADB" -s "$GU_SERIAL" shell pm disable-user --user "$GU_USER" com.geely.atlaslauncher
 "$ADB" -s "$GU_SERIAL" shell am start --user "$GU_USER" -n com.android.launcher3/.Launcher
 "$ADB" -s "$GU_SERIAL" shell input keyevent KEYCODE_HOME
 "$ADB" -s "$GU_SERIAL" shell cmd package resolve-activity --user "$GU_USER" --brief -a android.intent.action.MAIN -c android.intent.category.HOME
 ```
 
-Для повторной проверки: `"$ADB" -s "$GU_SERIAL" shell pm enable --user "$GU_USER" com.mmwtl.atlaslauncher`. **Не выполнять `pm disable-user` для штатного Launcher3, SystemUI или OEM-плагина.**
+Для повторной проверки: `"$ADB" -s "$GU_SERIAL" shell pm enable --user "$GU_USER" com.geely.atlaslauncher`. **Не выполнять `pm disable-user` для штатного Launcher3, SystemUI или OEM-плагина.**
 
 Если именно shell-команды роли/пакета возвращают `SecurityException`, а на этом ГУ действительно поддерживается root ADB, можно перезапустить `adbd` от root и повторить **те же команды A/B**:
 
