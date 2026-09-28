@@ -229,6 +229,7 @@ public final class HomeActivity extends Activity {
         backdrop.addView(widgetRow, widgetRowParams);
         widgetRow.setClickable(true);
         widgetRow.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
+        widgetRow.setOnClickListener(v -> { if (editingWidgets) setEditingWidgets(false); });
         widgetRow.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
                 scheduleShowWidgets();
