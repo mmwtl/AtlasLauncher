@@ -1083,7 +1083,13 @@ public final class HomeActivity extends Activity {
         boolean compact = prefs.getBoolean(DOCK_COMPACT, false);
         int tilePadding = compact && !showLabels ? 4 : 8;
         int panelPadding = compact ? (showLabels ? 8 : 4) : 16;
-        return iconSize + 2 * tilePadding + (showLabels ? 44 : 0) + 2 * panelPadding;
+        Rect inset = dockInset();
+        return iconSize + 2 * tilePadding + (showLabels ? 44 : 0) + 2 * panelPadding
+                + pxToDp(inset.top + inset.bottom);
+    }
+
+    private Rect dockInset() {
+        return AppWidgetHostView.getDefaultPaddingForWidget(this, getComponentName(), null);
     }
 
     private void chooseWidget() {
@@ -1510,7 +1516,13 @@ public final class HomeActivity extends Activity {
                 hostView = widgetView;
             }
             hostView.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
-            container.addView(hostView, new FrameLayout.LayoutParams(-1, -1));
+            FrameLayout.LayoutParams hostParams = new FrameLayout.LayoutParams(-1, -1);
+            if (dockWidget) {
+                // Inset the dock like AppWidgetHostView insets regular widgets.
+                Rect inset = dockInset();
+                hostParams.setMargins(inset.left, inset.top, inset.right, inset.bottom);
+            }
+            container.addView(hostView, hostParams);
             if (editingWidgets) addWidgetEditControls(container, hostView, placement, info);
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(placement.width), dp(placement.height));
             params.leftMargin = dp(placement.x);
