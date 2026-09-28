@@ -20,6 +20,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.Rect;
@@ -64,6 +65,8 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.io.InputStream;
 import java.io.IOException;
 
@@ -88,6 +91,7 @@ public final class HomeActivity extends Activity {
     private static final int WIDGET_CELL_DP = 96;
     private static final int MAX_ICON_DP = 160;
     private static final int CATALOG_ICON_DP = 96;
+    private static final int WIDGET_PREVIEW_DP = 150;
     private static final String PREFS = "home";
     private static final String FAVORITES = "favorites";
     private static final String WIDGETS = "widgets";
@@ -1038,28 +1042,189 @@ public final class HomeActivity extends Activity {
     }
 
     private void chooseWidget() {
+        PackageManager pm = getPackageManager();
         List<AppWidgetProviderInfo> providers = widgetManager.getInstalledProviders();
         Collator collator = Collator.getInstance(Locale.getDefault());
-        Collections.sort(providers, (a, b) -> collator.compare(String.valueOf(a.loadLabel(getPackageManager())), String.valueOf(b.loadLabel(getPackageManager()))));
-        String[] names = new String[providers.size() + 2];
-        names[0] = "Часы AtlasLauncher";
-        names[1] = "Док приложений AtlasLauncher";
-        for (int i = 0; i < providers.size(); i++) names[i + 2] = String.valueOf(providers.get(i).loadLabel(getPackageManager()));
-        new AlertDialog.Builder(this).setTitle("Добавить виджет").setItems(names, (dialog, which) -> {
-            if (which == 0) { addClockWidget(); return; }
-            if (which == 1) { addDockWidget(); return; }
-            AppWidgetProviderInfo provider = providers.get(which - 2);
-            pendingWidgetId = widgetHost.allocateAppWidgetId();
-            if (widgetManager.bindAppWidgetIdIfAllowed(pendingWidgetId, provider.provider)) {
-                configureWidget(provider);
-            } else {
-                Intent bind = new Intent(AppWidgetManager.ACTION_APPWIDGET_BIND);
-                bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId);
-                bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider.provider);
-                try { startActivityForResult(bind, BIND_WIDGET); }
-                catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Привязка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+        Collections.sort(providers, (a, b) -> collator.compare(String.valueOf(a.loadLabel(pm)), String.valueOf(b.loadLabel(pm))));
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(22), dp(20), dp(22), dp(20));
+        content.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 32));
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(label("Добавить виджет", 24, NEUTRAL_TEXT, true), new LinearLayout.LayoutParams(0, -2, 1));
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        Button close = neutralButton("×");
+        close.setContentDescription("Закрыть список виджетов");
+        close.setTextSize(22);
+        close.setOnClickListener(v -> dialog.dismiss());
+        titleRow.addView(close, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, dp(76));
+        titleParams.bottomMargin = dp(12);
+        content.addView(titleRow, titleParams);
+        GridView grid = new GridView(this);
+        grid.setNumColumns(GridView.AUTO_FIT);
+        grid.setColumnWidth(dp(WIDGET_PREVIEW_DP + 40));
+        grid.setHorizontalSpacing(dp(10));
+        grid.setVerticalSpacing(dp(10));
+        grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+        grid.setVerticalScrollBarEnabled(false);
+        content.addView(grid, new LinearLayout.LayoutParams(-1, 0, 1));
+        WidgetGrid cells = widgetGrid();
+        Bitmap[] previews = new Bitmap[providers.size()];
+        BaseAdapter adapter = new BaseAdapter() {
+            @Override public int getCount() { return providers.size() + 2; }
+            @Override public Object getItem(int position) { return position; }
+            @Override public long getItemId(int position) { return position; }
+            @Override public View getView(int position, View old, ViewGroup parent) {
+                if (position == 0) return widgetPreviewTile(clockPreview(), "Часы", "AtlasLauncher");
+                if (position == 1) return widgetPreviewTile(dockPreview(), "Док приложений", "AtlasLauncher");
+                AppWidgetProviderInfo provider = providers.get(position - 2);
+                ImageView image = new ImageView(HomeActivity.this);
+                image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                image.setImageBitmap(previews[position - 2]);
+                String details = provider.provider.getPackageName();
+                try { details = String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(details, 0))); }
+                catch (PackageManager.NameNotFoundException ignored) { }
+                if (cells != null) {
+                    Point padding = widgetPaddingDp(provider);
+                    int width = pxToDp(Math.max(provider.minWidth, provider.minResizeWidth)) + padding.x;
+                    int height = Math.max(96, pxToDp(Math.max(provider.minHeight, provider.minResizeHeight))) + padding.y;
+                    details += " · " + cells.span(width, cells.cellWidth, cells.columns) + "×" +
+                            cells.span(height, cells.cellHeight, cells.rows);
+                }
+                return widgetPreviewTile(image, String.valueOf(provider.loadLabel(pm)), details);
             }
-        }).show();
+        };
+        grid.setAdapter(adapter);
+        grid.setOnItemClickListener((parent, view, position, id) -> {
+            dialog.dismiss();
+            if (position == 0) addClockWidget();
+            else if (position == 1) addDockWidget();
+            else addProviderWidget(providers.get(position - 2));
+        });
+        // Preview images can be large bitmaps, so decode and downscale them off the UI thread.
+        ExecutorService loader = Executors.newSingleThreadExecutor();
+        dialog.setOnDismissListener(d -> loader.shutdownNow());
+        int density = getResources().getDisplayMetrics().densityDpi;
+        for (int i = 0; i < providers.size(); i++) {
+            int index = i;
+            loader.execute(() -> {
+                AppWidgetProviderInfo provider = providers.get(index);
+                Drawable drawable = provider.loadPreviewImage(this, density);
+                if (drawable == null) drawable = provider.loadIcon(this, density);
+                Bitmap bitmap = drawable == null ? null : previewBitmap(drawable);
+                runOnUiThread(() -> {
+                    previews[index] = bitmap;
+                    adapter.notifyDataSetChanged();
+                });
+            });
+        }
+        dialog.setContentView(content);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels - dp(32), dp(1200)),
+                    Math.min(getResources().getDisplayMetrics().heightPixels - dp(64), dp(1400)));
+        }
+    }
+
+    private View widgetPreviewTile(View preview, String title, String details) {
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setPadding(dp(10), dp(10), dp(10), dp(10));
+        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+                round(NEUTRAL_RAISED, Color.TRANSPARENT, 20), null));
+        tile.setContentDescription(title);
+        FrameLayout frame = new FrameLayout(this);
+        frame.setPadding(dp(8), dp(8), dp(8), dp(8));
+        frame.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 14));
+        frame.addView(preview, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        tile.addView(frame, new LinearLayout.LayoutParams(-1, dp(WIDGET_PREVIEW_DP)));
+        TextView titleView = label(title, 16, NEUTRAL_TEXT, true);
+        titleView.setSingleLine(true);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
+        titleParams.topMargin = dp(10);
+        tile.addView(titleView, titleParams);
+        TextView detailsView = label(details, 13, NEUTRAL_MUTED, false);
+        detailsView.setSingleLine(true);
+        detailsView.setEllipsize(TextUtils.TruncateAt.END);
+        tile.addView(detailsView, new LinearLayout.LayoutParams(-1, -2));
+        tile.setLayoutParams(new android.widget.AbsListView.LayoutParams(-1, -2));
+        return tile;
+    }
+
+    private Bitmap previewBitmap(Drawable drawable) {
+        int limit = dp(WIDGET_PREVIEW_DP) * 2;
+        int width = drawable.getIntrinsicWidth() > 0 ? drawable.getIntrinsicWidth() : limit;
+        int height = drawable.getIntrinsicHeight() > 0 ? drawable.getIntrinsicHeight() : limit;
+        float scale = Math.min(1f, (float) limit / Math.max(width, height));
+        Bitmap bitmap = Bitmap.createBitmap(Math.max(1, Math.round(width * scale)),
+                Math.max(1, Math.round(height * scale)), Bitmap.Config.ARGB_8888);
+        drawable.setBounds(0, 0, bitmap.getWidth(), bitmap.getHeight());
+        drawable.draw(new Canvas(bitmap));
+        return bitmap;
+    }
+
+    private View clockPreview() {
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
+        group.setGravity(Gravity.CENTER);
+        TextClock time = new TextClock(this);
+        time.setFormat24Hour("HH:mm");
+        time.setFormat12Hour("h:mm");
+        time.setTextSize(44);
+        time.setTextColor(TEXT);
+        group.addView(time);
+        TextClock date = new TextClock(this);
+        date.setFormat24Hour("EEE, d MMM");
+        date.setFormat12Hour("EEE, d MMM");
+        date.setTextSize(14);
+        date.setTextColor(MUTED);
+        group.addView(date);
+        return group;
+    }
+
+    private View dockPreview() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setGravity(Gravity.CENTER);
+        panel.setPadding(dp(8), dp(8), dp(8), dp(8));
+        panel.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 20));
+        List<AppEntry> shown = new ArrayList<>();
+        for (String favorite : favorites) {
+            AppEntry app = findApp(favorite);
+            if (app != null && shown.size() < 2) shown.add(app);
+        }
+        for (AppEntry app : apps) if (shown.size() < 2 && !shown.contains(app)) shown.add(app);
+        List<Drawable> icons = new ArrayList<>();
+        for (AppEntry app : shown) icons.add(app.icon);
+        icons.add(getDrawable(R.drawable.ic_apps));
+        for (Drawable icon : icons) {
+            ImageView image = new ImageView(this);
+            image.setImageDrawable(icon);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(40), dp(40));
+            params.setMargins(dp(4), 0, dp(4), 0);
+            panel.addView(image, params);
+        }
+        FrameLayout frame = new FrameLayout(this);
+        frame.addView(panel, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        return frame;
+    }
+
+    private void addProviderWidget(AppWidgetProviderInfo provider) {
+        pendingWidgetId = widgetHost.allocateAppWidgetId();
+        if (widgetManager.bindAppWidgetIdIfAllowed(pendingWidgetId, provider.provider)) {
+            configureWidget(provider);
+        } else {
+            Intent bind = new Intent(AppWidgetManager.ACTION_APPWIDGET_BIND);
+            bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId);
+            bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider.provider);
+            try { startActivityForResult(bind, BIND_WIDGET); }
+            catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Привязка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+        }
     }
 
     private void configureWidget(AppWidgetProviderInfo provider) {
