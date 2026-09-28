@@ -218,7 +218,10 @@ public final class HomeActivity extends Activity {
     }
 
     private void buildHome() {
-        getWindow().setStatusBarColor(Color.rgb(8, 24, 45));
+        // Like Launcher3: draw the wallpaper under a transparent status bar.
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
         getWindow().setNavigationBarColor(BACKGROUND);
         FrameLayout backdrop = new FrameLayout(this);
         wallpaperView = new ImageView(this);
@@ -230,10 +233,13 @@ public final class HomeActivity extends Activity {
                 new int[]{Color.argb(45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
         backdrop.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
         setContentView(backdrop);
+        FrameLayout content = new FrameLayout(this);
+        content.setFitsSystemWindows(true);
+        backdrop.addView(content, new FrameLayout.LayoutParams(-1, -1));
         widgetRow = new FrameLayout(this);
         FrameLayout.LayoutParams widgetRowParams = new FrameLayout.LayoutParams(-1, -1);
         widgetRowParams.bottomMargin = CLIMATE_PANEL_PX;
-        backdrop.addView(widgetRow, widgetRowParams);
+        content.addView(widgetRow, widgetRowParams);
         widgetRow.setClickable(true);
         widgetRow.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
         widgetRow.setOnClickListener(v -> { if (editingWidgets) setEditingWidgets(false); });
@@ -249,14 +255,14 @@ public final class HomeActivity extends Activity {
         settings.setOnClickListener(v -> showSettings());
         FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(dp(76), dp(76), Gravity.TOP | Gravity.RIGHT);
         settingsParams.setMargins(0, dp(16), dp(20), 0);
-        backdrop.addView(settings, settingsParams);
+        content.addView(settings, settingsParams);
 
         widgetControls = new LinearLayout(this);
         widgetControls.setGravity(Gravity.CENTER_VERTICAL);
         widgetControls.setVisibility(editingWidgets ? View.VISIBLE : View.GONE);
         FrameLayout.LayoutParams controlsParams = new FrameLayout.LayoutParams(-2, dp(76), Gravity.TOP | Gravity.LEFT);
         controlsParams.setMargins(dp(20), dp(16), 0, 0);
-        backdrop.addView(widgetControls, controlsParams);
+        content.addView(widgetControls, controlsParams);
         Button add = button("＋");
         add.setContentDescription("Добавить виджет");
         add.setTextSize(30);
