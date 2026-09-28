@@ -128,6 +128,7 @@ public final class HomeActivity extends Activity {
     private Dialog appDrawer;
     private int settingsPage;
     private ImageView settingsWallpaperPreview;
+    private LinearLayout settingsWallpaperPresets;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     private final Runnable renderWidgets = this::showWidgets;
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
@@ -284,7 +285,7 @@ public final class HomeActivity extends Activity {
         appsIcon.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 34));
         appsIcon.setPadding(dp(18), dp(18), dp(18), dp(18));
         appsTile.setOnClickListener(v -> openAllApps());
-        appsTile.setOnLongClickListener(v -> { showDockSettings(); return true; });
+        appsTile.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
         updateDock();
         showFavorites();
         return favoritePanel;
@@ -357,12 +358,12 @@ public final class HomeActivity extends Activity {
             if (app == null) continue;
             View item = appTile(app, false);
             item.setOnClickListener(v -> launch(app));
-            item.setOnLongClickListener(v -> { showDockSettings(); return true; });
+            item.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
             favoriteRow.addView(item, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
         }
         int shownApps = favoriteRow.getChildCount();
         if (shownApps == 0) {
-            TextView empty = label("Откройте настройки дока, чтобы добавить приложения", 14, NEUTRAL_MUTED, false);
+            TextView empty = label("Добавьте приложения кнопкой ⚙ дока в режиме редактирования", 14, NEUTRAL_MUTED, false);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(14), dp(14), dp(14), dp(14));
             favoriteRow.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
@@ -635,7 +636,11 @@ public final class HomeActivity extends Activity {
         settingsDialog = dialog;
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCanceledOnTouchOutside(false);
-        dialog.setOnDismissListener(d -> { settingsDialog = null; settingsWallpaperPreview = null; });
+        dialog.setOnDismissListener(d -> {
+            settingsDialog = null;
+            settingsWallpaperPreview = null;
+            settingsWallpaperPresets = null;
+        });
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -643,12 +648,8 @@ public final class HomeActivity extends Activity {
         panel.setBackground(round(NEUTRAL_SURFACE, NEUTRAL_RAISED, 28));
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout heading = new LinearLayout(this);
-        heading.setOrientation(LinearLayout.VERTICAL);
-        boolean widgetSettings = page == 1 || page == 2;
-        heading.addView(label(page == 1 ? "Док приложений" : page == 2 ? "Настройки часов" : "Настройки",
-                28, NEUTRAL_TEXT, true));
-        heading.addView(label("AtlasLauncher · Ваш рабочий стол", 14, NEUTRAL_MUTED, false));
+        TextView heading = label(page == 1 ? "Док приложений" : page == 2 ? "Настройки часов" : "Настройки",
+                28, NEUTRAL_TEXT, true);
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
         Button close = neutralButton("×");
         close.setTextSize(26);
@@ -657,50 +658,21 @@ public final class HomeActivity extends Activity {
         header.addView(close, new LinearLayout.LayoutParams(dp(52), dp(52)));
         panel.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
-        HorizontalScrollView navigation = new HorizontalScrollView(this);
-        navigation.setHorizontalScrollBarEnabled(false);
-        LinearLayout tabs = new LinearLayout(this);
-        navigation.addView(tabs);
-        LinearLayout.LayoutParams navigationParams = new LinearLayout.LayoutParams(-1, -2);
-        navigationParams.setMargins(0, dp(24), 0, dp(16));
-        if (!widgetSettings) panel.addView(navigation, navigationParams);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(content);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
-        if (widgetSettings) scrollParams.topMargin = dp(24);
+        scrollParams.topMargin = dp(24);
         panel.addView(scroll, scrollParams);
-
-        String[] sections = {"Рабочий стол", "Система"};
-        Runnable render = () -> {
-            settingsWallpaperPreview = null;
-            content.removeAllViews();
-            for (int i = 0; i < tabs.getChildCount(); i++) {
-                Button tab = (Button) tabs.getChildAt(i);
-                boolean selected = (i == 0 ? 0 : 3) == settingsPage;
-                tab.setSelected(selected);
-                tab.setTextColor(selected ? Color.WHITE : NEUTRAL_MUTED);
-                tab.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                        round(selected ? Color.rgb(54, 100, 146) : NEUTRAL_SURFACE, Color.TRANSPARENT, 16), null));
-            }
-            if (settingsPage == 0) buildDesktopSettings(content, dialog);
-            else if (settingsPage == 1) buildDockSettings(content);
-            else if (settingsPage == 2) buildClockSettings(content);
-            else buildSystemSettings(content);
-            scroll.scrollTo(0, 0);
-        };
-        for (int i = 0; i < sections.length; i++) {
-            final int section = i == 0 ? 0 : 3;
-            Button tab = neutralButton(sections[i]);
-            tab.setPadding(dp(16), 0, dp(16), 0);
-            tab.setOnClickListener(v -> { settingsPage = section; render.run(); });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(52));
-            params.rightMargin = dp(6);
-            tabs.addView(tab, params);
+        // Dock and clock are widgets: their pages open only from the widget's own settings button.
+        if (page == 1) buildDockSettings(content);
+        else if (page == 2) buildClockSettings(content);
+        else {
+            buildDesktopSettings(content, dialog);
+            buildSystemSettings(content);
         }
-        render.run();
 
         LinearLayout footer = new LinearLayout(this);
         footer.setGravity(Gravity.CENTER_VERTICAL);
@@ -793,6 +765,7 @@ public final class HomeActivity extends Activity {
         wallpaper.addView(presetsLabel);
         HorizontalScrollView presetsScroll = new HorizontalScrollView(this);
         LinearLayout presets = new LinearLayout(this);
+        settingsWallpaperPresets = presets;
         int[] presetImages = {
                 R.drawable.wallpaper_car_suv, R.drawable.wallpaper_orange_trails,
                 R.drawable.wallpaper_graphite, R.drawable.wallpaper_purple_sky,
@@ -818,9 +791,10 @@ public final class HomeActivity extends Activity {
             thumbnail.setContentDescription(presetNames[i]);
             thumbnail.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 12));
             thumbnail.setClipToOutline(true);
+            String uri = "android.resource://" + getPackageName() + "/drawable/"
+                    + getResources().getResourceEntryName(resource);
+            thumbnail.setTag(uri);
             thumbnail.setOnClickListener(v -> {
-                String uri = "android.resource://" + getPackageName() + "/drawable/"
-                        + getResources().getResourceEntryName(resource);
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri).apply();
                 showWallpaper();
             });
@@ -829,6 +803,7 @@ public final class HomeActivity extends Activity {
             presets.addView(thumbnail, params);
         }
         presetsScroll.addView(presets);
+        markWallpaperPreset(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null));
         wallpaper.addView(presetsScroll, new LinearLayout.LayoutParams(-1, -2));
         settingsAction(wallpaper, "Выбрать изображение", () -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -841,15 +816,25 @@ public final class HomeActivity extends Activity {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(WALLPAPER).apply();
             showWallpaper();
         });
-        LinearLayout desktop = settingsCard(content, "Виджеты и приложения", "Разместите часы, док и виджеты на рабочем столе.");
+        LinearLayout desktop = settingsCard(content, "Рабочий стол",
+                "Добавляйте и перемещайте виджеты. Часы, док и другие виджеты настраиваются кнопкой ⚙ на самом виджете.");
         settingsAction(desktop, "Редактировать рабочий стол  →", () -> {
             dialog.dismiss();
             setEditingWidgets(true);
         });
-        settingsAction(desktop, "Все приложения  →", () -> {
-            dialog.dismiss();
-            showAppDrawer();
-        });
+    }
+
+    private void markWallpaperPreset(String wallpaper) {
+        if (settingsWallpaperPresets == null) return;
+        for (int i = 0; i < settingsWallpaperPresets.getChildCount(); i++) {
+            View thumbnail = settingsWallpaperPresets.getChildAt(i);
+            GradientDrawable frame = null;
+            if (thumbnail.getTag().equals(wallpaper)) {
+                frame = round(Color.TRANSPARENT, Color.TRANSPARENT, 12);
+                frame.setStroke(dp(3), ACCENT);
+            }
+            thumbnail.setForeground(frame);
+        }
     }
 
     private void buildSystemSettings(LinearLayout content) {
@@ -879,12 +864,8 @@ public final class HomeActivity extends Activity {
 
     private void showWallpaper() {
         String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null);
-        if (saved == null) {
-            wallpaperView.setImageResource(R.drawable.coastal_twilight);
-            if (settingsWallpaperPreview != null) settingsWallpaperPreview.setImageDrawable(wallpaperView.getDrawable().getConstantState().newDrawable());
-            return;
-        }
-        try {
+        if (saved == null) wallpaperView.setImageResource(R.drawable.coastal_twilight);
+        else try {
             Uri uri = Uri.parse(saved);
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
@@ -906,10 +887,7 @@ public final class HomeActivity extends Activity {
             Toast.makeText(this, "Не удалось загрузить фон", Toast.LENGTH_SHORT).show();
         }
         if (settingsWallpaperPreview != null) settingsWallpaperPreview.setImageDrawable(wallpaperView.getDrawable().getConstantState().newDrawable());
-    }
-
-    private void showDockSettings() {
-        showSettings(1);
+        markWallpaperPreset(saved);
     }
 
     private void buildDockSettings(LinearLayout parent) {
@@ -918,10 +896,9 @@ public final class HomeActivity extends Activity {
         settingsToggle(content, "Компактный док", DOCK_COMPACT, false, this::showWidgets);
         settingsToggle(content, "Подписи в доке", DOCK_LABELS, true, this::showWidgets);
         int size = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
-        TextView sizeLabel = label("Размер значков дока: " + size + " dp", 18, NEUTRAL_TEXT, false);
         LinearLayout.LayoutParams sizeParams = new LinearLayout.LayoutParams(-1, -2);
         sizeParams.topMargin = dp(12);
-        content.addView(sizeLabel, sizeParams);
+        content.addView(label("Размер значков", 18, NEUTRAL_TEXT, false), sizeParams);
         SeekBar sizeSlider = new SeekBar(this);
         sizeSlider.setMax((MAX_ICON_DP - 40) / 8);
         sizeSlider.setProgress((size - 40) / 8);
@@ -931,10 +908,8 @@ public final class HomeActivity extends Activity {
         content.addView(sizeSlider, new LinearLayout.LayoutParams(-1, dp(56)));
         sizeSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int value = 40 + progress * 8;
-                sizeLabel.setText("Размер значков дока: " + value + " dp");
                 if (fromUser) {
-                    prefs.edit().putInt(DRAWER_ICON_SIZE, value).apply();
+                    prefs.edit().putInt(DRAWER_ICON_SIZE, 40 + progress * 8).apply();
                     showFavorites();
                 }
             }
@@ -946,8 +921,7 @@ public final class HomeActivity extends Activity {
         Button action = settingsAction(drawer, "", () -> { });
         Runnable refreshAction = () -> {
             String target = prefs.getString(DRAWER_ACTIVITY, "");
-            action.setText("Открывать: " + (target.isEmpty() ? "встроенный каталог"
-                    : target.equals(GIB_LAUNCHER) ? "GLauncher (GIB)" : target));
+            action.setText("Открывать: " + drawerActionLabel(target));
         };
         refreshAction.run();
         action.setOnClickListener(v -> chooseDrawerAction(refreshAction));
@@ -957,6 +931,22 @@ public final class HomeActivity extends Activity {
         pinned.addView(selectedApps, new LinearLayout.LayoutParams(-1, -2));
         refreshDockFavoriteSettings(selectedApps);
         settingsAction(pinned, "＋  Добавить приложение", () -> showDockAppPicker(selectedApps));
+    }
+
+    private String drawerActionLabel(String target) {
+        if (target.isEmpty()) return "встроенный каталог";
+        if (target.equals(GIB_LAUNCHER)) return "GLauncher (GIB)";
+        ComponentName component = ComponentName.unflattenFromString(target);
+        if (component == null) return target;
+        PackageManager pm = getPackageManager();
+        try {
+            ActivityInfo activity = pm.getActivityInfo(component, 0);
+            String app = String.valueOf(activity.applicationInfo.loadLabel(pm));
+            String name = String.valueOf(activity.loadLabel(pm));
+            return name.equals(app) ? app : app + " · " + name;
+        } catch (PackageManager.NameNotFoundException e) {
+            return target + " · недоступно";
+        }
     }
 
     private void refreshDockFavoriteSettings(LinearLayout selectedApps) {
@@ -1470,11 +1460,7 @@ public final class HomeActivity extends Activity {
                 widgetView.setAppWidget(placement.id, info);
                 hostView = widgetView;
             }
-            hostView.setOnLongClickListener(v -> {
-                if (dockWidget) showDockSettings();
-                else setEditingWidgets(true);
-                return true;
-            });
+            hostView.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
             container.addView(hostView, new FrameLayout.LayoutParams(-1, -1));
             if (editingWidgets) addWidgetEditControls(container, hostView, placement, info);
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(placement.width), dp(placement.height));
@@ -1721,7 +1707,7 @@ public final class HomeActivity extends Activity {
             settings.setContentDescription("Настроить " + title);
             settings.setOnClickListener(v -> {
                 if (placement.id == CLOCK_WIDGET_ID) showSettings(2);
-                else if (placement.id == DOCK_WIDGET_ID) showDockSettings();
+                else if (placement.id == DOCK_WIDGET_ID) showSettings(1);
                 else reconfigureWidget(placement);
             });
             container.addView(settings, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.LEFT));
