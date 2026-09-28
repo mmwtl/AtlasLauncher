@@ -4,7 +4,8 @@
 
 AtlasLauncher — портретный Android HOME для автомобильного ГУ OneOS, пакет приложения (`applicationId`) `com.geely.atlaslauncher`, Java-пакет и `namespace` — `com.mmwtl.atlaslauncher`. Префикс `com.geely` нужен OEM-плагину SystemUI, чтобы на HOME показывалась полная климатическая панель; не меняй его без проверки на ГУ. Это обычная Activity с Android AppWidgetHost, встроенными часами и доком приложений.
 
-- `app/` — единственный модуль. Весь код — `app/src/main/java/com/mmwtl/atlaslauncher/HomeActivity.java` (~2000 строк): программный UI без XML-разметки, каталог и поиск приложений, сетка виджетов (`WidgetGrid`, `WidgetPlacement`), встроенные часы и док, окна настроек, выбор фона и сохранение состояния.
+- `app/` — единственный модуль. Почти весь код — `app/src/main/java/com/mmwtl/atlaslauncher/HomeActivity.java` (~2000 строк): программный UI без XML-разметки, каталог и поиск приложений, сетка виджетов (`WidgetGrid`, `WidgetPlacement`), встроенные часы и док, окна настроек, выбор фона и сохранение состояния.
+- `StockHomeRedirectService.java` рядом с `HomeActivity` — необязательная служба специальных возможностей: возвращает на Atlas, когда панель климата открывает штатный Launcher3. Конфигурация — `res/xml/stock_home_redirect.xml`, включение — флаг `stock_home_redirect` в `SharedPreferences("home")`.
 - `app/src/main/res/` — встроенные фоны WebP 1086×1448 в `drawable-nodpi/`, адаптивная иконка (`mipmap-anydpi/`, монохромный вариант в `mipmap-anydpi-v33/`), векторные значки, цвета и строки. Следи за размером APK при добавлении изображений.
 - `app/src/main/AndroidManifest.xml` — HOME/LAUNCHER intent-фильтры, `singleTask`, портретная ориентация и `<queries>` для Launcher3 и LAUNCHER-активностей (видимость пакетов на API 30).
 - `app/build.gradle.kts` — SDK, Java, версия, имя APK и подключение подписи; корневые Gradle-файлы — конфигурация сборки.

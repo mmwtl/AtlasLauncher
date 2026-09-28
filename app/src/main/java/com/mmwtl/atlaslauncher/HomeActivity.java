@@ -1,5 +1,6 @@
 package com.mmwtl.atlaslauncher;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -30,6 +31,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Bundle;
 import android.os.Build;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.net.Uri;
 import android.text.Editable;
@@ -40,6 +42,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.accessibility.AccessibilityManager;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -67,6 +70,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 import java.io.InputStream;
 import java.io.IOException;
 
@@ -94,7 +98,7 @@ public final class HomeActivity extends Activity {
     private static final int MAX_ICON_DP = 160;
     private static final int CATALOG_ICON_DP = 96;
     private static final int WIDGET_PREVIEW_DP = 150;
-    private static final String PREFS = "home";
+    static final String PREFS = "home";
     private static final String FAVORITES = "favorites";
     private static final String WIDGETS = "widgets";
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
@@ -129,6 +133,7 @@ public final class HomeActivity extends Activity {
     private int settingsPage;
     private ImageView settingsWallpaperPreview;
     private LinearLayout settingsWallpaperPresets;
+    private LinearLayout settingsRedirectState;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     private final Runnable renderWidgets = this::showWidgets;
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
@@ -184,6 +189,8 @@ public final class HomeActivity extends Activity {
         super.onResume();
         // The system 12/24-hour setting may have changed while HOME was in the background.
         updateDesktopClock();
+        // The accessibility permission may have been granted in Android settings.
+        updateStockHomeRedirectState();
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -640,6 +647,7 @@ public final class HomeActivity extends Activity {
             settingsDialog = null;
             settingsWallpaperPreview = null;
             settingsWallpaperPresets = null;
+            settingsRedirectState = null;
         });
 
         LinearLayout panel = new LinearLayout(this);
@@ -733,6 +741,13 @@ public final class HomeActivity extends Activity {
 
     private void settingsToggle(LinearLayout parent, String title, String key, boolean defaultValue, Runnable changed) {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        settingsSwitch(parent, title, prefs.getBoolean(key, defaultValue), checked -> {
+            prefs.edit().putBoolean(key, checked).apply();
+            changed.run();
+        });
+    }
+
+    private void settingsSwitch(LinearLayout parent, String title, boolean checked, Consumer<Boolean> changed) {
         Switch toggle = new Switch(this);
         toggle.setText(title);
         toggle.setTextColor(NEUTRAL_TEXT);
@@ -743,11 +758,8 @@ public final class HomeActivity extends Activity {
         toggle.setThumbTintList(ColorStateList.valueOf(NEUTRAL_TEXT));
         toggle.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
                 new int[]{Color.rgb(74, 133, 187), NEUTRAL_RAISED}));
-        toggle.setChecked(prefs.getBoolean(key, defaultValue));
-        toggle.setOnCheckedChangeListener((view, checked) -> {
-            prefs.edit().putBoolean(key, checked).apply();
-            changed.run();
-        });
+        toggle.setChecked(checked);
+        toggle.setOnCheckedChangeListener((view, value) -> changed.accept(value));
         parent.addView(toggle, new LinearLayout.LayoutParams(-1, -2));
     }
 
@@ -847,6 +859,7 @@ public final class HomeActivity extends Activity {
             // OneOS Launcher3 has several LAUNCHER activities; the package launch intent may pick CarLink.
             Intent intent = new Intent(Intent.ACTION_MAIN).setClassName("com.android.launcher3", "com.android.launcher3.Launcher")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            StockHomeRedirectService.allowStockLauncherUntil = SystemClock.elapsedRealtime() + 5000;
             try { startActivity(intent); }
             catch (ActivityNotFoundException | SecurityException e) { Toast.makeText(this, "Штатный Launcher3 недоступен", Toast.LENGTH_SHORT).show(); }
         });
@@ -854,6 +867,42 @@ public final class HomeActivity extends Activity {
             try { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
             catch (ActivityNotFoundException e) { Toast.makeText(this, "Настройки недоступны", Toast.LENGTH_SHORT).show(); }
         });
+
+        LinearLayout redirect = settingsCard(content, "Кнопка «Домой» на панели климата",
+                "Панель всегда открывает штатный Launcher3. AtlasLauncher может сразу возвращать на себя, "
+                        + "Launcher3 при этом на мгновение мелькнёт. Когда функция выключена, служба не получает событий окон.");
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        settingsSwitch(redirect, "Возвращать на AtlasLauncher", prefs.getBoolean(StockHomeRedirectService.ENABLED, false), checked -> {
+            prefs.edit().putBoolean(StockHomeRedirectService.ENABLED, checked).apply();
+            updateStockHomeRedirectState();
+        });
+        settingsRedirectState = new LinearLayout(this);
+        settingsRedirectState.setOrientation(LinearLayout.VERTICAL);
+        settingsRedirectState.addView(label("", 14, NEUTRAL_MUTED, false));
+        settingsAction(settingsRedirectState, "Специальные возможности Android  ↗", () -> {
+            try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
+            catch (ActivityNotFoundException e) { Toast.makeText(this, "Специальные возможности недоступны", Toast.LENGTH_SHORT).show(); }
+        });
+        redirect.addView(settingsRedirectState, new LinearLayout.LayoutParams(-1, -2));
+        updateStockHomeRedirectState();
+    }
+
+    private void updateStockHomeRedirectState() {
+        if (settingsRedirectState == null) return;
+        boolean enabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(StockHomeRedirectService.ENABLED, false);
+        settingsRedirectState.setVisibility(enabled ? View.VISIBLE : View.GONE);
+        if (!enabled) return;
+        // Lists only connected services: after a force stop Android 11 keeps the service unbound until reboot.
+        String id = new ComponentName(this, StockHomeRedirectService.class).flattenToShortString();
+        boolean active = false;
+        for (AccessibilityServiceInfo info : getSystemService(AccessibilityManager.class)
+                .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK))
+            if (id.equals(info.getId())) active = true;
+        ((TextView) settingsRedirectState.getChildAt(0)).setText(active
+                ? "Служба работает."
+                : "Служба не работает: включите «" + getString(R.string.stock_home_redirect_label)
+                        + "» в специальных возможностях Android. Если она уже включена, но AtlasLauncher "
+                        + "останавливали принудительно, перезагрузите ГУ.");
     }
 
     private void setEditingWidgets(boolean editing) {

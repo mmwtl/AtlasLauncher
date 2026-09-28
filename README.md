@@ -60,6 +60,27 @@ ANDROID_USER_HOME="$PWD/.android-user" ./gradlew :app:assembleRelease -x :app:li
 
 После установки выберите AtlasLauncher в системном выборе домашнего приложения. В окне `⚙`, в карточке «Система», есть переход в настройки HOME для возврата к штатному Launcher3. Штатный APK удалять не требуется.
 
+### Кнопка «Домой» на панели климата
+
+Кнопки «Домой» и «Все приложения» на OEM-панели климата явно открывают `com.android.launcher3/com.android.launcher3.Launcher` (`JumpUtils.jumpToHome` в плагине SystemUI), а не текущий HOME, поэтому выбор AtlasLauncher как HOME на них не влияет. Для обхода есть необязательная служба специальных возможностей `StockHomeRedirectService`: когда на экране появляется окно `com.android.launcher3.Launcher`, она открывает AtlasLauncher. Launcher3 при этом на мгновение мелькает.
+
+Включение: `⚙` → «Кнопка «Домой» на панели климата» → «Возвращать на AtlasLauncher», затем в «Специальных возможностях Android» включите службу «AtlasLauncher: кнопка «Домой» панели климата» и подтвердите системный диалог. Строка под переключателем показывает, подключена ли служба. Если раздел специальных возможностей на ГУ скрыт, службу можно добавить через ADB, сохранив уже включённые службы (например, GInputBridge):
+
+```sh
+CUR=$(adb -s SERIAL shell settings get secure enabled_accessibility_services | tr -d '\r')
+adb -s SERIAL shell settings put secure enabled_accessibility_services "com.geely.atlaslauncher/com.mmwtl.atlaslauncher.StockHomeRedirectService:$CUR"
+```
+
+Если `CUR` равно `null`, укажите только компонент AtlasLauncher.
+
+Особенности:
+
+- Служба получает только события смены окон пакета `com.android.launcher3` и не читает содержимое экрана. Когда переключатель в AtlasLauncher выключен, она не запрашивает ни одного типа событий, и система ей ничего не передаёт; привязка к уже запущенному процессу HOME остаётся. Чтобы убрать службу совсем, выключите её в специальных возможностях Android.
+- Перехват срабатывает, только пока HOME — AtlasLauncher. После возврата HOME на Launcher3 кнопки панели снова открывают штатный лаунчер.
+- «Открыть штатный Launcher3» в настройках AtlasLauncher не перехватывается в течение 5 секунд.
+- «Все приложения» на панели тоже возвращают на рабочий стол AtlasLauncher: событие окна не содержит, какую кнопку нажали.
+- Принудительная остановка AtlasLauncher (`am force-stop`, «Остановить» в настройках приложения) в Android 11 отключает службу: система убирает её из включённых и не подключает снова до перезагрузки или обновления APK. После обычного сбоя процесса служба подключается сама.
+
 Подробный план и ограничения: [docs/launcher-prototype-plan.md](docs/launcher-prototype-plan.md). Исходные OEM APK для анализа: [reference-apks/README.md](reference-apks/README.md).
 
 Пошаговая проверка на ГУ и команды возврата к штатному HOME: [docs/head-unit-test-and-rollback.md](docs/head-unit-test-and-rollback.md). Этот протокол пока не выполнялся на ГУ.
