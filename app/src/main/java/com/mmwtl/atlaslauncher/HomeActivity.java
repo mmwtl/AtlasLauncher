@@ -89,6 +89,8 @@ public final class HomeActivity extends Activity {
     private static final int CLOCK_WIDGET_ID = -2;
     private static final int DOCK_WIDGET_ID = -3;
     private static final int WIDGET_CELL_DP = 96;
+    // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
+    private static final int CLIMATE_PANEL_PX = 150;
     private static final int MAX_ICON_DP = 160;
     private static final int CATALOG_ICON_DP = 96;
     private static final int WIDGET_PREVIEW_DP = 150;
@@ -221,7 +223,9 @@ public final class HomeActivity extends Activity {
         backdrop.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
         setContentView(backdrop);
         widgetRow = new FrameLayout(this);
-        backdrop.addView(widgetRow, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout.LayoutParams widgetRowParams = new FrameLayout.LayoutParams(-1, -1);
+        widgetRowParams.bottomMargin = CLIMATE_PANEL_PX;
+        backdrop.addView(widgetRow, widgetRowParams);
         widgetRow.setClickable(true);
         widgetRow.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
         widgetRow.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
