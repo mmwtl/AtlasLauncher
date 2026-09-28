@@ -118,6 +118,7 @@ public final class HomeActivity extends Activity {
     private AppWidgetHost widgetHost;
     private LinearLayout favoriteRow;
     private FrameLayout widgetRow;
+    private View dropTarget;
     private LinearLayout widgetControls;
     private ImageView wallpaperView;
     private LinearLayout favoritePanel;
@@ -1374,6 +1375,10 @@ public final class HomeActivity extends Activity {
         if (grid == null) return;
         // Whole rows end at the climate panel; the leftover goes above them.
         widgetRow.setPadding(0, widgetRow.getHeight() - dp(grid.height), 0, 0);
+        // Shows where a dragged or resized widget will land; stays below the widgets.
+        dropTarget = new View(this);
+        dropTarget.setVisibility(View.GONE);
+        widgetRow.addView(dropTarget);
         boolean changed = false;
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (!prefs.getBoolean(DOCK_WIDGET_MIGRATED, false)) {
@@ -1790,45 +1795,37 @@ public final class HomeActivity extends Activity {
                         placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
                         updateClockWidget(hostView, placement);
                     }
+                    WidgetGrid grid = widgetGrid();
+                    WidgetPlacement target = grid == null ? null : snappedPlacement(grid);
+                    boolean fits = target != null;
+                    int color = fits ? ACCENT : Color.rgb(239, 83, 80);
+                    FrameLayout.LayoutParams targetParams = new FrameLayout.LayoutParams(
+                            dp(fits ? target.width : originalWidth), dp(fits ? target.height : originalHeight));
+                    targetParams.leftMargin = dp(fits ? target.x : originalX);
+                    targetParams.topMargin = dp(fits ? target.y : originalY);
+                    dropTarget.setLayoutParams(targetParams);
+                    dropTarget.setBackground(round(Color.argb(64, Color.red(color), Color.green(color), Color.blue(color)), color, 12));
+                    dropTarget.setVisibility(View.VISIBLE);
                     return true;
                 }
                 if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                    dropTarget.setVisibility(View.GONE);
                     WidgetGrid grid = widgetGrid();
-                    if (event.getActionMasked() == MotionEvent.ACTION_CANCEL || grid == null) {
+                    WidgetPlacement target = event.getActionMasked() == MotionEvent.ACTION_CANCEL || grid == null
+                            ? null : snappedPlacement(grid);
+                    if (target == null) {
                         placement.x = originalX;
                         placement.y = originalY;
                         placement.width = originalWidth;
                         placement.height = originalHeight;
                     } else {
-                        List<WidgetPlacement> occupied = new ArrayList<>(widgets);
-                        occupied.remove(placement);
-                        int columns = resizing ? grid.nearestSpan(placement.width, grid.cellWidth, grid.columns)
-                                : grid.span(placement.width, grid.cellWidth, grid.columns);
-                        int rows = resizing ? grid.nearestSpan(placement.height, grid.cellHeight, grid.rows)
-                                : grid.span(placement.height, grid.cellHeight, grid.rows);
-                        Point slot;
-                        if (resizing) {
-                            columns = Math.max(columns, grid.span(minWidth, grid.cellWidth, grid.columns));
-                            rows = Math.max(rows, grid.span(minHeight, grid.cellHeight, grid.rows));
-                            int column = originalX / grid.cellWidth;
-                            int row = originalY / grid.cellHeight;
-                            slot = column + columns <= grid.columns && row + rows <= grid.rows &&
-                                    gridSlotFree(grid, column, row, columns, rows, occupied)
-                                    ? new Point(column, row) : null;
-                        } else {
-                            slot = findGridSlot(grid, placement.x, placement.y, columns, rows, occupied);
-                        }
-                        if (slot == null) {
-                            placement.x = originalX;
-                            placement.y = originalY;
-                            placement.width = originalWidth;
-                            placement.height = originalHeight;
-                        } else {
-                            setGridPlacement(placement, grid, slot, columns, rows);
-                            if (placement.id == CLOCK_WIDGET_ID && resizing)
-                                placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
-                            saveWidgets();
-                        }
+                        placement.x = target.x;
+                        placement.y = target.y;
+                        placement.width = target.width;
+                        placement.height = target.height;
+                        if (placement.id == CLOCK_WIDGET_ID && resizing)
+                            placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
+                        saveWidgets();
                     }
                     if (placement.id == CLOCK_WIDGET_ID && resizing) {
                         placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
@@ -1846,6 +1843,32 @@ public final class HomeActivity extends Activity {
                     return true;
                 }
                 return true;
+            }
+
+            // The grid position the widget takes on release, or null when it returns to its original place.
+            private WidgetPlacement snappedPlacement(WidgetGrid grid) {
+                List<WidgetPlacement> occupied = new ArrayList<>(widgets);
+                occupied.remove(placement);
+                int columns = resizing ? grid.nearestSpan(placement.width, grid.cellWidth, grid.columns)
+                        : grid.span(placement.width, grid.cellWidth, grid.columns);
+                int rows = resizing ? grid.nearestSpan(placement.height, grid.cellHeight, grid.rows)
+                        : grid.span(placement.height, grid.cellHeight, grid.rows);
+                Point slot;
+                if (resizing) {
+                    columns = Math.max(columns, grid.span(minWidth, grid.cellWidth, grid.columns));
+                    rows = Math.max(rows, grid.span(minHeight, grid.cellHeight, grid.rows));
+                    int column = originalX / grid.cellWidth;
+                    int row = originalY / grid.cellHeight;
+                    slot = column + columns <= grid.columns && row + rows <= grid.rows &&
+                            gridSlotFree(grid, column, row, columns, rows, occupied)
+                            ? new Point(column, row) : null;
+                } else {
+                    slot = findGridSlot(grid, placement.x, placement.y, columns, rows, occupied);
+                }
+                if (slot == null) return null;
+                WidgetPlacement target = new WidgetPlacement(placement.id, 0, 0, 0, 0);
+                setGridPlacement(target, grid, slot, columns, rows);
+                return target;
             }
         };
     }
