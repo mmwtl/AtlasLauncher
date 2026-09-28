@@ -42,6 +42,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.BaseAdapter;
 import android.widget.Button;
@@ -226,12 +227,14 @@ public final class HomeActivity extends Activity {
         FrameLayout backdrop = new FrameLayout(this);
         wallpaperView = new ImageView(this);
         wallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        wallpaperView.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{Color.argb(45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
+        wallpaperView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
+                updateStatusBarIcons();
+        });
         backdrop.addView(wallpaperView, new FrameLayout.LayoutParams(-1, -1));
         showWallpaper();
-        View scrim = new View(this);
-        scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{Color.argb(45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
-        backdrop.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
         setContentView(backdrop);
         FrameLayout content = new FrameLayout(this);
         content.setFitsSystemWindows(true);
@@ -942,6 +945,33 @@ public final class HomeActivity extends Activity {
         }
         if (settingsWallpaperPreview != null) settingsWallpaperPreview.setImageDrawable(wallpaperView.getDrawable().getConstantState().newDrawable());
         markWallpaperPreset(saved);
+        updateStatusBarIcons();
+    }
+
+    private void updateStatusBarIcons() {
+        WindowInsets insets = wallpaperView.getRootWindowInsets();
+        int width = wallpaperView.getWidth();
+        if (insets == null || width == 0 || insets.getStableInsetTop() == 0) return;
+        // Sample the scrimmed wallpaper under the status bar at 1/8 scale.
+        Bitmap sample = Bitmap.createBitmap((width + 7) / 8, (insets.getStableInsetTop() + 7) / 8, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(sample);
+        canvas.scale(1 / 8f, 1 / 8f);
+        wallpaperView.draw(canvas);
+        int[] pixels = new int[sample.getWidth() * sample.getHeight()];
+        sample.getPixels(pixels, 0, sample.getWidth(), 0, 0, sample.getWidth(), sample.getHeight());
+        sample.recycle();
+        // Launcher3 picks dark icons by WallpaperColors.HINT_SUPPORTS_DARK_TEXT; this is the Android 11 rule.
+        float lightness = 0;
+        int darkPixels = 0;
+        for (int pixel : pixels) {
+            int r = Color.red(pixel), g = Color.green(pixel), b = Color.blue(pixel);
+            lightness += (Math.max(r, Math.max(g, b)) + Math.min(r, Math.min(g, b))) / 510f;
+            if ((Color.luminance(pixel) + 0.05f) / 0.05f <= 6) darkPixels++;
+        }
+        boolean darkIcons = lightness / pixels.length > 0.75f && darkPixels < (int) (pixels.length * 0.025f);
+        View decor = getWindow().getDecorView();
+        int flags = decor.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        decor.setSystemUiVisibility(darkIcons ? flags | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR : flags);
     }
 
     private void buildDockSettings(LinearLayout parent) {
