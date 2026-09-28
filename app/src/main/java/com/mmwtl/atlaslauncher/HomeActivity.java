@@ -8,8 +8,11 @@ import android.appwidget.AppWidgetHostView;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProviderInfo;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.pm.PackageManager;
@@ -115,10 +118,20 @@ public final class HomeActivity extends Activity {
     private LinearLayout appsTile;
     private boolean editingWidgets;
     private Dialog settingsDialog;
+    private Dialog appDrawer;
     private int settingsPage;
     private ImageView settingsWallpaperPreview;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     private final Runnable renderWidgets = this::showWidgets;
+    private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            loadApps();
+            showFavorites();
+            // An uninstalled provider's widget ID is gone; drop its stale view and placement.
+            if (Intent.ACTION_PACKAGE_REMOVED.equals(intent.getAction())
+                    && !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) scheduleShowWidgets();
+        }
+    };
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -129,6 +142,17 @@ public final class HomeActivity extends Activity {
             pendingWidgetId = state.getInt("pendingWidgetId", AppWidgetManager.INVALID_APPWIDGET_ID);
         }
         loadSavedState();
+        // Power loss during binding or configuration leaves bound IDs that no placement owns.
+        for (int id : widgetHost.getAppWidgetIds())
+            if (id != pendingWidgetId && widgets.stream().noneMatch(placement -> placement.id == id))
+                widgetHost.deleteAppWidgetId(id);
+        loadApps();
+        IntentFilter packages = new IntentFilter();
+        packages.addAction(Intent.ACTION_PACKAGE_ADDED);
+        packages.addAction(Intent.ACTION_PACKAGE_REMOVED);
+        packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        packages.addDataScheme("package");
+        registerReceiver(packageReceiver, packages);
         buildHome();
         if (state != null && state.getBoolean("settingsOpen"))
             widgetRow.post(() -> showSettings(state.getInt("settingsPage", 0)));
@@ -150,9 +174,16 @@ public final class HomeActivity extends Activity {
 
     @Override public void onResume() {
         super.onResume();
-        loadApps();
-        showFavorites();
-        if (widgetRow.getWidth() > 0 && widgetRow.getHeight() > 0) scheduleShowWidgets();
+        // The system 12/24-hour setting may have changed while HOME was in the background.
+        updateDesktopClock();
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // Home returns to a clean desktop, like the stock launcher.
+        if (appDrawer != null) appDrawer.dismiss();
+        if (settingsDialog != null) settingsDialog.dismiss();
+        if (editingWidgets) setEditingWidgets(false);
     }
 
     @Override public void onStop() {
@@ -161,7 +192,9 @@ public final class HomeActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        unregisterReceiver(packageReceiver);
         if (settingsDialog != null) settingsDialog.dismiss();
+        if (appDrawer != null) appDrawer.dismiss();
         super.onDestroy();
     }
 
@@ -289,8 +322,6 @@ public final class HomeActivity extends Activity {
         }
         Collator collator = Collator.getInstance(Locale.getDefault());
         Collections.sort(apps, (a, b) -> collator.compare(a.label, b.label));
-        boolean changed = favorites.removeIf(name -> findApp(name) == null);
-        if (changed) saveFavorites();
     }
 
     private AppEntry findApp(String flattened) {
@@ -310,12 +341,7 @@ public final class HomeActivity extends Activity {
         ((ImageView) appsTile.getChildAt(0)).setLayoutParams(new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
         appsTile.setPadding(dp(6), dp(tilePadding), dp(6), dp(tilePadding));
         ((TextView) appsTile.getChildAt(1)).setVisibility(showLabels ? View.VISIBLE : View.GONE);
-        if (favorites.isEmpty()) {
-            TextView empty = label("Откройте настройки дока, чтобы добавить приложения", 14, NEUTRAL_MUTED, false);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(dp(14), dp(14), dp(14), dp(14));
-            favoriteRow.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
-        }
+        // Unavailable apps stay pinned: they may be disabled or updating, not uninstalled.
         for (String name : favorites) {
             AppEntry app = findApp(name);
             if (app == null) continue;
@@ -324,9 +350,16 @@ public final class HomeActivity extends Activity {
             item.setOnLongClickListener(v -> { showDockSettings(); return true; });
             favoriteRow.addView(item, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
         }
+        int shownApps = favoriteRow.getChildCount();
+        if (shownApps == 0) {
+            TextView empty = label("Откройте настройки дока, чтобы добавить приложения", 14, NEUTRAL_MUTED, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(14), dp(14), dp(14), dp(14));
+            favoriteRow.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
+        }
         favoriteRow.addView(appsTile, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
-        int visibleTiles = favorites.size() + (appsTile.getVisibility() == View.VISIBLE ? 1 : 0);
-        favoriteRow.setMinimumWidth(dp(visibleTiles * tileWidth + (favorites.isEmpty() ? 240 : 0)));
+        int visibleTiles = shownApps + (appsTile.getVisibility() == View.VISIBLE ? 1 : 0);
+        favoriteRow.setMinimumWidth(dp(visibleTiles * tileWidth + (shownApps == 0 ? 240 : 0)));
     }
 
     private LinearLayout dockTile(Drawable drawable, String title) {
@@ -381,7 +414,7 @@ public final class HomeActivity extends Activity {
     }
 
     private void showAppDrawer() {
-        loadApps();
+        if (appDrawer != null) return;
         int iconSize = CATALOG_ICON_DP;
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -395,7 +428,9 @@ public final class HomeActivity extends Activity {
         titleText.addView(label("Все приложения", 24, NEUTRAL_TEXT, true));
         titleRow.addView(titleText, new LinearLayout.LayoutParams(0, -2, 1));
         Dialog dialog = new Dialog(this);
+        appDrawer = dialog;
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setOnDismissListener(d -> appDrawer = null);
         Button close = neutralButton("×");
         close.setContentDescription("Закрыть список приложений");
         close.setTextSize(22);
@@ -502,7 +537,6 @@ public final class HomeActivity extends Activity {
     }
 
     private void chooseActivityPackage(Runnable onChanged) {
-        loadApps();
         List<String> packages = new ArrayList<>();
         List<String> titles = new ArrayList<>();
         for (AppEntry app : apps) {
@@ -586,7 +620,6 @@ public final class HomeActivity extends Activity {
 
     private void showSettings(int page) {
         if (settingsDialog != null && settingsDialog.isShowing()) return;
-        loadApps();
         settingsPage = page;
         Dialog dialog = new Dialog(this);
         settingsDialog = dialog;
@@ -816,9 +849,11 @@ public final class HomeActivity extends Activity {
             catch (ActivityNotFoundException e) { Toast.makeText(this, "Настройки HOME недоступны", Toast.LENGTH_SHORT).show(); }
         });
         settingsAction(system, "Открыть штатный Launcher3  ↗", () -> {
-            Intent intent = getPackageManager().getLaunchIntentForPackage("com.android.launcher3");
-            if (intent != null) startActivity(intent);
-            else Toast.makeText(this, "Штатный Launcher3 недоступен", Toast.LENGTH_SHORT).show();
+            // OneOS Launcher3 has several LAUNCHER activities; the package launch intent may pick CarLink.
+            Intent intent = new Intent(Intent.ACTION_MAIN).setClassName("com.android.launcher3", "com.android.launcher3.Launcher")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try { startActivity(intent); }
+            catch (ActivityNotFoundException | SecurityException e) { Toast.makeText(this, "Штатный Launcher3 недоступен", Toast.LENGTH_SHORT).show(); }
         });
         settingsAction(system, "Настройки устройства  ↗", () -> {
             try { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
@@ -928,14 +963,15 @@ public final class HomeActivity extends Activity {
         };
         for (int i = 0; i < favorites.size(); i++) {
             AppEntry app = findApp(favorites.get(i));
-            if (app == null) continue;
+            String title = app != null ? app.label
+                    : ComponentName.unflattenFromString(favorites.get(i)).getPackageName() + " · недоступно";
             int index = i;
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
             ImageView icon = new ImageView(this);
-            icon.setImageDrawable(app.icon);
+            if (app != null) icon.setImageDrawable(app.icon);
             row.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
-            TextView name = label(app.label, 18, NEUTRAL_TEXT, false);
+            TextView name = label(title, 18, app != null ? NEUTRAL_TEXT : NEUTRAL_MUTED, false);
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1);
@@ -943,19 +979,19 @@ public final class HomeActivity extends Activity {
             row.addView(name, nameParams);
             Button left = neutralButton("←");
             left.setTextSize(22);
-            left.setContentDescription("Передвинуть " + app.label + " влево");
+            left.setContentDescription("Передвинуть " + title + " влево");
             left.setEnabled(i > 0);
             left.setOnClickListener(v -> { Collections.swap(favorites, index, index - 1); refresh.run(); });
             row.addView(left, new LinearLayout.LayoutParams(dp(56), dp(56)));
             Button right = neutralButton("→");
             right.setTextSize(22);
-            right.setContentDescription("Передвинуть " + app.label + " вправо");
+            right.setContentDescription("Передвинуть " + title + " вправо");
             right.setEnabled(i < favorites.size() - 1);
             right.setOnClickListener(v -> { Collections.swap(favorites, index, index + 1); refresh.run(); });
             row.addView(right, new LinearLayout.LayoutParams(dp(56), dp(56)));
             Button remove = neutralButton("×");
             remove.setTextSize(22);
-            remove.setContentDescription("Убрать " + app.label + " из дока");
+            remove.setContentDescription("Убрать " + title + " из дока");
             remove.setOnClickListener(v -> { favorites.remove(index); refresh.run(); });
             row.addView(remove, new LinearLayout.LayoutParams(dp(56), dp(56)));
             selectedApps.addView(row, new LinearLayout.LayoutParams(-1, dp(64)));
@@ -1031,18 +1067,13 @@ public final class HomeActivity extends Activity {
             finishAddingWidget();
             return;
         }
-        Intent configure = new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE);
-        configure.setComponent(provider.configure);
-        configure.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId);
-        try { startActivityForResult(configure, CONFIGURE_WIDGET); }
+        // The host API also opens configuration activities that are not exported.
+        try { widgetHost.startAppWidgetConfigureActivityForResult(this, pendingWidgetId, 0, CONFIGURE_WIDGET, null); }
         catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Настройка виджета недоступна", Toast.LENGTH_SHORT).show(); }
     }
 
-    private void reconfigureWidget(WidgetPlacement placement, AppWidgetProviderInfo provider) {
-        Intent configure = new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE);
-        configure.setComponent(provider.configure);
-        configure.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, placement.id);
-        try { startActivityForResult(configure, RECONFIGURE_WIDGET); }
+    private void reconfigureWidget(WidgetPlacement placement) {
+        try { widgetHost.startAppWidgetConfigureActivityForResult(this, placement.id, 0, RECONFIGURE_WIDGET, null); }
         catch (ActivityNotFoundException | SecurityException e) {
             Toast.makeText(this, "Настройка виджета недоступна", Toast.LENGTH_SHORT).show();
         }
@@ -1372,6 +1403,17 @@ public final class HomeActivity extends Activity {
         }
     }
 
+    private void updateDesktopClock() {
+        View desktopClock = widgetRow.findViewWithTag(CLOCK_WIDGET_ID);
+        if (desktopClock == null) return;
+        for (WidgetPlacement placement : widgets) {
+            if (placement.id == CLOCK_WIDGET_ID) {
+                updateClockWidget(desktopClock, placement);
+                return;
+            }
+        }
+    }
+
     private float clockTimeWidth(TextClock clock, TextClock period) {
         // Reserve the widest digits so the block does not change width every minute.
         float digitWidth = 0;
@@ -1395,15 +1437,7 @@ public final class HomeActivity extends Activity {
         preview.addView(clock, new LinearLayout.LayoutParams(-1, dp(156)));
         Runnable changed = () -> {
             updateClockWidget(clock, previewPlacement);
-            View desktopClock = widgetRow.findViewWithTag(CLOCK_WIDGET_ID);
-            if (desktopClock != null) {
-                for (WidgetPlacement placement : widgets) {
-                    if (placement.id == CLOCK_WIDGET_ID) {
-                        updateClockWidget(desktopClock, placement);
-                        break;
-                    }
-                }
-            }
+            updateDesktopClock();
         };
         settingsToggle(preview, "Показывать дату", CLOCK_DATE, true, changed);
         LinearLayout format = settingsCard(content, "Формат времени", null);
@@ -1511,7 +1545,7 @@ public final class HomeActivity extends Activity {
             settings.setOnClickListener(v -> {
                 if (placement.id == CLOCK_WIDGET_ID) showSettings(2);
                 else if (placement.id == DOCK_WIDGET_ID) showDockSettings();
-                else reconfigureWidget(placement, info);
+                else reconfigureWidget(placement);
             });
             container.addView(settings, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.LEFT));
         }
