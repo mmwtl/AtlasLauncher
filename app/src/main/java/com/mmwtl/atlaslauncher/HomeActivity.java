@@ -124,6 +124,7 @@ public final class HomeActivity extends Activity {
     private FrameLayout widgetRow;
     private View dropTarget;
     private LinearLayout widgetControls;
+    private Button settingsButton;
     private ImageView wallpaperView;
     private LinearLayout favoritePanel;
     private LinearLayout appsTile;
@@ -251,14 +252,15 @@ public final class HomeActivity extends Activity {
                 scheduleShowWidgets();
         });
 
-        Button settings = button("⚙");
-        settings.setContentDescription("Настройки и возврат к штатному HOME");
-        settings.setTextSize(28);
-        settings.setBackground(round(SURFACE, Color.TRANSPARENT, 38));
-        settings.setOnClickListener(v -> showSettings());
+        settingsButton = button("⚙");
+        settingsButton.setContentDescription("Настройки и возврат к штатному HOME");
+        settingsButton.setTextSize(28);
+        settingsButton.setBackground(round(SURFACE, Color.TRANSPARENT, 38));
+        settingsButton.setVisibility(editingWidgets ? View.VISIBLE : View.GONE);
+        settingsButton.setOnClickListener(v -> showSettings());
         FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(dp(76), dp(76), Gravity.TOP | Gravity.RIGHT);
         settingsParams.setMargins(0, dp(16), dp(20), 0);
-        content.addView(settings, settingsParams);
+        content.addView(settingsButton, settingsParams);
 
         widgetControls = new LinearLayout(this);
         widgetControls.setGravity(Gravity.CENTER_VERTICAL);
@@ -836,12 +838,6 @@ public final class HomeActivity extends Activity {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(WALLPAPER).apply();
             showWallpaper();
         });
-        LinearLayout desktop = settingsCard(content, "Рабочий стол",
-                "Добавляйте и перемещайте виджеты. Часы, док и другие виджеты настраиваются кнопкой ⚙ на самом виджете.");
-        settingsAction(desktop, "Редактировать рабочий стол  →", () -> {
-            dialog.dismiss();
-            setEditingWidgets(true);
-        });
     }
 
     private void markWallpaperPreset(String wallpaper) {
@@ -916,6 +912,7 @@ public final class HomeActivity extends Activity {
     private void setEditingWidgets(boolean editing) {
         editingWidgets = editing;
         widgetControls.setVisibility(editing ? View.VISIBLE : View.GONE);
+        settingsButton.setVisibility(editing ? View.VISIBLE : View.GONE);
         showWidgets();
     }
 
