@@ -106,7 +106,6 @@ public final class HomeActivity extends Activity {
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     private static final String DOCK_APPS = "dock_apps";
-    private static final String DOCK_COMPACT = "dock_compact";
     private static final String DRAWER_ICON_SIZE = "drawer_icon_size";
     private static final String DOCK_LABELS = "drawer_labels";
     private static final String DRAWER_ACTIVITY = "drawer_activity";
@@ -353,7 +352,7 @@ public final class HomeActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
         boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
-        int tilePadding = prefs.getBoolean(DOCK_COMPACT, false) && !showLabels ? 4 : 8;
+        int tilePadding = showLabels ? 8 : 4;
         int tileWidth = Math.max(112, iconSize + 12);
         int tileHeight = iconSize + 2 * tilePadding + (showLabels ? 44 : 0);
         ((ImageView) appsTile.getChildAt(0)).setLayoutParams(new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
@@ -383,7 +382,7 @@ public final class HomeActivity extends Activity {
     private LinearLayout dockTile(Drawable drawable, String title) {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
-        int verticalPadding = prefs.getBoolean(DOCK_COMPACT, false) && !showLabels ? 4 : 8;
+        int verticalPadding = showLabels ? 8 : 4;
         LinearLayout tile = new LinearLayout(this);
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(Gravity.CENTER);
@@ -942,7 +941,6 @@ public final class HomeActivity extends Activity {
     private void buildDockSettings(LinearLayout parent) {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         LinearLayout content = settingsCard(parent, "Внешний вид", "Размер значков и плотность дока на рабочем столе.");
-        settingsToggle(content, "Компактный док", DOCK_COMPACT, false, this::showWidgets);
         settingsToggle(content, "Подписи в доке", DOCK_LABELS, true, this::showWidgets);
         int size = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
         LinearLayout.LayoutParams sizeParams = new LinearLayout.LayoutParams(-1, -2);
@@ -1071,8 +1069,7 @@ public final class HomeActivity extends Activity {
     private void updateDock() {
         if (favoritePanel == null) return;
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        boolean compact = prefs.getBoolean(DOCK_COMPACT, false);
-        int verticalPadding = compact ? (prefs.getBoolean(DOCK_LABELS, true) ? 8 : 4) : 16;
+        int verticalPadding = prefs.getBoolean(DOCK_LABELS, true) ? 8 : 4;
         favoritePanel.setPadding(dp(12), dp(verticalPadding), dp(12), dp(verticalPadding));
         appsTile.setVisibility(prefs.getBoolean(DOCK_APPS, true) ? View.VISIBLE : View.GONE);
     }
@@ -1080,11 +1077,9 @@ public final class HomeActivity extends Activity {
     private int dockRequiredHeight(SharedPreferences prefs) {
         int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
         boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
-        boolean compact = prefs.getBoolean(DOCK_COMPACT, false);
-        int tilePadding = compact && !showLabels ? 4 : 8;
-        int panelPadding = compact ? (showLabels ? 8 : 4) : 16;
+        int padding = showLabels ? 8 : 4;
         Rect inset = dockInset();
-        return iconSize + 2 * tilePadding + (showLabels ? 44 : 0) + 2 * panelPadding
+        return iconSize + 4 * padding + (showLabels ? 44 : 0)
                 + pxToDp(inset.top + inset.bottom);
     }
 
