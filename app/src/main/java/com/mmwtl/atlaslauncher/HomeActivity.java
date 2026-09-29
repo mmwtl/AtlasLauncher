@@ -250,8 +250,9 @@ public final class HomeActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
-        if (editingWidgets) setEditingWidgets(false);
         // Keep the HOME surface open; dialogs handle Back in their own windows.
+        // Back also stays in edit mode: the OneOS edge swipe injects Back on every
+        // non-Launcher3 app, so a swipe from the screen edge would end editing.
     }
 
     private void buildHome() {
