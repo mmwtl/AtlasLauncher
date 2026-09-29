@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <queries>
         <package android:name="com.android.launcher3" />
+        <!-- OneOS media center for the media widget. -->
+        <package android:name="com.geely.mediacenterservice" />
         <!-- Widget layouts and view IDs: fixed-size OEM widgets, the media widget's source switch. -->
         <intent>
             <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

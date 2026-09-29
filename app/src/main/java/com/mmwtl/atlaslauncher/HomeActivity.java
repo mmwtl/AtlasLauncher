@@ -894,6 +894,10 @@ public final class HomeActivity extends Activity {
             try { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
             catch (ActivityNotFoundException e) { Toast.makeText(this, "Настройки недоступны", Toast.LENGTH_SHORT).show(); }
         });
+        settingsAction(system, "Диагностика медиацентра OneOS", () -> MediaCenterProbe.run(this, report -> {
+            if (!isFinishing()) new AlertDialog.Builder(this).setTitle("Медиацентр OneOS").setMessage(report)
+                    .setPositiveButton("Закрыть", null).show();
+        }));
 
         LinearLayout redirect = settingsCard(content, "Кнопка «Домой» на панели климата",
                 "Панель всегда открывает штатный Launcher3. AtlasLauncher может сразу возвращать на себя, "
