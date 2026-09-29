@@ -40,6 +40,7 @@ import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -1137,6 +1138,7 @@ public final class HomeActivity extends Activity {
     private void chooseWidget() {
         PackageManager pm = getPackageManager();
         List<AppWidgetProviderInfo> providers = widgetManager.getInstalledProviders();
+        providers.forEach(this::fitMediaWidget);
         Collator collator = Collator.getInstance(Locale.getDefault());
         Collections.sort(providers, (a, b) -> collator.compare(String.valueOf(a.loadLabel(pm)), String.valueOf(b.loadLabel(pm))));
         LinearLayout content = new LinearLayout(this);
@@ -1178,8 +1180,11 @@ public final class HomeActivity extends Activity {
                 image.setScaleType(ImageView.ScaleType.FIT_CENTER);
                 image.setImageBitmap(previews[position - 2]);
                 String details = provider.provider.getPackageName();
-                try { details = String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(details, 0))); }
-                catch (PackageManager.NameNotFoundException ignored) { }
+                try {
+                    CharSequence appLabel = pm.getApplicationLabel(pm.getApplicationInfo(details, 0));
+                    // The OneOS media widget app has an empty label.
+                    if (!TextUtils.isEmpty(appLabel)) details = String.valueOf(appLabel);
+                } catch (PackageManager.NameNotFoundException ignored) { }
                 if (cells != null) {
                     Point padding = widgetPaddingDp(provider);
                     int width = pxToDp(Math.max(provider.minWidth, provider.minResizeWidth)) + padding.x;
@@ -1429,7 +1434,7 @@ public final class HomeActivity extends Activity {
 
     private void finishAddingWidget() {
         if (pendingWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
-        AppWidgetProviderInfo info = widgetManager.getAppWidgetInfo(pendingWidgetId);
+        AppWidgetProviderInfo info = fitMediaWidget(widgetManager.getAppWidgetInfo(pendingWidgetId));
         if (info == null) { cancelPendingWidget(); return; }
         WidgetGrid grid = widgetGrid();
         if (grid == null) { widgetRow.post(this::finishAddingWidget); return; }
@@ -1489,7 +1494,7 @@ public final class HomeActivity extends Activity {
             WidgetPlacement placement = iterator.next();
             boolean clockWidget = placement.id == CLOCK_WIDGET_ID;
             boolean dockWidget = placement.id == DOCK_WIDGET_ID;
-            AppWidgetProviderInfo info = clockWidget || dockWidget ? null : widgetManager.getAppWidgetInfo(placement.id);
+            AppWidgetProviderInfo info = clockWidget || dockWidget ? null : fitMediaWidget(widgetManager.getAppWidgetInfo(placement.id));
             if (!clockWidget && !dockWidget && info == null) {
                 widgetHost.deleteAppWidgetId(placement.id);
                 iterator.remove();
@@ -1555,15 +1560,18 @@ public final class HomeActivity extends Activity {
             } else {
                 AppWidgetHostView widgetView = widgetHost.createView(this, placement.id, info);
                 widgetView.setAppWidget(placement.id, info);
+                if (isMediaWidget(info)) widgetView.setPadding(0, 0, 0, 0);
                 hostView = widgetView;
             }
-            FrameLayout container = info != null && MEDIA_WIDGET_PACKAGE.equals(info.provider.getPackageName())
+            FrameLayout container = isMediaWidget(info)
                     ? new TapFrame(this, event -> {
                         if (!editingWidgets && touchesSourceSwitch(hostView, event)) showSourceList(hostView);
                     })
                     : new FrameLayout(this);
             hostView.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
-            FrameLayout.LayoutParams hostParams = new FrameLayout.LayoutParams(-1, -1);
+            FrameLayout.LayoutParams hostParams = isMediaWidget(info)
+                    ? new FrameLayout.LayoutParams(info.minWidth, info.minHeight, Gravity.CENTER)
+                    : new FrameLayout.LayoutParams(-1, -1);
             if (dockWidget) {
                 // Inset the dock like AppWidgetHostView insets regular widgets.
                 Rect inset = dockInset();
@@ -1585,6 +1593,28 @@ public final class HomeActivity extends Activity {
             empty.setOnClickListener(v -> chooseWidget());
             widgetRow.addView(empty, new FrameLayout.LayoutParams(dp(220), dp(64), Gravity.CENTER));
         }
+    }
+
+    private static boolean isMediaWidget(AppWidgetProviderInfo info) {
+        return info != null && MEDIA_WIDGET_PACKAGE.equals(info.provider.getPackageName());
+    }
+
+    /**
+     * The OneOS media widgets are drawn for Launcher3 without host padding, and their layouts have a fixed
+     * pixel size larger than the declared minimum; use that size so the rounded card is never cut.
+     */
+    private AppWidgetProviderInfo fitMediaWidget(AppWidgetProviderInfo info) {
+        if (!isMediaWidget(info)) return info;
+        try {
+            Context context = createPackageContext(MEDIA_WIDGET_PACKAGE, 0);
+            ViewGroup.LayoutParams params = LayoutInflater.from(context)
+                    .inflate(info.initialLayout, new FrameLayout(context), false).getLayoutParams();
+            if (params.width > 0 && params.height > 0) {
+                info.minWidth = info.minResizeWidth = params.width;
+                info.minHeight = info.minResizeHeight = params.height;
+            }
+        } catch (PackageManager.NameNotFoundException | RuntimeException ignored) { }
+        return info;
     }
 
     private boolean touchesSourceSwitch(View widget, MotionEvent event) {
@@ -1637,11 +1667,16 @@ public final class HomeActivity extends Activity {
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         popup.setOutsideTouchable(true);
         popup.setFocusable(true);
+        // Like Launcher3, anchor the list to the card itself, centred when their widths differ.
+        View card = widget instanceof ViewGroup && ((ViewGroup) widget).getChildCount() > 0
+                ? ((ViewGroup) widget).getChildAt(0) : widget;
+        content.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         int[] location = new int[2];
-        widget.getLocationOnScreen(location);
-        // Bottom gravity keeps the list right above the widget while its rows load.
-        popup.showAtLocation(widgetRow, Gravity.BOTTOM | Gravity.START, location[0] + widget.getPaddingLeft(),
-                getWindow().getDecorView().getHeight() - location[1] - widget.getPaddingTop());
+        card.getLocationOnScreen(location);
+        // Bottom gravity keeps the list right above the card while its rows load.
+        popup.showAtLocation(widgetRow, Gravity.BOTTOM | Gravity.START,
+                location[0] + (card.getWidth() - content.getMeasuredWidth()) / 2,
+                getWindow().getDecorView().getHeight() - location[1]);
         sourceListPopup = popup;
     }
 
@@ -1850,6 +1885,7 @@ public final class HomeActivity extends Activity {
     }
 
     private Point widgetPaddingDp(AppWidgetProviderInfo info) {
+        if (isMediaWidget(info)) return new Point(0, 0);
         Rect padding = AppWidgetHostView.getDefaultPaddingForWidget(this, info.provider, null);
         return new Point(pxToDp(padding.left + padding.right), pxToDp(padding.top + padding.bottom));
     }
