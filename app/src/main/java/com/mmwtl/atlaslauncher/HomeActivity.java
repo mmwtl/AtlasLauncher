@@ -18,6 +18,7 @@ import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
+import android.util.Log;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
@@ -165,6 +166,7 @@ public final class HomeActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        startOemServices();
         widgetManager = AppWidgetManager.getInstance(this);
         widgetHost = new AppWidgetHost(this, HOST_ID) {
             @Override protected AppWidgetHostView onCreateView(Context context, int id, AppWidgetProviderInfo info) {
@@ -192,6 +194,19 @@ public final class HomeActivity extends Activity {
         buildHome();
         if (state != null && state.getBoolean("settingsOpen"))
             widgetRow.post(() -> showSettings(state.getInt("settingsPage", 0)));
+    }
+
+    // Stock Launcher3 starts these from onCreate; without them the cluster gets no media/phone info after boot.
+    private void startOemServices() {
+        for (ComponentName service : new ComponentName[] {
+                new ComponentName("com.geely.dimservice", "com.geely.dimservice.service.DimService"),
+                new ComponentName("com.geely.inputservice", "com.geely.inputservice.InputService")}) {
+            try {
+                startService(new Intent().setComponent(service));
+            } catch (SecurityException | IllegalStateException e) {
+                Log.w("AtlasLauncher", "Cannot start " + service.flattenToShortString(), e);
+            }
+        }
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
