@@ -13,12 +13,14 @@
 | `SCS_global_2.1.20260829.1509.apk` | `com.example.climateseats` | Сравнение стороннего способа скрывать OEM-климат; это не основа прототипа | `~/Downloads/SCS_global_2.1.20260829.1509.apk` | `2c33cedf3a4868287cf237d1f908f85b0288891cc04ec69c3f1a189294d19803` |
 | `oneOS_Hvac.apk` | `com.geely.hvac` | Климатическое приложение: внутренние команды климата | ГУ, `/system/app/oneOS_Hvac/` | `4a6f6df8e8ded385abac65dd9084d7cd105e38c07824172c12051d8e616acc5a` |
 | `oneOS_ApiService.apk` | `com.geely.service.oneosapi` | Реализация сервиса OneOS API | ГУ, `/system/app/oneOS_ApiService/` | `e688190de2756c7580ea408c3033cc239e4d6e0445adc6205698d58df8d6b4c0` |
+| `oneOS_DIMService.apk` | `com.geely.dimservice` | Служба передачи медиа/телефона на приборку (DIM); запускает её только Launcher3 | ГУ, `/system/app/oneOS_DIMService/` | `75992690345b551268b3365a81bf3692a1ce925d27b8f605549f08db17dfa0d5` |
+| `oneOS_InputService.apk` | `com.geely.inputservice` | Служба ввода; стартует при загрузке через OneOS API | ГУ, `/system/app/oneOS_InputService/` | `fb8f5488a86b157c6ccc9607142a828f9e9dbbac4a9568898a8da7387c81f819` |
 
 Папка `oneOS_Launcher3/` — точная копия ранее распакованного лаунчера из корня проекта: `diff -qr` различий не нашёл.
 
 ## Снято с ГУ 2026-09-29
 
-ГУ `G636`, `ecarx-userdebug 11 RQ3A.211001.001 752 test-keys`, экран 1440×1920, 160 dpi; OEM-пакеты версии `1.0.20250623G(312)` (versionCode 786). Launcher3, SystemUI, SystemUIPlugin, MediaCenter и MediaCenterUI с ГУ побайтово совпадают с файлами выше. `oneOS_Hvac.apk` и `oneOS_ApiService.apk` сняты с ГУ.
+ГУ `G636`, `ecarx-userdebug 11 RQ3A.211001.001 752 test-keys`, экран 1440×1920, 160 dpi; OEM-пакеты версии `1.0.20250623G(312)` (versionCode 786). Launcher3, SystemUI, SystemUIPlugin, MediaCenter и MediaCenterUI с ГУ побайтово совпадают с файлами выше. `oneOS_Hvac.apk`, `oneOS_ApiService.apk`, `oneOS_DIMService.apk` и `oneOS_InputService.apk` сняты с ГУ.
 
 `framework/` (игнорируется Git) — jar из `/system/framework` и `/system/system_ext/framework` с dex внутри, пригодные для декомпиляции:
 

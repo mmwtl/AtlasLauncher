@@ -166,7 +166,7 @@ public final class HomeActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        startOemServices();
+        startDimService();
         widgetManager = AppWidgetManager.getInstance(this);
         widgetHost = new AppWidgetHost(this, HOST_ID) {
             @Override protected AppWidgetHostView onCreateView(Context context, int id, AppWidgetProviderInfo info) {
@@ -196,16 +196,13 @@ public final class HomeActivity extends Activity {
             widgetRow.post(() -> showSettings(state.getInt("settingsPage", 0)));
     }
 
-    // Stock Launcher3 starts these from onCreate; without them the cluster gets no media/phone info after boot.
-    private void startOemServices() {
-        for (ComponentName service : new ComponentName[] {
-                new ComponentName("com.geely.dimservice", "com.geely.dimservice.service.DimService"),
-                new ComponentName("com.geely.inputservice", "com.geely.inputservice.InputService")}) {
-            try {
-                startService(new Intent().setComponent(service));
-            } catch (SecurityException | IllegalStateException e) {
-                Log.w("AtlasLauncher", "Cannot start " + service.flattenToShortString(), e);
-            }
+    // Only stock Launcher3 starts the DIM service; without it the cluster gets no media/phone info after boot.
+    private void startDimService() {
+        try {
+            startService(new Intent().setComponent(
+                    new ComponentName("com.geely.dimservice", "com.geely.dimservice.service.DimService")));
+        } catch (SecurityException | IllegalStateException e) {
+            Log.w("AtlasLauncher", "Cannot start DIM service", e);
         }
     }
 
