@@ -17,6 +17,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
@@ -26,6 +27,7 @@ import android.graphics.Color;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
@@ -40,6 +42,7 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -52,6 +55,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -91,6 +95,7 @@ public final class HomeActivity extends Activity {
     private static final int CONFIGURE_WIDGET = 2;
     private static final int PICK_WALLPAPER = 3;
     private static final int RECONFIGURE_WIDGET = 4;
+    private static final int BIND_SOURCE_LIST = 5;
     private static final int CLOCK_WIDGET_ID = -2;
     private static final int DOCK_WIDGET_ID = -3;
     private static final int WIDGET_CELL_DP = 96;
@@ -115,6 +120,11 @@ public final class HomeActivity extends Activity {
     private static final String CLOCK_WEIGHT = "clock_weight";
     private static final String CLOCK_FONT = "clock_font";
     private static final String CLOCK_DATE = "clock_date";
+    // The OneOS media widget asks Launcher3 to show its source list; Atlas hosts that list itself.
+    private static final String MEDIA_WIDGET_PACKAGE = "com.geely.mediawidget";
+    private static final ComponentName SOURCE_LIST_PROVIDER = new ComponentName(MEDIA_WIDGET_PACKAGE,
+            MEDIA_WIDGET_PACKAGE + ".customwidget.SourceListWidgetProvider");
+    private static final String SOURCE_LIST_WIDGET = "source_list_widget";
     private final List<AppEntry> apps = new ArrayList<>();
     private final List<String> favorites = new ArrayList<>();
     private final List<WidgetPlacement> widgets = new ArrayList<>();
@@ -131,6 +141,7 @@ public final class HomeActivity extends Activity {
     private boolean editingWidgets;
     private Dialog settingsDialog;
     private Dialog appDrawer;
+    private PopupWindow sourceListPopup;
     private int settingsPage;
     private ImageView settingsWallpaperPreview;
     private LinearLayout settingsWallpaperPresets;
@@ -156,9 +167,11 @@ public final class HomeActivity extends Activity {
             pendingWidgetId = state.getInt("pendingWidgetId", AppWidgetManager.INVALID_APPWIDGET_ID);
         }
         loadSavedState();
+        int sourceListId = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getInt(SOURCE_LIST_WIDGET, AppWidgetManager.INVALID_APPWIDGET_ID);
         // Power loss during binding or configuration leaves bound IDs that no placement owns.
         for (int id : widgetHost.getAppWidgetIds())
-            if (id != pendingWidgetId && widgets.stream().noneMatch(placement -> placement.id == id))
+            if (id != pendingWidgetId && id != sourceListId && widgets.stream().noneMatch(placement -> placement.id == id))
                 widgetHost.deleteAppWidgetId(id);
         loadApps();
         IntentFilter packages = new IntentFilter();
@@ -203,6 +216,7 @@ public final class HomeActivity extends Activity {
     }
 
     @Override public void onStop() {
+        if (sourceListPopup != null) sourceListPopup.dismiss();
         widgetHost.stopListening();
         super.onStop();
     }
@@ -1444,6 +1458,7 @@ public final class HomeActivity extends Activity {
     }
 
     private void showWidgets() {
+        if (sourceListPopup != null) sourceListPopup.dismiss();
         widgetRow.removeAllViews();
         WidgetGrid grid = widgetGrid();
         if (grid == null) return;
@@ -1531,7 +1546,6 @@ public final class HomeActivity extends Activity {
             occupied.add(placement);
             if (placement.x != oldX || placement.y != oldY || placement.width != oldWidth || placement.height != oldHeight)
                 changed = true;
-            FrameLayout container = new FrameLayout(this);
             View hostView;
             if (clockWidget) {
                 hostView = createClockWidget(placement);
@@ -1543,6 +1557,11 @@ public final class HomeActivity extends Activity {
                 widgetView.setAppWidget(placement.id, info);
                 hostView = widgetView;
             }
+            FrameLayout container = info != null && MEDIA_WIDGET_PACKAGE.equals(info.provider.getPackageName())
+                    ? new TapFrame(this, event -> {
+                        if (!editingWidgets && touchesSourceSwitch(hostView, event)) showSourceList(hostView);
+                    })
+                    : new FrameLayout(this);
             hostView.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
             FrameLayout.LayoutParams hostParams = new FrameLayout.LayoutParams(-1, -1);
             if (dockWidget) {
@@ -1566,6 +1585,64 @@ public final class HomeActivity extends Activity {
             empty.setOnClickListener(v -> chooseWidget());
             widgetRow.addView(empty, new FrameLayout.LayoutParams(dp(220), dp(64), Gravity.CENTER));
         }
+    }
+
+    private boolean touchesSourceSwitch(View widget, MotionEvent event) {
+        Resources resources;
+        try { resources = getPackageManager().getResourcesForApplication(MEDIA_WIDGET_PACKAGE); }
+        catch (PackageManager.NameNotFoundException e) { return false; }
+        int[] location = new int[2];
+        // The media widget sends its source-switch broadcast from these views.
+        for (String name : new String[] {"rl_swicth_area", "iv_mediaWidget_switch", "iv_marker"}) {
+            int id = resources.getIdentifier(name, "id", MEDIA_WIDGET_PACKAGE);
+            View view = id == 0 ? null : widget.findViewById(id);
+            if (view == null || !view.isShown()) continue;
+            view.getLocationOnScreen(location);
+            if (event.getRawX() >= location[0] && event.getRawX() < location[0] + view.getWidth()
+                    && event.getRawY() >= location[1] && event.getRawY() < location[1] + view.getHeight()) return true;
+        }
+        return false;
+    }
+
+    private void showSourceList(View widget) {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        int id = prefs.getInt(SOURCE_LIST_WIDGET, AppWidgetManager.INVALID_APPWIDGET_ID);
+        AppWidgetProviderInfo info = id == AppWidgetManager.INVALID_APPWIDGET_ID ? null : widgetManager.getAppWidgetInfo(id);
+        if (info == null) {
+            if (id != AppWidgetManager.INVALID_APPWIDGET_ID) widgetHost.deleteAppWidgetId(id);
+            id = widgetHost.allocateAppWidgetId();
+            prefs.edit().putInt(SOURCE_LIST_WIDGET, id).apply();
+            if (!widgetManager.bindAppWidgetIdIfAllowed(id, SOURCE_LIST_PROVIDER)) {
+                // Once binding is allowed, the next tap opens the list.
+                Intent bind = new Intent(AppWidgetManager.ACTION_APPWIDGET_BIND);
+                bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
+                bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, SOURCE_LIST_PROVIDER);
+                try { startActivityForResult(bind, BIND_SOURCE_LIST); }
+                catch (ActivityNotFoundException | SecurityException e) { Toast.makeText(this, "Привязка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+                return;
+            }
+            info = widgetManager.getAppWidgetInfo(id);
+            if (info == null) return;
+        }
+        if (sourceListPopup != null) sourceListPopup.dismiss();
+        AppWidgetHostView list = widgetHost.createView(this, id, info);
+        list.setPadding(0, 0, 0, 0);
+        PopupWindow popup = new PopupWindow(this);
+        // Choosing a source does not close the list: the widget reports that to Launcher3 only.
+        TapFrame content = new TapFrame(this, event -> widgetRow.postDelayed(popup::dismiss, 300));
+        content.addView(list, new FrameLayout.LayoutParams(-2, -2));
+        popup.setContentView(content);
+        popup.setWidth(ViewGroup.LayoutParams.WRAP_CONTENT);
+        popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        popup.setOutsideTouchable(true);
+        popup.setFocusable(true);
+        int[] location = new int[2];
+        widget.getLocationOnScreen(location);
+        // Bottom gravity keeps the list right above the widget while its rows load.
+        popup.showAtLocation(widgetRow, Gravity.BOTTOM | Gravity.START, location[0] + widget.getPaddingLeft(),
+                getWindow().getDecorView().getHeight() - location[1] - widget.getPaddingTop());
+        sourceListPopup = popup;
     }
 
     private void compactClockWidget(WidgetPlacement placement, WidgetGrid grid) {
@@ -2035,6 +2112,31 @@ public final class HomeActivity extends Activity {
 
         int nearestSpan(int size, int cell, int count) {
             return Math.max(1, Math.min(count, Math.round((float) size / cell)));
+        }
+    }
+
+    /** Reports taps without taking touches from its children. */
+    private static final class TapFrame extends FrameLayout {
+        private final Consumer<MotionEvent> onTap;
+        private final int touchSlop;
+        private float downX;
+        private float downY;
+
+        TapFrame(Context context, Consumer<MotionEvent> onTap) {
+            super(context);
+            this.onTap = onTap;
+            touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        }
+
+        @Override public boolean onInterceptTouchEvent(MotionEvent event) {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                downX = event.getX();
+                downY = event.getY();
+            } else if (event.getActionMasked() == MotionEvent.ACTION_UP
+                    && Math.hypot(event.getX() - downX, event.getY() - downY) < touchSlop) {
+                onTap.accept(event);
+            }
+            return false;
         }
     }
 
