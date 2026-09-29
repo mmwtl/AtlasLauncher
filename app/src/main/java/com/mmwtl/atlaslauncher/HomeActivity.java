@@ -1678,7 +1678,6 @@ public final class HomeActivity extends Activity {
         // Choosing a source does not close the list: the widget reports that to Launcher3 only.
         TapFrame content = new TapFrame(this, event -> widgetRow.postDelayed(popup::dismiss, 300));
         content.addView(list, new FrameLayout.LayoutParams(-2, -2));
-        popup.setContentView(content);
         popup.setWidth(ViewGroup.LayoutParams.WRAP_CONTENT);
         popup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -1690,12 +1689,8 @@ public final class HomeActivity extends Activity {
         content.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         Rect bounds = new Rect();
         card.getGlobalVisibleRect(bounds);
-        float scale = (float) bounds.width() / content.getMeasuredWidth();
-        content.setScaleX(scale);
-        content.setScaleY(scale);
-        content.setPivotX(0);
-        // The list grows upwards while its rows load; keep its bottom on the card.
-        content.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> v.setPivotY(b - t));
+        popup.setContentView(new ScaledFrame(this, content, (float) bounds.width() / content.getMeasuredWidth()));
+        // Bottom gravity keeps the list on the card while its rows load and it grows upwards.
         popup.showAtLocation(widgetRow, Gravity.BOTTOM | Gravity.START, bounds.left,
                 getWindow().getDecorView().getHeight() - bounds.top);
         sourceListPopup = popup;
@@ -2195,6 +2190,29 @@ public final class HomeActivity extends Activity {
             // with neighbouring widgets, any spare height goes below.
             content.setTranslationX(getPaddingLeft() - content.getLeft() + (width - params.width * scale) / 2);
             content.setTranslationY(getPaddingTop() - content.getTop());
+        }
+    }
+
+    /** Draws its only child scaled and takes the scaled size, so a wrap-content window fits it exactly. */
+    private static final class ScaledFrame extends FrameLayout {
+        private final float scale;
+
+        ScaledFrame(Context context, View child, float scale) {
+            super(context);
+            this.scale = scale;
+            child.setPivotX(0);
+            child.setPivotY(0);
+            child.setScaleX(scale);
+            child.setScaleY(scale);
+            addView(child, new LayoutParams(-2, -2));
+        }
+
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            View child = getChildAt(0);
+            // A list measured with an unspecified height shows one row, so bound it by the available height.
+            child.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+                    MeasureSpec.makeMeasureSpec((int) (MeasureSpec.getSize(heightSpec) / scale), MeasureSpec.AT_MOST));
+            setMeasuredDimension(Math.round(child.getMeasuredWidth() * scale), Math.round(child.getMeasuredHeight() * scale));
         }
     }
 
