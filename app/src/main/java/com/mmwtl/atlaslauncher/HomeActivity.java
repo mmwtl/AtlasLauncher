@@ -71,9 +71,11 @@ import org.json.JSONObject;
 import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -129,6 +131,7 @@ public final class HomeActivity extends Activity {
     private final List<AppEntry> apps = new ArrayList<>();
     private final List<String> favorites = new ArrayList<>();
     private final List<WidgetPlacement> widgets = new ArrayList<>();
+    private final Map<ComponentName, Point> fixedLayouts = new HashMap<>();
     private AppWidgetManager widgetManager;
     private AppWidgetHost widgetHost;
     private LinearLayout favoriteRow;
@@ -151,6 +154,7 @@ public final class HomeActivity extends Activity {
     private final Runnable renderWidgets = this::showWidgets;
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
+            fixedLayouts.clear();
             loadApps();
             showFavorites();
             // An uninstalled provider's widget ID is gone; drop its stale view and placement.
@@ -162,7 +166,11 @@ public final class HomeActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         widgetManager = AppWidgetManager.getInstance(this);
-        widgetHost = new AppWidgetHost(this, HOST_ID);
+        widgetHost = new AppWidgetHost(this, HOST_ID) {
+            @Override protected AppWidgetHostView onCreateView(Context context, int id, AppWidgetProviderInfo info) {
+                return new FittedWidgetView(context);
+            }
+        };
         if (state != null) {
             editingWidgets = state.getBoolean("editingWidgets");
             pendingWidgetId = state.getInt("pendingWidgetId", AppWidgetManager.INVALID_APPWIDGET_ID);
@@ -1138,7 +1146,7 @@ public final class HomeActivity extends Activity {
     private void chooseWidget() {
         PackageManager pm = getPackageManager();
         List<AppWidgetProviderInfo> providers = widgetManager.getInstalledProviders();
-        providers.forEach(this::fitMediaWidget);
+        providers.forEach(this::fitFixedWidget);
         Collator collator = Collator.getInstance(Locale.getDefault());
         Collections.sort(providers, (a, b) -> collator.compare(String.valueOf(a.loadLabel(pm)), String.valueOf(b.loadLabel(pm))));
         LinearLayout content = new LinearLayout(this);
@@ -1434,7 +1442,7 @@ public final class HomeActivity extends Activity {
 
     private void finishAddingWidget() {
         if (pendingWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
-        AppWidgetProviderInfo info = fitMediaWidget(widgetManager.getAppWidgetInfo(pendingWidgetId));
+        AppWidgetProviderInfo info = fitFixedWidget(widgetManager.getAppWidgetInfo(pendingWidgetId));
         if (info == null) { cancelPendingWidget(); return; }
         WidgetGrid grid = widgetGrid();
         if (grid == null) { widgetRow.post(this::finishAddingWidget); return; }
@@ -1494,7 +1502,7 @@ public final class HomeActivity extends Activity {
             WidgetPlacement placement = iterator.next();
             boolean clockWidget = placement.id == CLOCK_WIDGET_ID;
             boolean dockWidget = placement.id == DOCK_WIDGET_ID;
-            AppWidgetProviderInfo info = clockWidget || dockWidget ? null : fitMediaWidget(widgetManager.getAppWidgetInfo(placement.id));
+            AppWidgetProviderInfo info = clockWidget || dockWidget ? null : fitFixedWidget(widgetManager.getAppWidgetInfo(placement.id));
             if (!clockWidget && !dockWidget && info == null) {
                 widgetHost.deleteAppWidgetId(placement.id);
                 iterator.remove();
@@ -1560,7 +1568,6 @@ public final class HomeActivity extends Activity {
             } else {
                 AppWidgetHostView widgetView = widgetHost.createView(this, placement.id, info);
                 widgetView.setAppWidget(placement.id, info);
-                if (isMediaWidget(info)) widgetView.setPadding(0, 0, 0, 0);
                 hostView = widgetView;
             }
             FrameLayout container = isMediaWidget(info)
@@ -1569,9 +1576,7 @@ public final class HomeActivity extends Activity {
                     })
                     : new FrameLayout(this);
             hostView.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
-            FrameLayout.LayoutParams hostParams = isMediaWidget(info)
-                    ? new FrameLayout.LayoutParams(info.minWidth, info.minHeight, Gravity.CENTER)
-                    : new FrameLayout.LayoutParams(-1, -1);
+            FrameLayout.LayoutParams hostParams = new FrameLayout.LayoutParams(-1, -1);
             if (dockWidget) {
                 // Inset the dock like AppWidgetHostView insets regular widgets.
                 Rect inset = dockInset();
@@ -1600,20 +1605,29 @@ public final class HomeActivity extends Activity {
     }
 
     /**
-     * The OneOS media widgets are drawn for Launcher3 without host padding, and their layouts have a fixed
-     * pixel size larger than the declared minimum; use that size so the rounded card is never cut.
+     * OneOS widgets (media, phone, gallery) are drawn for Launcher3 as fixed-pixel cards, larger than their
+     * declared minimum. Returns that size, or null for an ordinary resizable layout.
      */
-    private AppWidgetProviderInfo fitMediaWidget(AppWidgetProviderInfo info) {
-        if (!isMediaWidget(info)) return info;
-        try {
-            Context context = createPackageContext(MEDIA_WIDGET_PACKAGE, 0);
-            ViewGroup.LayoutParams params = LayoutInflater.from(context)
-                    .inflate(info.initialLayout, new FrameLayout(context), false).getLayoutParams();
-            if (params.width > 0 && params.height > 0) {
-                info.minWidth = info.minResizeWidth = params.width;
-                info.minHeight = info.minResizeHeight = params.height;
-            }
-        } catch (PackageManager.NameNotFoundException | RuntimeException ignored) { }
+    private Point fixedLayoutPx(AppWidgetProviderInfo info) {
+        Point size = fixedLayouts.computeIfAbsent(info.provider, provider -> {
+            try {
+                Context context = createPackageContext(provider.getPackageName(), 0);
+                ViewGroup.LayoutParams params = LayoutInflater.from(context)
+                        .inflate(info.initialLayout, new FrameLayout(context), false).getLayoutParams();
+                if (params.width > 0 && params.height > 0) return new Point(params.width, params.height);
+            } catch (PackageManager.NameNotFoundException | RuntimeException ignored) { }
+            return new Point();
+        });
+        return size.x > 0 ? size : null;
+    }
+
+    /** New fixed-size widgets get cells for the whole card; they may still be resized down to the declared minimum. */
+    private AppWidgetProviderInfo fitFixedWidget(AppWidgetProviderInfo info) {
+        Point size = info == null ? null : fixedLayoutPx(info);
+        if (size != null) {
+            info.minWidth = size.x;
+            info.minHeight = size.y;
+        }
         return info;
     }
 
@@ -1621,15 +1635,14 @@ public final class HomeActivity extends Activity {
         Resources resources;
         try { resources = getPackageManager().getResourcesForApplication(MEDIA_WIDGET_PACKAGE); }
         catch (PackageManager.NameNotFoundException e) { return false; }
-        int[] location = new int[2];
+        Rect bounds = new Rect();
         // The media widget sends its source-switch broadcast from these views.
         for (String name : new String[] {"rl_swicth_area", "iv_mediaWidget_switch", "iv_marker"}) {
             int id = resources.getIdentifier(name, "id", MEDIA_WIDGET_PACKAGE);
             View view = id == 0 ? null : widget.findViewById(id);
-            if (view == null || !view.isShown()) continue;
-            view.getLocationOnScreen(location);
-            if (event.getRawX() >= location[0] && event.getRawX() < location[0] + view.getWidth()
-                    && event.getRawY() >= location[1] && event.getRawY() < location[1] + view.getHeight()) return true;
+            // Visible bounds include the scale applied by FittedWidgetView; HOME fills the screen.
+            if (view != null && view.isShown() && view.getGlobalVisibleRect(bounds)
+                    && bounds.contains((int) event.getRawX(), (int) event.getRawY())) return true;
         }
         return false;
     }
@@ -1667,16 +1680,20 @@ public final class HomeActivity extends Activity {
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         popup.setOutsideTouchable(true);
         popup.setFocusable(true);
-        // Like Launcher3, anchor the list to the card itself, centred when their widths differ.
+        // Like Launcher3, anchor the list to the card itself; scale it to the card's (possibly scaled) width.
         View card = widget instanceof ViewGroup && ((ViewGroup) widget).getChildCount() > 0
                 ? ((ViewGroup) widget).getChildAt(0) : widget;
         content.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        int[] location = new int[2];
-        card.getLocationOnScreen(location);
-        // Bottom gravity keeps the list right above the card while its rows load.
-        popup.showAtLocation(widgetRow, Gravity.BOTTOM | Gravity.START,
-                location[0] + (card.getWidth() - content.getMeasuredWidth()) / 2,
-                getWindow().getDecorView().getHeight() - location[1]);
+        Rect bounds = new Rect();
+        card.getGlobalVisibleRect(bounds);
+        float scale = (float) bounds.width() / content.getMeasuredWidth();
+        content.setScaleX(scale);
+        content.setScaleY(scale);
+        content.setPivotX(0);
+        // The list grows upwards while its rows load; keep its bottom on the card.
+        content.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> v.setPivotY(b - t));
+        popup.showAtLocation(widgetRow, Gravity.BOTTOM | Gravity.START, bounds.left,
+                getWindow().getDecorView().getHeight() - bounds.top);
         sourceListPopup = popup;
     }
 
@@ -1885,7 +1902,8 @@ public final class HomeActivity extends Activity {
     }
 
     private Point widgetPaddingDp(AppWidgetProviderInfo info) {
-        if (isMediaWidget(info)) return new Point(0, 0);
+        // A fixed-size layout is scaled into the padded area, so its own size alone picks the cells.
+        if (fixedLayoutPx(info) != null) return new Point(0, 0);
         Rect padding = AppWidgetHostView.getDefaultPaddingForWidget(this, info.provider, null);
         return new Point(pxToDp(padding.left + padding.right), pxToDp(padding.top + padding.bottom));
     }
@@ -2148,6 +2166,31 @@ public final class HomeActivity extends Activity {
 
         int nearestSpan(int size, int cell, int count) {
             return Math.max(1, Math.min(count, Math.round((float) size / cell)));
+        }
+    }
+
+    /** Scales a fixed-size widget layout into the padded area instead of cropping it, keeping its proportions. */
+    private static final class FittedWidgetView extends AppWidgetHostView {
+        FittedWidgetView(Context context) {
+            super(context);
+        }
+
+        @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+            super.onLayout(changed, left, top, right, bottom);
+            View content = getChildCount() > 0 ? getChildAt(0) : null;
+            ViewGroup.LayoutParams params = content == null ? null : content.getLayoutParams();
+            if (params == null || params.width <= 0 || params.height <= 0) return;
+            int width = getWidth() - getPaddingLeft() - getPaddingRight();
+            int height = getHeight() - getPaddingTop() - getPaddingBottom();
+            float scale = Math.min((float) width / params.width, (float) height / params.height);
+            content.setPivotX(0);
+            content.setPivotY(0);
+            content.setScaleX(scale);
+            content.setScaleY(scale);
+            // The host lays the card out centred; move it into the padded area. The top edge stays in line
+            // with neighbouring widgets, any spare height goes below.
+            content.setTranslationX(getPaddingLeft() - content.getLeft() + (width - params.width * scale) / 2);
+            content.setTranslationY(getPaddingTop() - content.getTop());
         }
     }
 
