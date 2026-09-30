@@ -64,12 +64,15 @@
 | `MultiWindow 11.apk` | `com.autolink.multiwindow.service` | `5c07c60ab7350e80509f416922650ea5f3f8da5cdd341405e3c00bddcb571ce1` |
 | `ECarX Car service 11.apk` | `com.ecarx.car` | `58290481267eb8d6b0b3664735feaa292fec4ca089bb8e8e1f35b7e8aeb6db83` |
 | `GLauncher Link 1.1.apk` | `com.maxinf.car` (сторонний ярлык на GInputBridge) | `f1476aca1b5a0f9726603932a37595315a315c4d82d53631c44bc156707ac1a2` |
+| `Настройки 1.0.20260326G(87).apk` | `com.geely.settings` | `1c25ae43053527bf16a7110e56ca4f1d56c17fba9c6da7adf2fbd5ae69a565aa` |
+| `Настройки 11.apk` | `com.android.settings` | `26a8daeffb0166924d82470eb02b52a82e9645e113e4376ee2687639ef0d1804` |
 
 Отличия от G636, найденные статическим анализом:
 
 - `SystemUIPlugin`: `JumpUtils.jumpToHome` по-прежнему явно запускает `com.android.launcher3/.Launcher`, но теперь добавляет `CATEGORY_HOME` и флаги `NEW_TASK | RESET_TASK_IF_NEEDED | REORDER_TO_FRONT` (раньше только `NEW_TASK`) и запускает из контекста CSD-дисплея. Правило дока по префиксу `com.android`/`com.geely` не изменилось; добавлен `ProvisionObserver` (`Settings.Global.device_provisioned`).
 - В приложениях выгрузки нет кода, который назначает или сбрасывает HOME (`addPreferredActivity`, `setHomeActivity`, `RoleManager`) или отключает пакеты.
 - `XCGestureService` включает свою службу специальных возможностей: только дописывает её в `enabled_accessibility_services`, чужие не удаляет.
+- Два приложения настроек. `android.settings.HOME_SETTINGS` не обрабатывает ни одно: его принимает PermissionController (`role.ui.HomeSettingsActivity`, роль HOME). `ACCESSIBILITY_SETTINGS` и `SETTINGS` обрабатывает `com.android.settings`. `com.geely.settings` не трогает роль HOME, preferred activities и `enabled_accessibility_services`; `setApplicationEnabledSetting` в нём только для `com.geely.energymanagement`. Его очистка памяти (тот же 360 CleanSDK) не входит в белый список Atlas, но исключает текущий HOME по умолчанию.
 - В Launcher3 встроен 360 CleanSDK с `forceStopPackage`; он вызывается только ручной карточкой очистки памяти на нулевом экране Launcher3.
 
 Подробные выводы и план: [`../docs/launcher-prototype-plan.md`](../docs/launcher-prototype-plan.md).
