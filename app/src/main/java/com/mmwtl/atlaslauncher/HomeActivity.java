@@ -144,6 +144,7 @@ public final class HomeActivity extends Activity {
     private LinearLayout favoritePanel;
     private LinearLayout appsTile;
     private boolean editingWidgets;
+    private boolean startupPending;
     private Dialog settingsDialog;
     private Dialog appDrawer;
     private PopupWindow sourceListPopup;
@@ -167,6 +168,7 @@ public final class HomeActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         startDimService();
+        startupPending = true;
         widgetManager = AppWidgetManager.getInstance(this);
         widgetHost = new AppWidgetHost(this, HOST_ID) {
             @Override protected AppWidgetHostView onCreateView(Context context, int id, AppWidgetProviderInfo info) {
@@ -226,6 +228,10 @@ public final class HomeActivity extends Activity {
         updateDesktopClock();
         // The accessibility permission may have been granted in Android settings.
         updateStockHomeRedirectState();
+        // Like Launcher3: OneOS LifeControlService starts its last boot stage (hvac, settings, gesture and
+        // other OEM services, night mode) only on this broadcast from the first resume of HOME.
+        if (startupPending) sendBroadcast(new Intent("com.android.launcher3.startup"));
+        startupPending = false;
     }
 
     @Override protected void onNewIntent(Intent intent) {
