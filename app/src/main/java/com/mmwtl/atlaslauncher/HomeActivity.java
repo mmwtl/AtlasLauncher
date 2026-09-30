@@ -1213,7 +1213,7 @@ public final class HomeActivity extends Activity {
                 if (cells != null) {
                     Point padding = widgetPaddingDp(provider);
                     int width = pxToDp(Math.max(provider.minWidth, provider.minResizeWidth)) + padding.x;
-                    int height = Math.max(96, pxToDp(Math.max(provider.minHeight, provider.minResizeHeight))) + padding.y;
+                    int height = pxToDp(Math.max(provider.minHeight, provider.minResizeHeight)) + padding.y;
                     details += " · " + cells.span(width, cells.cellWidth, cells.columns) + "×" +
                             cells.span(height, cells.cellHeight, cells.rows);
                 }
@@ -1465,7 +1465,7 @@ public final class HomeActivity extends Activity {
         if (grid == null) { widgetRow.post(this::finishAddingWidget); return; }
         Point padding = widgetPaddingDp(info);
         int widgetWidth = pxToDp(Math.max(info.minWidth, info.minResizeWidth)) + padding.x;
-        int widgetHeight = Math.max(96, pxToDp(Math.max(info.minHeight, info.minResizeHeight))) + padding.y;
+        int widgetHeight = pxToDp(Math.max(info.minHeight, info.minResizeHeight)) + padding.y;
         WidgetPlacement placement = new WidgetPlacement(pendingWidgetId, 0, 0, widgetWidth, widgetHeight);
         int columns = grid.span(widgetWidth, grid.cellWidth, grid.columns);
         int rows = grid.span(widgetHeight, grid.cellHeight, grid.rows);
@@ -1536,11 +1536,7 @@ public final class HomeActivity extends Activity {
                         : pxToDp(Math.max(info.minWidth, info.minResizeWidth)) + padding.x);
                 placement.height = Math.min(availableHeight, clockWidget ? 2 * WIDGET_CELL_DP
                         : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows) * grid.cellHeight
-                        : Math.max(96, pxToDp(Math.max(info.minHeight, info.minResizeHeight))) + padding.y);
-                changed = true;
-            }
-            if (!clockWidget && placement.height < 96 + padding.y && availableHeight >= 96 + padding.y) {
-                placement.height = 96 + padding.y;
+                        : pxToDp(Math.max(info.minHeight, info.minResizeHeight)) + padding.y);
                 changed = true;
             }
             if (clockWidget && placement.clockSize == 0) {
@@ -1556,7 +1552,7 @@ public final class HomeActivity extends Activity {
             int minColumns = clockWidget ? 1 : dockWidget ? Math.min(2, grid.columns)
                     : grid.span(Math.max(56, pxToDp(info.minResizeWidth)) + padding.x, grid.cellWidth, grid.columns);
             int minRows = clockWidget ? 1 : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows)
-                    : grid.span(Math.max(96, pxToDp(info.minResizeHeight)) + padding.y, grid.cellHeight, grid.rows);
+                    : grid.span(pxToDp(info.minResizeHeight) + padding.y, grid.cellHeight, grid.rows);
             int columns = Math.max(minColumns, grid.span(placement.width, grid.cellWidth, grid.columns));
             int rows = Math.max(minRows, grid.span(placement.height, grid.cellHeight, grid.rows));
             Point slot = null;
@@ -1969,7 +1965,7 @@ public final class HomeActivity extends Activity {
                 : Math.max(56, pxToDp(info.minResizeWidth)) + padding.x;
         int minHeight = info == null ? placement.id == DOCK_WIDGET_ID
                 ? dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)) : WIDGET_CELL_DP
-                : Math.max(96, pxToDp(info.minResizeHeight)) + padding.y;
+                : pxToDp(info.minResizeHeight) + padding.y;
         return new View.OnTouchListener() {
             float startX;
             float startY;
