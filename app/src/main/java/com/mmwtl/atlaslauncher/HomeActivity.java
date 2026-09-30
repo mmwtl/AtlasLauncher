@@ -112,6 +112,7 @@ public final class HomeActivity extends Activity {
     private static final String FAVORITES = "favorites";
     private static final String WIDGETS = "widgets";
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
+    private static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
     private static final String WALLPAPER = "wallpaper";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
@@ -286,6 +287,7 @@ public final class HomeActivity extends Activity {
         FrameLayout.LayoutParams widgetRowParams = new FrameLayout.LayoutParams(-1, -1);
         widgetRowParams.bottomMargin = CLIMATE_PANEL_PX;
         content.addView(widgetRow, widgetRowParams);
+        applyWidgetSideMargin();
         widgetRow.setClickable(true);
         widgetRow.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
         widgetRow.setOnClickListener(v -> { if (editingWidgets) setEditingWidgets(false); });
@@ -731,6 +733,7 @@ public final class HomeActivity extends Activity {
         else if (page == 2) buildClockSettings(content);
         else {
             buildDesktopSettings(content, dialog);
+            buildWidgetAreaSettings(content);
             buildSystemSettings(content);
         }
 
@@ -880,6 +883,22 @@ public final class HomeActivity extends Activity {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(WALLPAPER).apply();
             showWallpaper();
         });
+    }
+
+    private void buildWidgetAreaSettings(LinearLayout parent) {
+        LinearLayout content = settingsCard(parent, "Отступ виджетов по бокам",
+                "Сужает сетку с обеих сторон. Виджеты, которые больше не помещаются, переносятся.");
+        settingsChoice(content, WIDGET_SIDE_MARGIN, new String[]{"Нет", "½ ячейки", "1 ячейка"},
+                this::applyWidgetSideMargin);
+    }
+
+    private void applyWidgetSideMargin() {
+        // Stored in half cells, so a screen that fits whole cells keeps whole cells.
+        int margin = dp(getSharedPreferences(PREFS, MODE_PRIVATE).getInt(WIDGET_SIDE_MARGIN, 0) * WIDGET_CELL_DP / 2);
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) widgetRow.getLayoutParams();
+        params.leftMargin = margin;
+        params.rightMargin = margin;
+        widgetRow.setLayoutParams(params);
     }
 
     private void markWallpaperPreset(String wallpaper) {
