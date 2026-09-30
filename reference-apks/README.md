@@ -39,4 +39,37 @@
 
 Дампы состояния (`pm list packages`, `getprop`, `dumpsys window/activity/appwidget/display`, снимок экрана) лежат в `../qa/head-unit-state/` и тоже игнорируются Git.
 
+## Прошивка 1.0.20260326G(87), другой автомобиль
+
+`city-20260326G87/` (игнорируется Git) — выборка из выгрузки всех APK чужого ГУ (Яндекс Диск, папка «сити», скачано 2026-09-30). У OEM-пакетов versionCode 135 (на G636 было 786). Jar-файлов фреймворка в выгрузке нет. Остальные APK выгрузки (сторонние приложения, Qualcomm, autolink-службы, WebView и т. п.) к лаунчеру отношения не имеют и не скачивались.
+
+| Файл | Пакет | SHA-256 |
+| --- | --- | --- |
+| `Launcher3 1.0.20260326G(87).apk` | `com.android.launcher3` | `29c41c62afd9a97fb70e2095925ba0069ff4991c4276819fdca81992794c47c6` |
+| `SystemUIPlugin 1.0.20260326G(87).apk` | `com.ecarx.systemui.plugin` | `d9fbb0adb10153ac96925b048abf2b6469047d3b49259bfbe3ccdc69547f59ee` |
+| `Интерфейс системы 11.apk` | `com.android.systemui` | `21fc5ae5274ddd0d14a87b541e9926b603dd22e8ffb58a48058d9ea5a3c61f8a` |
+| `Система Android 11.apk` | `android` (framework-res) | `08f20156f028700ff1129b76328c10606be6d61a1b02a9ab12a437eb8f95bfaf` |
+| `XCGestureService 1.0.20260326G(87).apk` | `com.geely.screengestureservice` | `cdae29871e69d953303c9f9905c57cba4834ae852af36e13308aff09ede73dd0` |
+| `GlyControlBoard 1.0.20260326G(87).apk` | `ecarx.controlboard` | `89a74e428ebe0414c184185b8805cc717bd02ec86c2241517f1ce64ae742edce` |
+| `A_C 1.0.20260326G(87).apk` | `com.geely.hvac` | `a16914fcab036c5a4797639632e32c07d21d42d5d64cca0c0abbe0db784bba8a` |
+| `1.0.20260326G(87).apk` | `com.geely.mediawidget` | `6a178fbe8b0904932804a4dce5bbd4a9e7c850d1b5c02035ac9ba2cc72205502` |
+| `MediaCenterService 1.0.20260326G(87).apk` | `com.geely.mediacenterservice` | `065f4534ea63673b1fdf99419149e6bc70548ce948256c8f0995540aa1109d7a` |
+| `DimService 1.0.20260326G(87).apk` | `com.geely.dimservice` | `1f478392271501b8a013384b976103b54cd44c343f6fb83297b162030ba20efc` |
+| `inputService 1.0.20260326G(87).apk` | `com.geely.inputservice` | `58b5a6c6c363b795e3bb6ffbad6c7836b26f3bdef837e7e622fbb1cac465eae2` |
+| `Медиа 1.0.20260326G(87).apk` | `com.tencent.wecarflow` | `41c9d3d76ce443f35c6d1c6ef467ef373a25540e6536a5b97ed5c7d222812c7f` |
+| `ScreenSaver 1.0.20260326G(87).apk` | `com.geely.screensaver` | `65d47e19955a51eef950e64197f10450e2a6d3b731f06be10d015706784f46b3` |
+| `com.geely.permission.service.PermissionApplication 11.apk` | `com.geely.permission.service` | `346d2a2e87a6261b089dc495123286bdaa4e7eb7a04c125d7be6a4d46a000ab8` |
+| `Контролер разрешений 30 system image.apk` | `com.android.permissioncontroller` | `d81ca214b31991297094d2aecfde2b26511b3fe7dc9611d89b2e2e7caac345c6` |
+| `CarActivityResolver 11.apk` | `com.android.car.activityresolver` | `02f0453b2fe0058dd5af10603ca0d0d796a2d43799fbaac38c9b95fa8f0f4b96` |
+| `MultiWindow 11.apk` | `com.autolink.multiwindow.service` | `5c07c60ab7350e80509f416922650ea5f3f8da5cdd341405e3c00bddcb571ce1` |
+| `ECarX Car service 11.apk` | `com.ecarx.car` | `58290481267eb8d6b0b3664735feaa292fec4ca089bb8e8e1f35b7e8aeb6db83` |
+| `GLauncher Link 1.1.apk` | `com.maxinf.car` (сторонний ярлык на GInputBridge) | `f1476aca1b5a0f9726603932a37595315a315c4d82d53631c44bc156707ac1a2` |
+
+Отличия от G636, найденные статическим анализом:
+
+- `SystemUIPlugin`: `JumpUtils.jumpToHome` по-прежнему явно запускает `com.android.launcher3/.Launcher`, но теперь добавляет `CATEGORY_HOME` и флаги `NEW_TASK | RESET_TASK_IF_NEEDED | REORDER_TO_FRONT` (раньше только `NEW_TASK`) и запускает из контекста CSD-дисплея. Правило дока по префиксу `com.android`/`com.geely` не изменилось; добавлен `ProvisionObserver` (`Settings.Global.device_provisioned`).
+- В приложениях выгрузки нет кода, который назначает или сбрасывает HOME (`addPreferredActivity`, `setHomeActivity`, `RoleManager`) или отключает пакеты.
+- `XCGestureService` включает свою службу специальных возможностей: только дописывает её в `enabled_accessibility_services`, чужие не удаляет.
+- В Launcher3 встроен 360 CleanSDK с `forceStopPackage`; он вызывается только ручной карточкой очистки памяти на нулевом экране Launcher3.
+
 Подробные выводы и план: [`../docs/launcher-prototype-plan.md`](../docs/launcher-prototype-plan.md).
