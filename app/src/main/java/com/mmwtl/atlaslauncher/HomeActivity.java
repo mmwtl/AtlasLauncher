@@ -739,6 +739,7 @@ public final class HomeActivity extends Activity {
         else {
             buildDesktopSettings(content, dialog);
             buildWidgetAreaSettings(content);
+            buildAllAppsSettings(content);
             buildSystemSettings(content);
         }
 
@@ -1083,21 +1084,25 @@ public final class HomeActivity extends Activity {
             @Override public void onStartTrackingTouch(SeekBar seekBar) { }
             @Override public void onStopTrackingTouch(SeekBar seekBar) { showWidgets(); }
         });
-        LinearLayout drawer = settingsCard(parent, "Все приложения", "Выберите, что открывает кнопка в доке.");
+        LinearLayout drawer = settingsCard(parent, "Все приложения",
+                "Что открывает кнопка, выбирается в общих настройках AtlasLauncher.");
         settingsToggle(drawer, "Показывать кнопку", DOCK_APPS, true, this::showWidgets);
-        Button action = settingsAction(drawer, "", () -> { });
-        Runnable refreshAction = () -> {
-            String target = prefs.getString(DRAWER_ACTIVITY, "");
-            action.setText("Открывать: " + drawerActionLabel(target));
-        };
-        refreshAction.run();
-        action.setOnClickListener(v -> chooseDrawerAction(refreshAction));
         LinearLayout pinned = settingsCard(parent, "Закреплённые приложения", "Стрелки меняют порядок, × убирает приложение из дока.");
         LinearLayout selectedApps = new LinearLayout(this);
         selectedApps.setOrientation(LinearLayout.VERTICAL);
         pinned.addView(selectedApps, new LinearLayout.LayoutParams(-1, -2));
         refreshDockFavoriteSettings(selectedApps);
         settingsAction(pinned, "＋  Добавить приложение", () -> showDockAppPicker(selectedApps));
+    }
+
+    private void buildAllAppsSettings(LinearLayout parent) {
+        LinearLayout drawer = settingsCard(parent, "Все приложения",
+                "Что открывают кнопка «Все приложения» в доке и такая же кнопка на панели климата.");
+        Button action = settingsAction(drawer, "", () -> { });
+        Runnable refreshAction = () -> action.setText("Открывать: "
+                + drawerActionLabel(getSharedPreferences(PREFS, MODE_PRIVATE).getString(DRAWER_ACTIVITY, "")));
+        refreshAction.run();
+        action.setOnClickListener(v -> chooseDrawerAction(refreshAction));
     }
 
     private String drawerActionLabel(String target) {
