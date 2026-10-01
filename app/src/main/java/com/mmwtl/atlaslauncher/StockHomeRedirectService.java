@@ -8,20 +8,29 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.SystemClock;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 /**
- * The OneOS climate panel opens com.android.launcher3/.Launcher explicitly instead of the current HOME.
- * This service returns to AtlasLauncher when that happens. Its config limits events to Launcher3, and while
- * the feature is off in AtlasLauncher settings it requests no event types, so the system sends it nothing.
+ * The OneOS climate panel opens com.android.launcher3/.Launcher explicitly instead of the current HOME, both for
+ * Home and for All apps; only an intent extra tells them apart. This service returns to AtlasLauncher when that
+ * happens and recognizes All apps by the preceding click on the panel's All apps button. Its config limits events
+ * to Launcher3 and the SystemUI plugin, and it requests only the event types of the features enabled in
+ * AtlasLauncher settings, so with both off the system sends it nothing.
  */
 public final class StockHomeRedirectService extends AccessibilityService {
     static final String ENABLED = "stock_home_redirect";
+    static final String ALL_APPS_ENABLED = "stock_all_apps_redirect";
+    static final String EXTRA_OPEN_ALL_APPS = "open_all_apps";
     private static final String STOCK_LAUNCHER = "com.android.launcher3.Launcher";
+    // The plugin pins its All apps item first in this list and does not let the user move it.
+    private static final String PANEL_SUB_LIST = ":id/rv_nav_sub";
+    private static final long ALL_APPS_CLICK_TIMEOUT_MS = 2000;
     // Set before AtlasLauncher opens the stock launcher on purpose.
     static volatile long allowStockLauncherUntil;
+    private long allAppsClickedAt;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
-        if (ENABLED.equals(key)) applyEnabled(prefs);
+        if (ENABLED.equals(key) || ALL_APPS_ENABLED.equals(key)) applyEnabled(prefs);
     };
 
     @Override protected void onServiceConnected() {
@@ -36,19 +45,40 @@ public final class StockHomeRedirectService extends AccessibilityService {
     }
 
     private void applyEnabled(SharedPreferences prefs) {
+        boolean home = prefs.getBoolean(ENABLED, false);
+        boolean allApps = prefs.getBoolean(ALL_APPS_ENABLED, false);
         AccessibilityServiceInfo info = getServiceInfo();
-        info.eventTypes = prefs.getBoolean(ENABLED, false) ? AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED : 0;
+        info.eventTypes = (home || allApps ? AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED : 0)
+                | (allApps ? AccessibilityEvent.TYPE_VIEW_CLICKED : 0);
         setServiceInfo(info);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            if (isPanelAllAppsButton(event.getSource())) allAppsClickedAt = SystemClock.elapsedRealtime();
+            return;
+        }
         if (!STOCK_LAUNCHER.equals(String.valueOf(event.getClassName()))) return;
-        if (SystemClock.elapsedRealtime() < allowStockLauncherUntil) return;
-        // After a rollback to the stock HOME the panel button must keep opening it.
+        long now = SystemClock.elapsedRealtime();
+        if (now < allowStockLauncherUntil) return;
+        boolean allApps = now - allAppsClickedAt < ALL_APPS_CLICK_TIMEOUT_MS;
+        allAppsClickedAt = 0;
+        SharedPreferences prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);
+        if (!prefs.getBoolean(allApps ? ALL_APPS_ENABLED : ENABLED, false)) return;
+        // After a rollback to the stock HOME the panel buttons must keep opening it.
         ResolveInfo home = getPackageManager().resolveActivity(
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
         if (home == null || !getPackageName().equals(home.activityInfo.packageName)) return;
-        startActivity(new Intent(this, HomeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        startActivity(new Intent(this, HomeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(EXTRA_OPEN_ALL_APPS, allApps));
+    }
+
+    private static boolean isPanelAllAppsButton(AccessibilityNodeInfo item) {
+        if (item == null) return false;
+        AccessibilityNodeInfo list = item.getParent();
+        if (list == null) return false;
+        String id = list.getViewIdResourceName();
+        return id != null && id.endsWith(PANEL_SUB_LIST) && item.equals(list.getChild(0));
     }
 
     @Override public void onInterrupt() { }

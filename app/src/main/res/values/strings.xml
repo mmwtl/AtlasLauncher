@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">AtlasLauncher</string>
-    <string name="stock_home_redirect_label">AtlasLauncher: кнопка «Домой» панели климата</string>
-    <string name="stock_home_redirect_description">Когда панель климата открывает штатный Launcher3, возвращает на AtlasLauncher. Получает только события смены окон Launcher3 и не читает содержимое экрана. Пока функция выключена в настройках AtlasLauncher, служба не получает никаких событий.</string>
+    <string name="stock_home_redirect_label">AtlasLauncher: кнопки панели климата</string>
+    <string name="stock_home_redirect_description">Когда кнопки «Домой» и «Все приложения» панели климата открывают штатный Launcher3, возвращает на AtlasLauncher. Получает только события Launcher3 и панели климата; содержимое экрана читает лишь для того, чтобы узнать нажатую кнопку панели. Пока функции выключены в настройках AtlasLauncher, служба не получает никаких событий.</string>
 </resources>

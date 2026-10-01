@@ -197,6 +197,8 @@ public final class HomeActivity extends Activity {
         buildHome();
         if (state != null && state.getBoolean("settingsOpen"))
             widgetRow.post(() -> showSettings(state.getInt("settingsPage", 0)));
+        else if (state == null && getIntent().getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false))
+            openAllApps();
     }
 
     // Only stock Launcher3 starts the DIM service; without it the cluster gets no media/phone info after boot.
@@ -241,6 +243,7 @@ public final class HomeActivity extends Activity {
         if (appDrawer != null) appDrawer.dismiss();
         if (settingsDialog != null) settingsDialog.dismiss();
         if (editingWidgets) setEditingWidgets(false);
+        if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false)) openAllApps();
     }
 
     @Override public void onStop() {
@@ -937,12 +940,16 @@ public final class HomeActivity extends Activity {
                     .setPositiveButton("Закрыть", null).show();
         }));
 
-        LinearLayout redirect = settingsCard(content, "Кнопка «Домой» на панели климата",
-                "Панель всегда открывает штатный Launcher3. AtlasLauncher может сразу возвращать на себя, "
-                        + "Launcher3 при этом на мгновение мелькнёт. Когда функция выключена, служба не получает событий окон.");
+        LinearLayout redirect = settingsCard(content, "Кнопки панели климата",
+                "«Домой» и «Все приложения» на панели всегда открывают штатный Launcher3. AtlasLauncher может сразу "
+                        + "возвращать на себя, Launcher3 при этом на мгновение мелькнёт. Когда функции выключены, служба не получает событий.");
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        settingsSwitch(redirect, "Возвращать на AtlasLauncher", prefs.getBoolean(StockHomeRedirectService.ENABLED, false), checked -> {
+        settingsSwitch(redirect, "«Домой»: возвращать на AtlasLauncher", prefs.getBoolean(StockHomeRedirectService.ENABLED, false), checked -> {
             prefs.edit().putBoolean(StockHomeRedirectService.ENABLED, checked).apply();
+            updateStockHomeRedirectState();
+        });
+        settingsSwitch(redirect, "«Все приложения»: как кнопка в доке", prefs.getBoolean(StockHomeRedirectService.ALL_APPS_ENABLED, false), checked -> {
+            prefs.edit().putBoolean(StockHomeRedirectService.ALL_APPS_ENABLED, checked).apply();
             updateStockHomeRedirectState();
         });
         settingsRedirectState = new LinearLayout(this);
@@ -958,7 +965,9 @@ public final class HomeActivity extends Activity {
 
     private void updateStockHomeRedirectState() {
         if (settingsRedirectState == null) return;
-        boolean enabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(StockHomeRedirectService.ENABLED, false);
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean(StockHomeRedirectService.ENABLED, false)
+                || prefs.getBoolean(StockHomeRedirectService.ALL_APPS_ENABLED, false);
         settingsRedirectState.setVisibility(enabled ? View.VISIBLE : View.GONE);
         if (!enabled) return;
         // Lists only connected services: after a force stop Android 11 keeps the service unbound until reboot.
