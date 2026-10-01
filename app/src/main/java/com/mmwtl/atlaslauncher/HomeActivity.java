@@ -114,6 +114,7 @@ public final class HomeActivity extends Activity {
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
     private static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
     private static final String WALLPAPER = "wallpaper";
+    private static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     private static final String DOCK_APPS = "dock_apps";
@@ -270,6 +271,7 @@ public final class HomeActivity extends Activity {
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        applyClimatePanel();
         getWindow().setNavigationBarColor(BACKGROUND);
         FrameLayout backdrop = new FrameLayout(this);
         wallpaperView = new ImageView(this);
@@ -940,9 +942,10 @@ public final class HomeActivity extends Activity {
                     .setPositiveButton("Закрыть", null).show();
         }));
 
-        LinearLayout redirect = settingsCard(content, "Кнопки панели климата",
+        LinearLayout redirect = settingsCard(content, "Панель климата",
                 "«Домой» и «Все приложения» на панели всегда открывают штатный Launcher3. AtlasLauncher может сразу "
                         + "возвращать на себя, Launcher3 при этом на мгновение мелькнёт. Когда функции выключены, служба не получает событий.");
+        settingsToggle(redirect, "Скрывать панель на главном экране", CLIMATE_PANEL_HIDDEN, false, this::applyClimatePanel);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         settingsSwitch(redirect, "«Домой»: возвращать на AtlasLauncher", prefs.getBoolean(StockHomeRedirectService.ENABLED, false), checked -> {
             prefs.edit().putBoolean(StockHomeRedirectService.ENABLED, checked).apply();
@@ -961,6 +964,16 @@ public final class HomeActivity extends Activity {
         });
         redirect.addView(settingsRedirectState, new LinearLayout.LayoutParams(-1, -2));
         updateStockHomeRedirectState();
+    }
+
+    private void applyClimatePanel() {
+        // The OneOS SystemUI plugin hides the climate panel for com.geely.* windows that hide navigation.
+        // Sticky immersive keeps the flag after touches.
+        int hide = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        View decor = getWindow().getDecorView();
+        int flags = decor.getSystemUiVisibility() & ~hide;
+        boolean hidden = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(CLIMATE_PANEL_HIDDEN, false);
+        decor.setSystemUiVisibility(hidden ? flags | hide : flags);
     }
 
     private void updateStockHomeRedirectState() {
