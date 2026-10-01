@@ -105,6 +105,7 @@ public final class HomeActivity extends Activity {
     private static final int WIDGET_CELL_DP = 96;
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
     private static final int CLIMATE_PANEL_PX = 150;
+    private static final int HIDDEN_CLIMATE_PANEL_PX = 40;
     private static final int MAX_ICON_DP = 160;
     private static final int CATALOG_ICON_DP = 96;
     private static final int WIDGET_PREVIEW_DP = 150;
@@ -271,7 +272,6 @@ public final class HomeActivity extends Activity {
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
-        applyClimatePanel();
         getWindow().setNavigationBarColor(BACKGROUND);
         FrameLayout backdrop = new FrameLayout(this);
         wallpaperView = new ImageView(this);
@@ -289,9 +289,8 @@ public final class HomeActivity extends Activity {
         content.setFitsSystemWindows(true);
         backdrop.addView(content, new FrameLayout.LayoutParams(-1, -1));
         widgetRow = new FrameLayout(this);
-        FrameLayout.LayoutParams widgetRowParams = new FrameLayout.LayoutParams(-1, -1);
-        widgetRowParams.bottomMargin = CLIMATE_PANEL_PX;
-        content.addView(widgetRow, widgetRowParams);
+        content.addView(widgetRow, new FrameLayout.LayoutParams(-1, -1));
+        applyClimatePanel();
         applyWidgetSideMargin();
         widgetRow.setClickable(true);
         widgetRow.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
@@ -975,6 +974,9 @@ public final class HomeActivity extends Activity {
         int flags = decor.getSystemUiVisibility() & ~hide;
         boolean hidden = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(CLIMATE_PANEL_HIDDEN, false);
         decor.setSystemUiVisibility(hidden ? flags | hide : flags);
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) widgetRow.getLayoutParams();
+        params.bottomMargin = hidden ? HIDDEN_CLIMATE_PANEL_PX : CLIMATE_PANEL_PX;
+        widgetRow.setLayoutParams(params);
     }
 
     private void updateStockHomeRedirectState() {
