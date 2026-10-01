@@ -105,7 +105,7 @@ public final class HomeActivity extends Activity {
     private static final int WIDGET_CELL_DP = 96;
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
     private static final int CLIMATE_PANEL_PX = 150;
-    private static final int HIDDEN_CLIMATE_PANEL_PX = 40;
+    private static final int HIDDEN_CLIMATE_PANEL_PX = 24;
     private static final int MAX_ICON_DP = 160;
     private static final int CATALOG_ICON_DP = 96;
     private static final int WIDGET_PREVIEW_DP = 150;
