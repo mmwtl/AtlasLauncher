@@ -156,12 +156,14 @@ public final class HomeActivity extends Activity {
     private LinearLayout settingsWallpaperPresets;
     private LinearLayout settingsRedirectState;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
+    private Runnable appDrawerFilter;
+    // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
+    private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
     private final Runnable renderWidgets = this::showWidgets;
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             fixedLayouts.clear();
             loadApps();
-            showFavorites();
             // An uninstalled provider's widget ID is gone; drop its stale view and placement.
             if (Intent.ACTION_PACKAGE_REMOVED.equals(intent.getAction())
                     && !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) scheduleShowWidgets();
@@ -255,6 +257,7 @@ public final class HomeActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        appLoader.shutdownNow();
         unregisterReceiver(packageReceiver);
         if (settingsDialog != null) settingsDialog.dismiss();
         if (appDrawer != null) appDrawer.dismiss();
@@ -386,18 +389,26 @@ public final class HomeActivity extends Activity {
     }
 
     private void loadApps() {
-        PackageManager pm = getPackageManager();
-        Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        List<ResolveInfo> found = pm.queryIntentActivities(intent, 0);
-        apps.clear();
-        for (ResolveInfo info : found) {
-            if (info.activityInfo == null || !info.activityInfo.exported) continue;
-            ComponentName component = new ComponentName(info.activityInfo.packageName, info.activityInfo.name);
-            if (component.getPackageName().equals(getPackageName())) continue;
-            apps.add(new AppEntry(component, info.loadLabel(pm).toString(), info.loadIcon(pm)));
-        }
-        Collator collator = Collator.getInstance(Locale.getDefault());
-        Collections.sort(apps, (a, b) -> collator.compare(a.label, b.label));
+        appLoader.execute(() -> {
+            PackageManager pm = getPackageManager();
+            Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+            List<AppEntry> loaded = new ArrayList<>();
+            for (ResolveInfo info : pm.queryIntentActivities(intent, 0)) {
+                if (info.activityInfo == null || !info.activityInfo.exported) continue;
+                ComponentName component = new ComponentName(info.activityInfo.packageName, info.activityInfo.name);
+                if (component.getPackageName().equals(getPackageName())) continue;
+                loaded.add(new AppEntry(component, info.loadLabel(pm).toString(), info.loadIcon(pm)));
+            }
+            Collator collator = Collator.getInstance(Locale.getDefault());
+            Collections.sort(loaded, (a, b) -> collator.compare(a.label, b.label));
+            runOnUiThread(() -> {
+                if (isDestroyed()) return;
+                apps.clear();
+                apps.addAll(loaded);
+                showFavorites();
+                if (appDrawerFilter != null) appDrawerFilter.run();
+            });
+        });
     }
 
     private AppEntry findApp(String flattened) {
@@ -427,7 +438,8 @@ public final class HomeActivity extends Activity {
             favoriteRow.addView(item, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
         }
         int shownApps = favoriteRow.getChildCount();
-        if (shownApps == 0) {
+        // Until the app list has loaded, pinned apps cannot be found yet; skip the hint instead of flashing it.
+        if (shownApps == 0 && !apps.isEmpty()) {
             TextView empty = label("Добавьте приложения кнопкой ⚙ дока в режиме редактирования", 14, NEUTRAL_MUTED, false);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(14), dp(14), dp(14), dp(14));
@@ -506,7 +518,10 @@ public final class HomeActivity extends Activity {
         Dialog dialog = new Dialog(this);
         appDrawer = dialog;
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setOnDismissListener(d -> appDrawer = null);
+        dialog.setOnDismissListener(d -> {
+            appDrawer = null;
+            appDrawerFilter = null;
+        });
         Button close = neutralButton("×");
         close.setContentDescription("Закрыть список приложений");
         close.setTextSize(22);
@@ -548,14 +563,17 @@ public final class HomeActivity extends Activity {
             dialog.dismiss();
             launch(app);
         });
+        // Also reruns when the app list reloads, e.g. if the catalog opened before it finished loading.
+        Runnable filter = () -> {
+            String query = search.getText().toString().toLowerCase(Locale.getDefault());
+            visible.clear();
+            for (AppEntry app : apps) if (app.label.toLowerCase(Locale.getDefault()).contains(query)) visible.add(app);
+            adapter.notifyDataSetChanged();
+        };
+        appDrawerFilter = filter;
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String query = s.toString().toLowerCase(Locale.getDefault());
-                visible.clear();
-                for (AppEntry app : apps) if (app.label.toLowerCase(Locale.getDefault()).contains(query)) visible.add(app);
-                adapter.notifyDataSetChanged();
-            }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { filter.run(); }
             @Override public void afterTextChanged(Editable s) { }
         });
         dialog.setContentView(content);
@@ -686,7 +704,6 @@ public final class HomeActivity extends Activity {
         } catch (ActivityNotFoundException | SecurityException e) {
             Toast.makeText(this, "Не удалось открыть " + app.label, Toast.LENGTH_SHORT).show();
             loadApps();
-            showFavorites();
         }
     }
 
