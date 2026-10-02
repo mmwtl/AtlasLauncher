@@ -173,17 +173,19 @@ public final class HomeActivity extends Activity {
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
     private final ExecutorService wallpaperLoader = Executors.newSingleThreadExecutor();
     private boolean dimKeyBound;
+    private long bootReportedAt;
     // The service reports boot complete by itself only when com.android.launcher3 starts, otherwise 10 s after
-    // its own start; GIB force-stops it after boot, which restarts that wait. So HOME asks on every connection.
+    // its own start; GIB force-stops it after boot, which restarts that wait. So HOME asks once it is drawn.
     private final ServiceConnection dimKeyConnection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
-            if (SystemClock.elapsedRealtime() > BOOT_LOGO_WINDOW_MS) return;
+            if (bootReportedAt != 0 || SystemClock.elapsedRealtime() > BOOT_LOGO_WINDOW_MS) return;
             Parcel data = Parcel.obtain();
             Parcel reply = Parcel.obtain();
             try {
                 data.writeInterfaceToken("com.autolink.diminteraction.IDIMKey");
                 service.transact(3, data, reply, 0);
                 reply.readException();
+                bootReportedAt = SystemClock.elapsedRealtime();
             } catch (RemoteException | RuntimeException e) {
                 Log.w("AtlasLauncher", "Cannot report boot complete to the DIM key service", e);
             } finally {
@@ -197,10 +199,14 @@ public final class HomeActivity extends Activity {
         }
 
         @Override public void onBindingDied(ComponentName name) {
-            // A force stop ends the binding for good; bind again so the restarted service is asked too.
+            // A force stop ends the binding for good. QNX acknowledges in a fraction of a second, so ask the
+            // restarted service only if the stop came before or right after the report.
             unbindService(this);
             dimKeyBound = false;
-            bindDimKeyService();
+            if (bootReportedAt == 0 || SystemClock.elapsedRealtime() - bootReportedAt < 3_000) {
+                bootReportedAt = 0;
+                bindDimKeyService();
+            }
         }
     };
     private final Runnable renderWidgets = this::showWidgets;
