@@ -77,6 +77,36 @@
 
 Подробные выводы и план: [`../docs/launcher-prototype-plan.md`](../docs/launcher-prototype-plan.md).
 
+## Полный архив G636, снят 2026-10-02
+
+`g636-20250623G312/` (игнорируется Git) — выгрузка с того же ГУ `G636` (OEM-пакеты `1.0.20250623G(312)`) для будущего анализа без доступа к машине. Всё снято только чтением: с Android — `adb exec-out tar`, с QNX — `cat` в telnet-сессии из shell ГУ (`busybox telnet 192.168.118.2`).
+
+| Папка | Содержимое |
+| --- | --- |
+| `apks/` | APK с исходными путями, без `oat`/`odex`/`vdex`. Пока 54 из 110: весь `/system/app` и ключевые пакеты из `/system/priv-app` и `/system_ext/priv-app` (`DIMInteraction`, `CarService`, `ECarXCarService`, `MultiWindowService`, `MiscService`, `CarSettings`, `Settings`). Не скачаны остальные `/system/priv-app`, `/product`, `/system_ext/app`, `/vendor`; Launcher3, SystemUI и SystemUIPlugin побайтно совпадают с файлами в корне этой папки. Размеры скачанных файлов сверены с ГУ (`stat -c %s`) |
+| `framework/` | jar и apk из `/system/framework` и `/system_ext/framework` |
+| `fs/` | `/system/etc`, `/product/etc`, `/system_ext/etc`, `build.prop` всех разделов, текстовые файлы `/vendor/etc` до 1 МБ (`*.rc`, `*.xml`, `*.conf`, `*.cfg`, `*.prop`, `*.json`, `*.txt`, `*.sh`, `*.ini`), `*.sh` из `/system/bin` и `/vendor/bin` |
+| `dumps/` | `getprop`, `pm list packages -f -U --show-versioncode`, полный `dumpsys package`, получатели `BOOT_COMPLETED` в порядке рассылки |
+| `qnx/` | QNX 7.0, сборка `rb-ecarx-dhu_hqx121c1-pcs03_oneos-fx11-j1-sop_release_2025.26.1`: текстовые файлы `/scripts`, `/etc`, `/proc/boot`, `/vm/images` (конфиги VM Android), `/apps/cluster/FX11_J1/etc` в `files/`; `ls -lR` этих каталогов и `/apps`, `pidin arg`, `Buildinfo.txt` |
+
+Не взяты: бинарные калибровки и прошивки из `/vendor/etc`, библиотеки и исполняемые файлы QNX, а также `shadow`, ssh-ключи и `*.pem`.
+
+Остальные APK докачиваются так (около 1 МБ/с по Wi-Fi; уже скачанные пропускаются):
+
+```sh
+cd reference-apks/g636-20250623G312/apks
+adb -s 192.168.1.86:5555 shell 'find /system/priv-app /product/app /product/priv-app /product/overlay /system_ext/app /system_ext/priv-app /vendor/app /vendor/overlay -name "*.apk"' | tr -d '\r' |
+  while read p; do [ -f ".$p" ] || { mkdir -p ".$(dirname "$p")"; adb -s 192.168.1.86:5555 pull "$p" ".$p"; }; done
+```
+
+Пригодится в первую очередь:
+
+- `apks/system/priv-app/DIMInteraction/` (`com.autolink.diminteraction`) — `DIMKeyService`, по сигналу которого QNX убирает лого загрузки; разбор — `../qa/boot-logo/report.md`.
+- `apks/system/app/LifeControlService/` (`com.geely.lifeControl`) — этапы запуска OEM-служб по `com.android.launcher3.startup`.
+- `apks/system_ext/priv-app/CarSettings/` — `FallbackHome` (`com.android.car.settings`), первый HOME при загрузке.
+- `apks/system/app/oneOS_ThemeManager/` — системные обои `GeelyWallpaperService`.
+- `qnx/ls-lR.txt` — `ivi-anim` и ролик лого `IVIBootAnimation.mp4` в `/apps/cluster/FX11_J1`.
+
 ## Подписи и тип сборки
 
 Проверено 2026-10-01 по файлам этой папки и `city-20260326G87/` (`apksigner verify --print-certs`, `apkanalyzer manifest print`, `aapt2 dump badging`, jadx).
