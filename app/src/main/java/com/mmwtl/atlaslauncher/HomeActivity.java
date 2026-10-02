@@ -144,6 +144,9 @@ public final class HomeActivity extends Activity {
     // The QNX boot animation acknowledges the report and exits; asked after that, the service resends it every
     // second until it restarts. So HOME asks only while the logo can still be up after a boot.
     private static final long BOOT_LOGO_WINDOW_MS = 120_000;
+    // The logo stays over HOME while widgets and the dock fill in; the OEM climate panel usually appears 4-10 s
+    // after the first frame of HOME.
+    private static final long BOOT_LOGO_HOLD_MS = 5_000;
     private final List<AppEntry> apps = new ArrayList<>();
     private final List<String> favorites = new ArrayList<>();
     private final List<WidgetPlacement> widgets = new ArrayList<>();
@@ -289,8 +292,8 @@ public final class HomeActivity extends Activity {
         // other OEM services, night mode) only on this broadcast from the first resume of HOME.
         if (startupPending) {
             sendBroadcast(new Intent("com.android.launcher3.startup"));
-            // Posted before the window is attached, this runs after the first frame, so the logo uncovers HOME.
-            getWindow().getDecorView().post(this::bindDimKeyService);
+            // Posted before the window is attached, the delay counts from the first frame.
+            getWindow().getDecorView().postDelayed(this::bindDimKeyService, BOOT_LOGO_HOLD_MS);
         }
         startupPending = false;
     }
