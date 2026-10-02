@@ -11,6 +11,7 @@ import android.appwidget.AppWidgetProviderInfo;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -159,6 +160,7 @@ public final class HomeActivity extends Activity {
     private Runnable appDrawerFilter;
     // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
+    private final ExecutorService wallpaperLoader = Executors.newSingleThreadExecutor();
     private final Runnable renderWidgets = this::showWidgets;
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -258,6 +260,7 @@ public final class HomeActivity extends Activity {
 
     @Override protected void onDestroy() {
         appLoader.shutdownNow();
+        wallpaperLoader.shutdownNow();
         unregisterReceiver(packageReceiver);
         if (settingsDialog != null) settingsDialog.dismiss();
         if (appDrawer != null) appDrawer.dismiss();
@@ -844,7 +847,9 @@ public final class HomeActivity extends Activity {
         LinearLayout wallpaper = settingsCard(content, "Фон рабочего стола", "Выберите изображение для главного экрана.");
         ImageView preview = new ImageView(this);
         settingsWallpaperPreview = preview;
-        preview.setImageDrawable(wallpaperView.getDrawable().getConstantState().newDrawable());
+        // A picked image may still be loading; applyWallpaper fills the preview then.
+        Drawable current = wallpaperView.getDrawable();
+        if (current != null) preview.setImageDrawable(current.getConstantState().newDrawable());
         preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
         preview.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 16));
         preview.setClipToOutline(true);
@@ -1025,9 +1030,25 @@ public final class HomeActivity extends Activity {
 
     private void showWallpaper() {
         String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null);
-        if (saved == null) wallpaperView.setImageResource(R.drawable.coastal_twilight);
-        else try {
-            Uri uri = Uri.parse(saved);
+        Uri uri = saved == null ? null : Uri.parse(saved);
+        if (uri != null && !ContentResolver.SCHEME_ANDROID_RESOURCE.equals(uri.getScheme())) {
+            // A picked image comes from its document provider, which may take seconds to start right after boot.
+            wallpaperLoader.execute(() -> {
+                Bitmap bitmap = decodeWallpaper(uri);
+                runOnUiThread(() -> {
+                    // A newer choice may have replaced this one while it loaded.
+                    if (!isDestroyed() && saved.equals(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null)))
+                        applyWallpaper(saved, bitmap);
+                });
+            });
+            return;
+        }
+        applyWallpaper(saved, uri == null ? null : decodeWallpaper(uri));
+    }
+
+    /** Returns null if the image cannot be read. */
+    private Bitmap decodeWallpaper(Uri uri) {
+        try {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
             try (InputStream stream = getContentResolver().openInputStream(uri)) {
@@ -1037,15 +1058,19 @@ public final class HomeActivity extends Activity {
             while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2;
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inSampleSize = sample;
-            Bitmap bitmap;
             try (InputStream stream = getContentResolver().openInputStream(uri)) {
-                bitmap = BitmapFactory.decodeStream(stream, null, options);
+                return BitmapFactory.decodeStream(stream, null, options);
             }
-            if (bitmap == null) throw new IOException("Изображение не удалось прочитать");
-            wallpaperView.setImageBitmap(bitmap);
         } catch (IOException | SecurityException e) {
+            return null;
+        }
+    }
+
+    private void applyWallpaper(String saved, Bitmap bitmap) {
+        if (bitmap != null) wallpaperView.setImageBitmap(bitmap);
+        else {
             wallpaperView.setImageResource(R.drawable.coastal_twilight);
-            Toast.makeText(this, "Не удалось загрузить фон", Toast.LENGTH_SHORT).show();
+            if (saved != null) Toast.makeText(this, "Не удалось загрузить фон", Toast.LENGTH_SHORT).show();
         }
         if (settingsWallpaperPreview != null) settingsWallpaperPreview.setImageDrawable(wallpaperView.getDrawable().getConstantState().newDrawable());
         markWallpaperPreset(saved);
