@@ -22,6 +22,7 @@
         android:usesCleartextTraffic="false">
         <activity
             android:name=".HomeActivity"
+            android:configChanges="uiMode"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="portrait">

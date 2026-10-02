@@ -17,6 +17,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.util.Log;
@@ -241,6 +242,14 @@ public final class HomeActivity extends Activity {
         // other OEM services, night mode) only on this broadcast from the first resume of HOME.
         if (startupPending) sendBroadcast(new Intent("com.android.launcher3.startup"));
         startupPending = false;
+    }
+
+    // Night mode switches with the lights and once more after boot, when OneOS applies the mode deferred until
+    // the HOME startup broadcast. Atlas colors are fixed; only widgets and app icons may have night resources.
+    @Override public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        loadApps();
+        showWidgets();
     }
 
     @Override protected void onNewIntent(Intent intent) {
