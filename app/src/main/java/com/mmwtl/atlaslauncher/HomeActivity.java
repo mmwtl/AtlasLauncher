@@ -15,6 +15,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
@@ -36,6 +37,9 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Bundle;
 import android.os.Build;
+import android.os.IBinder;
+import android.os.Parcel;
+import android.os.RemoteException;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.net.Uri;
@@ -134,6 +138,9 @@ public final class HomeActivity extends Activity {
     private static final ComponentName SOURCE_LIST_PROVIDER = new ComponentName(MEDIA_WIDGET_PACKAGE,
             MEDIA_WIDGET_PACKAGE + ".customwidget.SourceListWidgetProvider");
     private static final String SOURCE_LIST_WIDGET = "source_list_widget";
+    // QNX hides the boot logo when this service reports boot complete (IDIMKey.notifyBootComplete, code 3).
+    private static final ComponentName DIM_KEY_SERVICE = new ComponentName("com.autolink.diminteraction",
+            "com.autolink.diminteraction.DIMKeyService");
     private final List<AppEntry> apps = new ArrayList<>();
     private final List<String> favorites = new ArrayList<>();
     private final List<WidgetPlacement> widgets = new ArrayList<>();
@@ -162,6 +169,36 @@ public final class HomeActivity extends Activity {
     // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
     private final ExecutorService wallpaperLoader = Executors.newSingleThreadExecutor();
+    private boolean dimKeyBound;
+    // The service reports boot complete by itself only when com.android.launcher3 starts, otherwise 10 s after
+    // its own start; GIB force-stops it after boot, which restarts that wait. So HOME asks on every connection.
+    private final ServiceConnection dimKeyConnection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder service) {
+            Parcel data = Parcel.obtain();
+            Parcel reply = Parcel.obtain();
+            try {
+                data.writeInterfaceToken("com.autolink.diminteraction.IDIMKey");
+                service.transact(3, data, reply, 0);
+                reply.readException();
+            } catch (RemoteException | RuntimeException e) {
+                Log.w("AtlasLauncher", "Cannot report boot complete to the DIM key service", e);
+            } finally {
+                data.recycle();
+                reply.recycle();
+            }
+        }
+
+        @Override public void onServiceDisconnected(ComponentName name) {
+            // The system reconnects when the service restarts.
+        }
+
+        @Override public void onBindingDied(ComponentName name) {
+            // A force stop ends the binding for good; bind again so the restarted service is asked too.
+            unbindService(this);
+            dimKeyBound = false;
+            bindDimKeyService();
+        }
+    };
     private final Runnable renderWidgets = this::showWidgets;
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -240,8 +277,22 @@ public final class HomeActivity extends Activity {
         updateStockHomeRedirectState();
         // Like Launcher3: OneOS LifeControlService starts its last boot stage (hvac, settings, gesture and
         // other OEM services, night mode) only on this broadcast from the first resume of HOME.
-        if (startupPending) sendBroadcast(new Intent("com.android.launcher3.startup"));
+        if (startupPending) {
+            sendBroadcast(new Intent("com.android.launcher3.startup"));
+            // Posted before the window is attached, this runs after the first frame, so the logo uncovers HOME.
+            getWindow().getDecorView().post(this::bindDimKeyService);
+        }
         startupPending = false;
+    }
+
+    private void bindDimKeyService() {
+        if (isDestroyed()) return;
+        try {
+            bindService(new Intent().setComponent(DIM_KEY_SERVICE), dimKeyConnection, BIND_AUTO_CREATE);
+            dimKeyBound = true;
+        } catch (SecurityException e) {
+            Log.w("AtlasLauncher", "Cannot bind the DIM key service", e);
+        }
     }
 
     // Night mode switches with the lights and once more after boot, when OneOS applies the mode deferred until
@@ -270,6 +321,7 @@ public final class HomeActivity extends Activity {
     @Override protected void onDestroy() {
         appLoader.shutdownNow();
         wallpaperLoader.shutdownNow();
+        if (dimKeyBound) unbindService(dimKeyConnection);
         unregisterReceiver(packageReceiver);
         if (settingsDialog != null) settingsDialog.dismiss();
         if (appDrawer != null) appDrawer.dismiss();
