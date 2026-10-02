@@ -141,6 +141,9 @@ public final class HomeActivity extends Activity {
     // QNX hides the boot logo when this service reports boot complete (IDIMKey.notifyBootComplete, code 3).
     private static final ComponentName DIM_KEY_SERVICE = new ComponentName("com.autolink.diminteraction",
             "com.autolink.diminteraction.DIMKeyService");
+    // The QNX boot animation acknowledges the report and exits; asked after that, the service resends it every
+    // second until it restarts. So HOME asks only while the logo can still be up after a boot.
+    private static final long BOOT_LOGO_WINDOW_MS = 120_000;
     private final List<AppEntry> apps = new ArrayList<>();
     private final List<String> favorites = new ArrayList<>();
     private final List<WidgetPlacement> widgets = new ArrayList<>();
@@ -174,6 +177,7 @@ public final class HomeActivity extends Activity {
     // its own start; GIB force-stops it after boot, which restarts that wait. So HOME asks on every connection.
     private final ServiceConnection dimKeyConnection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
+            if (SystemClock.elapsedRealtime() > BOOT_LOGO_WINDOW_MS) return;
             Parcel data = Parcel.obtain();
             Parcel reply = Parcel.obtain();
             try {
@@ -286,7 +290,7 @@ public final class HomeActivity extends Activity {
     }
 
     private void bindDimKeyService() {
-        if (isDestroyed()) return;
+        if (isDestroyed() || SystemClock.elapsedRealtime() > BOOT_LOGO_WINDOW_MS) return;
         try {
             bindService(new Intent().setComponent(DIM_KEY_SERVICE), dimKeyConnection, BIND_AUTO_CREATE);
             dimKeyBound = true;
