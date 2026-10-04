@@ -94,4 +94,4 @@ adb -s SERIAL shell settings put secure enabled_accessibility_services "com.geel
 
 Подробный план и ограничения: [docs/launcher-prototype-plan.md](../docs/launcher-prototype-plan.md). Исходные OEM APK для анализа: [reference-apks/README.md](../reference-apks/README.md).
 
-Пошаговая проверка на ГУ и команды возврата к штатному HOME: [docs/head-unit-test-and-rollback.md](../docs/head-unit-test-and-rollback.md). Этот протокол пока не выполнялся на ГУ.
+Пошаговая проверка на ГУ и команды возврата к штатному HOME: [docs/head-unit-test-and-rollback.md](../docs/head-unit-test-and-rollback.md). Протокол выполнен на ГУ ATLAS ОД.
