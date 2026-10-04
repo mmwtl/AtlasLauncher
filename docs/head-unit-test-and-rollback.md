@@ -1,6 +1,6 @@
 # Проверка AtlasLauncher на ГУ OneOS и возврат к штатному HOME
 
-Статус: протокол подготовлен, **на ГУ не выполнялся**. Сейчас `adb devices` показывает только эмулятор. Целевое ГУ — Android 11; APK для проверки: `artifacts/AtlasLauncher-0.4.0-debug.apk` (`com.mmwtl.atlaslauncher`, versionCode 4, targetSdk 30). Все команды ниже выполняются на компьютере из корня этого репозитория. В машине проводить проверки на стоянке.
+Статус: протокол подготовлен, **на ГУ не выполнялся**. Сейчас `adb devices` показывает только эмулятор. Целевое ГУ — Android 11; APK для проверки — собранный из текущего кода (`com.geely.atlaslauncher`, targetSdk 30), путь задаётся переменной `APK` ниже. Все команды ниже выполняются на компьютере из корня этого репозитория. В машине проводить проверки на стоянке.
 
 Главное правило: **не удалять, не отключать и не очищать данные `com.android.launcher3`, `com.android.systemui`, `com.ecarx.systemui.plugin` или GInputBridge**. Для смены HOME не нужны root, запись в `/system`, копирование OEM APK на устройство или смена системных разрешений. Наличие root ADB оставляем как запасной доступ, а не как повод менять системные разделы.
 
@@ -9,8 +9,8 @@
 Подставить реальный serial из `adb devices -l`. Все дальнейшие команды адресованы ему явно, чтобы не попасть в эмулятор.
 
 ```sh
-cd /Users/wital/dev/AtlasLauncher
-ADB=/Users/wital/Library/Android/sdk/platform-tools/adb
+ADB="$ANDROID_HOME/platform-tools/adb"
+APK='app/build/outputs/apk/release/1.0.0[16]AtlasLauncher-release.apk'
 "$ADB" devices -l
 GU_SERIAL='ВСТАВИТЬ_SERIAL_ГУ'
 "$ADB" -s "$GU_SERIAL" get-state
@@ -65,12 +65,12 @@ ORIGINAL_HOME='com.android.launcher3'
 Установить APK удобным способом на ГУ. Если удобнее через ADB:
 
 ```sh
-shasum -a 256 artifacts/AtlasLauncher-0.4.0-debug.apk
-"$ADB" -s "$GU_SERIAL" install -r artifacts/AtlasLauncher-0.4.0-debug.apk
+shasum -a 256 "$APK"
+"$ADB" -s "$GU_SERIAL" install -r "$APK"
 "$ADB" -s "$GU_SERIAL" shell dumpsys package com.geely.atlaslauncher > "$GU_LOG/atlas-package.txt"
 ```
 
-Ожидаемый SHA-256 APK: `7feae925769d6c2ad93fdd1c63c3ecad9d665c786a5fd0d785663c2a4a297635`. `install -r` сохраняет данные существующей установки. При `INSTALL_FAILED_UPDATE_INCOMPATIBLE` **остановиться**: это несовпадение подписи; не делать `uninstall` или `pm clear`, если нужно сохранить виджеты/настройки старой установки.
+Записать SHA-256 установленного APK в журнал проверки. `install -r` сохраняет данные существующей установки. При `INSTALL_FAILED_UPDATE_INCOMPATIBLE` **остановиться**: это несовпадение подписи; не делать `uninstall` или `pm clear`, если нужно сохранить виджеты/настройки старой установки.
 
 **Открыть Atlas нажатием на его ярлык в системном списке приложений.** ADB-команда `am start` для этого не нужна. Пока HOME не назначен, проверить старт Atlas, каталог приложений, добавление одного обычного виджета, его нажатие, перенос, изменение размера, возврат в штатный HOME по физической/штатной кнопке Home. Сделать скриншот; отдельно снять верхнюю панель и климатический dock при открытом Atlas. Если уже здесь панель исчезает или виджет ломается, закрыть Atlas, нажать Home и собрать логи. Штатный HOME при такой проверке не менялся.
 
