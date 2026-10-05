@@ -75,5 +75,13 @@ APK находится в `app/build/outputs/apk/release/` и называетс
 Поведение климатической панели, OEM-виджетов, кнопок SystemUI и запуска DIM зависит от прошивки.
 Лаунчер проверен на ГУ ATLAS ОД; на других прошивках эти сценарии нужно проверять отдельно,
 ограничения и порядок проверки приведены в документации. Штатные Launcher3 и SystemUI должны оставаться установленными.
-Если после ручной установки «Настроек» (`com.android.settings`) HOME всегда открывает Launcher3,
-см. [обход](docs/launcher-settings.md#home-всегда-открывает-launcher3-после-установки-настроек).
+Если вы устанавливаете «Настройки» (`com.android.settings`) вручную и выбор Atlas Launcher как HOME
+не сохраняется (Home всегда открывает Launcher3), отключите их заглушки HOME и заново выберите Atlas Launcher:
+
+```sh
+adb shell pm disable com.android.settings/.FallbackHome
+adb shell pm disable com.android.settings/.CryptKeeper
+```
+
+Вернуть можно командой `pm enable` с теми же компонентами; после переустановки «Настроек» команды нужно повторить.
+Причина описана в [документации](docs/launcher-settings.md#home-всегда-открывает-launcher3-после-установки-настроек).
