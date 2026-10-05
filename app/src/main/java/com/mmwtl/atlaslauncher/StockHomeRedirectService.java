@@ -6,7 +6,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Rect;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
@@ -56,6 +58,7 @@ public final class StockHomeRedirectService extends AccessibilityService {
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        logEvent(event);
         if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             AccessibilityNodeInfo item = event.getSource();
             if (isFirstItemOf(item, PANEL_SUB_LIST)) {
@@ -93,6 +96,34 @@ public final class StockHomeRedirectService extends AccessibilityService {
         if (list == null) return false;
         String id = list.getViewIdResourceName();
         return id != null && id.endsWith(listId) && item.equals(list.getChild(0));
+    }
+
+    // Temporary diagnostics for recognizing panel buttons on the head unit: adb logcat -s AtlasPanel
+    private static void logEvent(AccessibilityEvent event) {
+        StringBuilder b = new StringBuilder(AccessibilityEvent.eventTypeToString(event.getEventType()))
+                .append(" t=").append(event.getEventTime()).append(" now=").append(SystemClock.uptimeMillis())
+                .append(" pkg=").append(event.getPackageName()).append(" class=").append(event.getClassName())
+                .append(" window=").append(event.getWindowId());
+        AccessibilityNodeInfo node = event.getSource();
+        for (int depth = 0; node != null && depth < 6; depth++) {
+            Rect bounds = new Rect();
+            node.getBoundsInScreen(bounds);
+            AccessibilityNodeInfo parent = node.getParent();
+            int index = -1;
+            if (parent != null) {
+                for (int i = 0; i < parent.getChildCount(); i++) {
+                    if (node.equals(parent.getChild(i))) { index = i; break; }
+                }
+            }
+            b.append("\n  [").append(depth).append("] ").append(node.getClassName())
+                    .append(" id=").append(node.getViewIdResourceName())
+                    .append(" text=").append(node.getText()).append(" desc=").append(node.getContentDescription())
+                    .append(" bounds=").append(bounds.toShortString())
+                    .append(" index=").append(index).append('/').append(parent == null ? -1 : parent.getChildCount())
+                    .append(" children=").append(node.getChildCount());
+            node = parent;
+        }
+        Log.i("AtlasPanel", b.toString());
     }
 
     @Override public void onInterrupt() { }
