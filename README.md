@@ -10,6 +10,12 @@ Atlas Launcher заменяет домашний экран на Android: раз
 по сетке, показывает часы и док, позволяет выбрать фон и настроить рабочий стол.
 Пакет приложения — `com.geely.atlaslauncher`.
 
+Виджеты Atlas для рабочего стола:
+
+- [Atlas Climate Widget](https://github.com/mmwtl/AtlasClimateWidget) — настраиваемый климатический виджет;
+- [Atlas Media Widget](https://github.com/mmwtl/AtlasMediaWidget) — медиакарточка с обложкой, управлением и источниками звука;
+- [Atlas App Widget](https://github.com/mmwtl/AtlasAppWidget) — панель ярлыков приложений поверх HOME.
+
 ## Интерфейс
 
 Рабочий стол использует графитовую палитру Atlas. Долгое нажатие включает редактирование:
