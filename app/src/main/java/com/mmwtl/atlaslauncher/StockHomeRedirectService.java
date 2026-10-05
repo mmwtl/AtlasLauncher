@@ -13,7 +13,8 @@ import android.view.accessibility.AccessibilityNodeInfo;
 /**
  * The OneOS climate panel opens com.android.launcher3/.Launcher explicitly instead of the current HOME, both for
  * Home and for All apps; only an intent extra tells them apart. This service returns to AtlasLauncher when that
- * happens and recognizes All apps by the preceding click on the panel's All apps button. Its config limits events
+ * happens and recognizes All apps by the preceding click on the panel's All apps button. A click on the panel's
+ * Home button opens AtlasLauncher at once, so Launcher3 is not shown. Its config limits events
  * to Launcher3 and the SystemUI plugin, and it requests only the event types of the features enabled in
  * AtlasLauncher settings, so with both off the system sends it nothing.
  */
