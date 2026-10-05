@@ -24,6 +24,8 @@ public final class StockHomeRedirectService extends AccessibilityService {
     private static final String STOCK_LAUNCHER = "com.android.launcher3.Launcher";
     // The plugin pins its All apps item first in this list and does not let the user move it.
     private static final String PANEL_SUB_LIST = ":id/rv_nav_sub";
+    // Home is the first, fixed item of this list (dock_main, item_position 0).
+    private static final String PANEL_MAIN_LIST = ":id/rv_nav_main";
     private static final long ALL_APPS_CLICK_TIMEOUT_MS = 2000;
     // Set before AtlasLauncher opens the stock launcher on purpose.
     static volatile long allowStockLauncherUntil;
@@ -49,13 +51,21 @@ public final class StockHomeRedirectService extends AccessibilityService {
         boolean allApps = prefs.getBoolean(ALL_APPS_ENABLED, false);
         AccessibilityServiceInfo info = getServiceInfo();
         info.eventTypes = (home || allApps ? AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED : 0)
-                | (allApps ? AccessibilityEvent.TYPE_VIEW_CLICKED : 0);
+                | (home || allApps ? AccessibilityEvent.TYPE_VIEW_CLICKED : 0);
         setServiceInfo(info);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-            if (isPanelAllAppsButton(event.getSource())) allAppsClickedAt = SystemClock.elapsedRealtime();
+            AccessibilityNodeInfo item = event.getSource();
+            if (isFirstItemOf(item, PANEL_SUB_LIST)) {
+                allAppsClickedAt = SystemClock.elapsedRealtime();
+            } else if (isFirstItemOf(item, PANEL_MAIN_LIST)
+                    && getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE).getBoolean(ENABLED, false)) {
+                // The plugin has already asked to start Launcher3; starting AtlasLauncher right away puts it on
+                // top before Launcher3 is drawn. The window check below stays as a fallback.
+                openAtlasIfHome(false);
+            }
             return;
         }
         if (!STOCK_LAUNCHER.equals(String.valueOf(event.getClassName()))) return;
@@ -65,6 +75,10 @@ public final class StockHomeRedirectService extends AccessibilityService {
         allAppsClickedAt = 0;
         SharedPreferences prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);
         if (!prefs.getBoolean(allApps ? ALL_APPS_ENABLED : ENABLED, false)) return;
+        openAtlasIfHome(allApps);
+    }
+
+    private void openAtlasIfHome(boolean allApps) {
         // After a rollback to the stock HOME the panel buttons must keep opening it.
         ResolveInfo home = getPackageManager().resolveActivity(
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
@@ -73,12 +87,12 @@ public final class StockHomeRedirectService extends AccessibilityService {
                 .putExtra(EXTRA_OPEN_ALL_APPS, allApps));
     }
 
-    private static boolean isPanelAllAppsButton(AccessibilityNodeInfo item) {
+    private static boolean isFirstItemOf(AccessibilityNodeInfo item, String listId) {
         if (item == null) return false;
         AccessibilityNodeInfo list = item.getParent();
         if (list == null) return false;
         String id = list.getViewIdResourceName();
-        return id != null && id.endsWith(PANEL_SUB_LIST) && item.equals(list.getChild(0));
+        return id != null && id.endsWith(listId) && item.equals(list.getChild(0));
     }
 
     @Override public void onInterrupt() { }
