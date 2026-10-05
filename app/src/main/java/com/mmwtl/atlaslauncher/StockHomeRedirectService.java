@@ -12,9 +12,9 @@ import android.view.accessibility.AccessibilityNodeInfo;
 
 /**
  * The OneOS climate panel opens com.android.launcher3/.Launcher explicitly instead of the current HOME, both for
- * Home and for All apps; only an intent extra tells them apart. This service returns to AtlasLauncher when that
- * happens and recognizes All apps by the preceding click on the panel's All apps button. A click on the panel's
- * Home button opens AtlasLauncher at once, so Launcher3 is not shown. Its config limits events
+ * Home and for All apps; only an intent extra tells them apart. This service opens AtlasLauncher right on the click
+ * of the panel's Home or All apps button, so Launcher3 is not shown, and as a fallback returns to AtlasLauncher
+ * when the Launcher3 window appears. Its config limits events
  * to Launcher3 and the SystemUI plugin, and it requests only the event types of the features enabled in
  * AtlasLauncher settings, so with both off the system sends it nothing.
  */
@@ -30,7 +30,7 @@ public final class StockHomeRedirectService extends AccessibilityService {
     private static final long ALL_APPS_CLICK_TIMEOUT_MS = 2000;
     // Set before AtlasLauncher opens the stock launcher on purpose.
     static volatile long allowStockLauncherUntil;
-    private long allAppsClickedAt;
+    private long allAppsOpenedAt;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
         if (ENABLED.equals(key) || ALL_APPS_ENABLED.equals(key)) applyEnabled(prefs);
@@ -51,32 +51,31 @@ public final class StockHomeRedirectService extends AccessibilityService {
         boolean home = prefs.getBoolean(ENABLED, false);
         boolean allApps = prefs.getBoolean(ALL_APPS_ENABLED, false);
         AccessibilityServiceInfo info = getServiceInfo();
-        info.eventTypes = (home || allApps ? AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED : 0)
-                | (home || allApps ? AccessibilityEvent.TYPE_VIEW_CLICKED : 0);
+        info.eventTypes = home || allApps
+                ? AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED | AccessibilityEvent.TYPE_VIEW_CLICKED : 0;
         setServiceInfo(info);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        SharedPreferences prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);
+        long now = SystemClock.elapsedRealtime();
+        // The plugin has already asked to start Launcher3; starting AtlasLauncher right away puts it on top before
+        // Launcher3 is drawn. The window check below stays as a fallback.
         if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             AccessibilityNodeInfo item = event.getSource();
-            if (isFirstItemOf(item, PANEL_SUB_LIST)) {
-                allAppsClickedAt = SystemClock.elapsedRealtime();
-            } else if (isFirstItemOf(item, PANEL_MAIN_LIST)
-                    && getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE).getBoolean(ENABLED, false)) {
-                // The plugin has already asked to start Launcher3; starting AtlasLauncher right away puts it on
-                // top before Launcher3 is drawn. The window check below stays as a fallback.
+            if (isFirstItemOf(item, PANEL_SUB_LIST) && prefs.getBoolean(ALL_APPS_ENABLED, false)) {
+                allAppsOpenedAt = now;
+                openAtlasIfHome(true);
+            } else if (isFirstItemOf(item, PANEL_MAIN_LIST) && prefs.getBoolean(ENABLED, false)) {
                 openAtlasIfHome(false);
             }
             return;
         }
         if (!STOCK_LAUNCHER.equals(String.valueOf(event.getClassName()))) return;
-        long now = SystemClock.elapsedRealtime();
-        if (now < allowStockLauncherUntil) return;
-        boolean allApps = now - allAppsClickedAt < ALL_APPS_CLICK_TIMEOUT_MS;
-        allAppsClickedAt = 0;
-        SharedPreferences prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);
-        if (!prefs.getBoolean(allApps ? ALL_APPS_ENABLED : ENABLED, false)) return;
-        openAtlasIfHome(allApps);
+        if (now < allowStockLauncherUntil || !prefs.getBoolean(ENABLED, false)) return;
+        // Opening AtlasLauncher again would close the All apps view just opened, or start the chosen activity twice.
+        if (now - allAppsOpenedAt < ALL_APPS_CLICK_TIMEOUT_MS) return;
+        openAtlasIfHome(false);
     }
 
     private void openAtlasIfHome(boolean allApps) {
