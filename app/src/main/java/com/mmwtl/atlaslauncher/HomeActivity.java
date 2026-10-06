@@ -1741,10 +1741,11 @@ public final class HomeActivity extends Activity {
             placement.y = Math.max(0, Math.min(placement.y, availableHeight - placement.height));
             int fallbackX = placement.x, fallbackY = placement.y;
             int fallbackWidth = placement.width, fallbackHeight = placement.height;
+            Point minSize = info == null ? null : minWidgetSizeDp(info);
             int minColumns = clockWidget ? 1 : dockWidget ? Math.min(2, grid.columns)
-                    : grid.span(Math.max(56, pxToDp(info.minResizeWidth)) + padding.x, grid.cellWidth, grid.columns);
+                    : grid.span(minSize.x, grid.cellWidth, grid.columns);
             int minRows = clockWidget ? 1 : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows)
-                    : grid.span(pxToDp(info.minResizeHeight) + padding.y, grid.cellHeight, grid.rows);
+                    : grid.span(minSize.y, grid.cellHeight, grid.rows);
             int columns = Math.max(minColumns, grid.span(placement.width, grid.cellWidth, grid.columns));
             int rows = Math.max(minRows, grid.span(placement.height, grid.cellHeight, grid.rows));
             Point slot = null;
@@ -2108,6 +2109,20 @@ public final class HomeActivity extends Activity {
         return new Point(pxToDp(padding.left + padding.right), pxToDp(padding.top + padding.bottom));
     }
 
+    /**
+     * Any widget may be enlarged. A fixed-size layout is scaled, so it also shrinks down to one cell; other widgets
+     * keep their declared minimum along an axis they resize and their initial size along an axis they do not.
+     */
+    private Point minWidgetSizeDp(AppWidgetProviderInfo info) {
+        if (fixedLayoutPx(info) != null) return new Point(WIDGET_CELL_DP, WIDGET_CELL_DP);
+        Point padding = widgetPaddingDp(info);
+        int width = (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
+                ? Math.max(56, pxToDp(info.minResizeWidth)) : pxToDp(info.minWidth);
+        int height = (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
+                ? pxToDp(info.minResizeHeight) : pxToDp(info.minHeight);
+        return new Point(width + padding.x, height + padding.y);
+    }
+
     @SuppressWarnings("deprecation")
     private void updateWidgetSize(AppWidgetHostView hostView, WidgetPlacement placement) {
         hostView.updateAppWidgetSize(null, placement.width, placement.height, placement.width, placement.height);
@@ -2150,15 +2165,10 @@ public final class HomeActivity extends Activity {
     private View.OnTouchListener widgetTouch(FrameLayout container, View hostView,
                                              WidgetPlacement placement,
                                              AppWidgetProviderInfo info, boolean resizing) {
-        Point padding = info == null ? new Point(0, 0) : widgetPaddingDp(info);
-        // Any widget may be enlarged; along an axis the provider does not resize it keeps at least its initial size.
-        int minWidth = info == null ? (placement.id == DOCK_WIDGET_ID ? 2 : 1) * WIDGET_CELL_DP
-                : (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
-                ? Math.max(56, pxToDp(info.minResizeWidth)) + padding.x : pxToDp(info.minWidth) + padding.x;
+        Point minSize = info == null ? null : minWidgetSizeDp(info);
+        int minWidth = info == null ? (placement.id == DOCK_WIDGET_ID ? 2 : 1) * WIDGET_CELL_DP : minSize.x;
         int minHeight = info == null ? placement.id == DOCK_WIDGET_ID
-                ? dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)) : WIDGET_CELL_DP
-                : (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
-                ? pxToDp(info.minResizeHeight) + padding.y : pxToDp(info.minHeight) + padding.y;
+                ? dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)) : WIDGET_CELL_DP : minSize.y;
         return new View.OnTouchListener() {
             float startX;
             float startY;
