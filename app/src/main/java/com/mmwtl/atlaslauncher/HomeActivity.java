@@ -2141,23 +2141,24 @@ public final class HomeActivity extends Activity {
             showWidgets();
         });
         container.addView(delete, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.RIGHT));
-        if (info == null || info.resizeMode != AppWidgetProviderInfo.RESIZE_NONE) {
-            Button resize = button("↘");
-            resize.setContentDescription("Изменить размер " + title);
-            resize.setOnTouchListener(widgetTouch(container, hostView, placement, info, true));
-            container.addView(resize, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.BOTTOM | Gravity.RIGHT));
-        }
+        Button resize = button("↘");
+        resize.setContentDescription("Изменить размер " + title);
+        resize.setOnTouchListener(widgetTouch(container, hostView, placement, info, true));
+        container.addView(resize, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.BOTTOM | Gravity.RIGHT));
     }
 
     private View.OnTouchListener widgetTouch(FrameLayout container, View hostView,
                                              WidgetPlacement placement,
                                              AppWidgetProviderInfo info, boolean resizing) {
         Point padding = info == null ? new Point(0, 0) : widgetPaddingDp(info);
+        // Any widget may be enlarged; along an axis the provider does not resize it keeps at least its initial size.
         int minWidth = info == null ? (placement.id == DOCK_WIDGET_ID ? 2 : 1) * WIDGET_CELL_DP
-                : Math.max(56, pxToDp(info.minResizeWidth)) + padding.x;
+                : (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
+                ? Math.max(56, pxToDp(info.minResizeWidth)) + padding.x : pxToDp(info.minWidth) + padding.x;
         int minHeight = info == null ? placement.id == DOCK_WIDGET_ID
                 ? dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)) : WIDGET_CELL_DP
-                : pxToDp(info.minResizeHeight) + padding.y;
+                : (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
+                ? pxToDp(info.minResizeHeight) + padding.y : pxToDp(info.minHeight) + padding.y;
         return new View.OnTouchListener() {
             float startX;
             float startY;
@@ -2184,10 +2185,8 @@ public final class HomeActivity extends Activity {
                     int areaWidth = pxToDp(widgetRow.getWidth());
                     int areaHeight = pxToDp(widgetRow.getHeight() - widgetRow.getPaddingTop());
                     if (resizing) {
-                        if (info == null || (info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0)
-                            placement.width = Math.min(areaWidth - placement.x, Math.max(minWidth, originalWidth + dx));
-                        if (info == null || (info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0)
-                            placement.height = Math.min(areaHeight - placement.y, Math.max(minHeight, originalHeight + dy));
+                        placement.width = Math.min(areaWidth - placement.x, Math.max(minWidth, originalWidth + dx));
+                        placement.height = Math.min(areaHeight - placement.y, Math.max(minHeight, originalHeight + dy));
                     } else {
                         placement.x = Math.max(0, Math.min(areaWidth - placement.width, originalX + dx));
                         placement.y = Math.max(0, Math.min(areaHeight - placement.height, originalY + dy));
