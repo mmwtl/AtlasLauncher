@@ -293,9 +293,28 @@ public final class HomeActivity extends Activity {
         if (startupPending) {
             sendBroadcast(new Intent("com.android.launcher3.startup"));
             // Posted before the window is attached, the delay counts from the first frame.
-            getWindow().getDecorView().postDelayed(this::bindDimKeyService, BOOT_LOGO_HOLD_MS);
+            getWindow().getDecorView().postDelayed(this::endBootLogo, BOOT_LOGO_HOLD_MS);
         }
         startupPending = false;
+    }
+
+    private void endBootLogo() {
+        if (isDestroyed() || SystemClock.elapsedRealtime() > BOOT_LOGO_WINDOW_MS) return;
+        // The climate panel Home click starts Launcher3; a Launcher3 activity created for the first time shows on
+        // screen before AtlasLauncher returns. So, while the logo is up, Launcher3 is opened once and the redirect
+        // service brings AtlasLauncher back when its window appears. The DIM key service then reports boot complete
+        // by itself 1.3 s after Launcher3 starts; a second report from HOME would come after QNX acknowledged it.
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(StockHomeRedirectService.ENABLED, false)
+                && isStockHomeRedirectActive()) {
+            try {
+                startActivity(new Intent(Intent.ACTION_MAIN).setClassName("com.android.launcher3", "com.android.launcher3.Launcher")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                return;
+            } catch (ActivityNotFoundException | SecurityException e) {
+                Log.w("AtlasLauncher", "Cannot open Launcher3 under the boot logo", e);
+            }
+        }
+        bindDimKeyService();
     }
 
     private void bindDimKeyService() {
@@ -1082,17 +1101,20 @@ public final class HomeActivity extends Activity {
                 || prefs.getBoolean(StockHomeRedirectService.ALL_APPS_ENABLED, false);
         settingsRedirectState.setVisibility(enabled ? View.VISIBLE : View.GONE);
         if (!enabled) return;
-        // Lists only connected services: after a force stop Android 11 keeps the service unbound until reboot.
-        String id = new ComponentName(this, StockHomeRedirectService.class).flattenToShortString();
-        boolean active = false;
-        for (AccessibilityServiceInfo info : getSystemService(AccessibilityManager.class)
-                .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK))
-            if (id.equals(info.getId())) active = true;
-        ((TextView) settingsRedirectState.getChildAt(0)).setText(active
+        ((TextView) settingsRedirectState.getChildAt(0)).setText(isStockHomeRedirectActive()
                 ? "Служба работает."
                 : "Служба не работает: включите «" + getString(R.string.stock_home_redirect_label)
                         + "» в специальных возможностях Android. Если она уже включена, но AtlasLauncher "
                         + "останавливали принудительно, перезагрузите ГУ.");
+    }
+
+    private boolean isStockHomeRedirectActive() {
+        // Lists only connected services: after a force stop Android 11 keeps the service unbound until reboot.
+        String id = new ComponentName(this, StockHomeRedirectService.class).flattenToShortString();
+        for (AccessibilityServiceInfo info : getSystemService(AccessibilityManager.class)
+                .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK))
+            if (id.equals(info.getId())) return true;
+        return false;
     }
 
     private void setEditingWidgets(boolean editing) {
