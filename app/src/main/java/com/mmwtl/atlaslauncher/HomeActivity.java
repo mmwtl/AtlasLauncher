@@ -9,6 +9,7 @@ import android.appwidget.AppWidgetHostView;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProviderInfo;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -106,6 +107,7 @@ public final class HomeActivity extends Activity {
     private static final int PICK_WALLPAPER = 3;
     private static final int RECONFIGURE_WIDGET = 4;
     private static final int BIND_SOURCE_LIST = 5;
+    private static final int PICK_SLIDESHOW = 6;
     private static final int CLOCK_WIDGET_ID = -2;
     private static final int DOCK_WIDGET_ID = -3;
     private static final int WIDGET_CELL_DP = 96;
@@ -121,6 +123,24 @@ public final class HomeActivity extends Activity {
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
     private static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
     private static final String WALLPAPER = "wallpaper";
+    private static final String SLIDESHOW = "wallpaper_slideshow";
+    private static final String SLIDESHOW_IMAGES = "wallpaper_slideshow_images";
+    private static final String SLIDESHOW_PERIOD = "wallpaper_slideshow_period";
+    private static final String SLIDESHOW_CHANGED_AT = "wallpaper_slideshow_changed_at";
+    private static final String SLIDESHOW_BOOT = "wallpaper_slideshow_boot";
+    // Index 0 changes the wallpaper once per boot.
+    private static final long[] SLIDESHOW_PERIODS_MS = {0, 15 * 60_000, 60 * 60_000, 24 * 60 * 60_000};
+    private static final int[] PRESET_WALLPAPERS = {
+            R.drawable.wallpaper_car_suv, R.drawable.wallpaper_orange_trails,
+            R.drawable.wallpaper_graphite, R.drawable.wallpaper_purple_sky,
+            R.drawable.wallpaper_car_sedan, R.drawable.wallpaper_red_carbon,
+            R.drawable.wallpaper_blue_trails, R.drawable.wallpaper_teal_glass,
+            R.drawable.wallpaper_mountain_road, R.drawable.wallpaper_night_city,
+            R.drawable.wallpaper_dark_marble, R.drawable.wallpaper_mountain_sunset
+    };
+    private static final String[] PRESET_NAMES = {"Внедорожник", "Огни дороги", "Графит", "Звёздная ночь",
+            "Седан", "Красный карбон", "Синий поток", "Бирюза", "Горная дорога",
+            "Ночной город", "Тёмный мрамор", "Горный закат"};
     private static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
@@ -163,6 +183,7 @@ public final class HomeActivity extends Activity {
     private LinearLayout appsTile;
     private boolean editingWidgets;
     private boolean startupPending;
+    private boolean homeVisible;
     private Dialog settingsDialog;
     private Dialog appDrawer;
     private PopupWindow sourceListPopup;
@@ -213,6 +234,7 @@ public final class HomeActivity extends Activity {
         }
     };
     private final Runnable renderWidgets = this::showWidgets;
+    private final Runnable slideshowStep = this::advanceSlideshow;
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             fixedLayouts.clear();
@@ -251,6 +273,8 @@ public final class HomeActivity extends Activity {
         packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
         packages.addDataScheme("package");
         registerReceiver(packageReceiver, packages);
+        // HOME is not drawn yet, so a due slideshow change here is never seen.
+        if (slideshowDelay() == 0) saveSlide(nextSlides().get(0));
         buildHome();
         if (state != null && state.getBoolean("settingsOpen"))
             widgetRow.post(() -> showSettings(state.getInt("settingsPage", 0)));
@@ -279,6 +303,8 @@ public final class HomeActivity extends Activity {
 
     @Override public void onStart() {
         super.onStart();
+        homeVisible = true;
+        wallpaperView.removeCallbacks(slideshowStep);
         widgetHost.startListening();
     }
 
@@ -347,6 +373,10 @@ public final class HomeActivity extends Activity {
     @Override public void onStop() {
         if (sourceListPopup != null) sourceListPopup.dismiss();
         widgetHost.stopListening();
+        homeVisible = false;
+        // The slideshow changes the wallpaper only while another app covers HOME.
+        long delay = slideshowDelay();
+        if (delay >= 0) wallpaperView.postDelayed(slideshowStep, delay);
         super.onStop();
     }
 
@@ -815,7 +845,8 @@ public final class HomeActivity extends Activity {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCanceledOnTouchOutside(false);
         dialog.setOnDismissListener(d -> {
-            settingsDialog = null;
+            // The slideshow page replaces the main page before this posted callback runs.
+            if (settingsDialog == dialog) settingsDialog = null;
             settingsWallpaperPreview = null;
             settingsWallpaperPresets = null;
             settingsRedirectState = null;
@@ -827,7 +858,8 @@ public final class HomeActivity extends Activity {
         panel.setBackground(round(NEUTRAL_SURFACE, NEUTRAL_RAISED, 28));
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView heading = label(page == 1 ? "Док приложений" : page == 2 ? "Настройки часов" : "Настройки",
+        TextView heading = label(page == 1 ? "Док приложений" : page == 2 ? "Настройки часов"
+                        : page == 3 ? "Сменяемый фон" : "Настройки",
                 28, NEUTRAL_TEXT, true);
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
         Button close = neutralButton("×");
@@ -848,6 +880,7 @@ public final class HomeActivity extends Activity {
         // Dock and clock are widgets: their pages open only from the widget's own settings button.
         if (page == 1) buildDockSettings(content);
         else if (page == 2) buildClockSettings(content);
+        else if (page == 3) buildSlideshowSettings(content);
         else {
             buildDesktopSettings(content, dialog);
             buildWidgetAreaSettings(content);
@@ -950,48 +983,17 @@ public final class HomeActivity extends Activity {
         TextView presetsLabel = label("Встроенные фоны · листайте в сторону", 14, NEUTRAL_MUTED, false);
         presetsLabel.setPadding(0, dp(16), 0, dp(8));
         wallpaper.addView(presetsLabel);
-        HorizontalScrollView presetsScroll = new HorizontalScrollView(this);
-        LinearLayout presets = new LinearLayout(this);
+        LinearLayout presets = thumbnailRow(wallpaper);
         settingsWallpaperPresets = presets;
-        int[] presetImages = {
-                R.drawable.wallpaper_car_suv, R.drawable.wallpaper_orange_trails,
-                R.drawable.wallpaper_graphite, R.drawable.wallpaper_purple_sky,
-                R.drawable.wallpaper_car_sedan, R.drawable.wallpaper_red_carbon,
-                R.drawable.wallpaper_blue_trails, R.drawable.wallpaper_teal_glass,
-                R.drawable.wallpaper_mountain_road, R.drawable.wallpaper_night_city,
-                R.drawable.wallpaper_dark_marble, R.drawable.wallpaper_mountain_sunset
-        };
-        String[] presetNames = {"Внедорожник", "Огни дороги", "Графит", "Звёздная ночь",
-                "Седан", "Красный карбон", "Синий поток", "Бирюза", "Горная дорога",
-                "Ночной город", "Тёмный мрамор", "Горный закат"};
-        for (int i = 0; i < presetImages.length; i++) {
-            int resource = presetImages[i];
-            ImageView thumbnail = new ImageView(this);
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inJustDecodeBounds = true;
-            BitmapFactory.decodeResource(getResources(), resource, options);
-            options.inSampleSize = 1;
-            while (options.outWidth / (options.inSampleSize * 2) >= dp(108)) options.inSampleSize *= 2;
-            options.inJustDecodeBounds = false;
-            thumbnail.setImageBitmap(BitmapFactory.decodeResource(getResources(), resource, options));
-            thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            thumbnail.setContentDescription(presetNames[i]);
-            thumbnail.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 12));
-            thumbnail.setClipToOutline(true);
-            String uri = "android.resource://" + getPackageName() + "/drawable/"
-                    + getResources().getResourceEntryName(resource);
-            thumbnail.setTag(uri);
-            thumbnail.setOnClickListener(v -> {
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri).apply();
+        for (int i = 0; i < PRESET_WALLPAPERS.length; i++) {
+            String uri = presetUri(PRESET_WALLPAPERS[i]);
+            wallpaperThumbnail(presets, uri, PRESET_NAMES[i]).setOnClickListener(v -> {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri)
+                        .putBoolean(SLIDESHOW, false).apply();
                 showWallpaper();
             });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(108), dp(144));
-            params.rightMargin = dp(8);
-            presets.addView(thumbnail, params);
         }
-        presetsScroll.addView(presets);
         markWallpaperPreset(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null));
-        wallpaper.addView(presetsScroll, new LinearLayout.LayoutParams(-1, -2));
         settingsAction(wallpaper, "Выбрать изображение", () -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -1000,8 +1002,168 @@ public final class HomeActivity extends Activity {
             catch (ActivityNotFoundException e) { Toast.makeText(this, "Выбор изображения недоступен", Toast.LENGTH_SHORT).show(); }
         });
         settingsAction(wallpaper, "Вернуть стандартный фон", () -> {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(WALLPAPER).apply();
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(WALLPAPER).putBoolean(SLIDESHOW, false).apply();
             showWallpaper();
+        });
+        settingsAction(wallpaper, "Сменяемый фон", () -> {
+            dialog.dismiss();
+            showSettings(3);
+        });
+    }
+
+    private void buildSlideshowSettings(LinearLayout content) {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        LinearLayout state = settingsCard(content, "Смена фона",
+                "Фон меняется, только пока главный экран закрыт другим приложением, и никогда у вас на глазах.");
+        settingsToggle(state, "Менять фон", SLIDESHOW, false, () -> { });
+        LinearLayout images = settingsCard(content, "Изображения", "Отметьте фоны, которые будут сменять друг друга.");
+        LinearLayout presets = thumbnailRow(images);
+        List<String> slides = slideshowImages();
+        for (int i = 0; i < PRESET_WALLPAPERS.length; i++) {
+            String uri = presetUri(PRESET_WALLPAPERS[i]);
+            ImageView thumbnail = wallpaperThumbnail(presets, uri, PRESET_NAMES[i]);
+            markThumbnail(thumbnail, slides.contains(uri));
+            thumbnail.setOnClickListener(v -> {
+                List<String> current = slideshowImages();
+                if (!current.remove(uri)) current.add(uri);
+                saveSlideshowImages(current);
+                markThumbnail(thumbnail, current.contains(uri));
+            });
+        }
+        if (slides.stream().anyMatch(uri -> !isPresetUri(uri))) {
+            TextView ownLabel = label("Свои изображения · нажмите, чтобы убрать", 14, NEUTRAL_MUTED, false);
+            ownLabel.setPadding(0, dp(16), 0, dp(8));
+            images.addView(ownLabel);
+            LinearLayout own = thumbnailRow(images);
+            for (String uri : slides) {
+                if (isPresetUri(uri)) continue;
+                ImageView thumbnail = wallpaperThumbnail(own, uri, "Своё изображение");
+                markThumbnail(thumbnail, true);
+                thumbnail.setOnClickListener(v -> {
+                    List<String> current = slideshowImages();
+                    current.remove(uri);
+                    saveSlideshowImages(current);
+                    own.removeView(thumbnail);
+                    // The wallpaper on screen still reads the image until the slideshow replaces it.
+                    if (!uri.equals(prefs.getString(WALLPAPER, null))) {
+                        try {
+                            getContentResolver().releasePersistableUriPermission(Uri.parse(uri),
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        } catch (SecurityException ignored) {
+                            // The permission is already gone.
+                        }
+                    }
+                });
+            }
+        }
+        settingsAction(images, "Добавить свои изображения", () -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("image/*");
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            try { startActivityForResult(intent, PICK_SLIDESHOW); }
+            catch (ActivityNotFoundException e) { Toast.makeText(this, "Выбор изображения недоступен", Toast.LENGTH_SHORT).show(); }
+        });
+        LinearLayout period = settingsCard(content, "Как часто менять", null);
+        settingsChoice(period, SLIDESHOW_PERIOD,
+                new String[]{"При каждом включении", "Раз в 15 минут", "Раз в час", "Раз в день"}, () -> { });
+    }
+
+    private LinearLayout thumbnailRow(LinearLayout parent) {
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        LinearLayout row = new LinearLayout(this);
+        scroll.addView(row);
+        parent.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+        return row;
+    }
+
+    private ImageView wallpaperThumbnail(LinearLayout row, String uri, String name) {
+        ImageView thumbnail = new ImageView(this);
+        // Twice the thumbnail height at most: power-of-two sampling keeps it at least as large as the tile.
+        int maxSize = dp(288);
+        Uri image = Uri.parse(uri);
+        if (isPresetUri(uri)) thumbnail.setImageBitmap(decodeWallpaper(image, maxSize));
+        else wallpaperLoader.execute(() -> {
+            Bitmap bitmap = decodeWallpaper(image, maxSize);
+            runOnUiThread(() -> thumbnail.setImageBitmap(bitmap));
+        });
+        thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        thumbnail.setContentDescription(name);
+        thumbnail.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 12));
+        thumbnail.setClipToOutline(true);
+        thumbnail.setTag(uri);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(108), dp(144));
+        params.rightMargin = dp(8);
+        row.addView(thumbnail, params);
+        return thumbnail;
+    }
+
+    private String presetUri(int resource) {
+        return "android.resource://" + getPackageName() + "/drawable/" + getResources().getResourceEntryName(resource);
+    }
+
+    private boolean isPresetUri(String uri) {
+        return ContentResolver.SCHEME_ANDROID_RESOURCE.equals(Uri.parse(uri).getScheme());
+    }
+
+    private List<String> slideshowImages() {
+        List<String> images = new ArrayList<>();
+        try {
+            JSONArray saved = new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE).getString(SLIDESHOW_IMAGES, "[]"));
+            for (int i = 0; i < saved.length(); i++) images.add(saved.getString(i));
+        } catch (JSONException e) {
+            Log.w("AtlasLauncher", "Cannot read slideshow images", e);
+        }
+        return images;
+    }
+
+    private void saveSlideshowImages(List<String> images) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(SLIDESHOW_IMAGES, new JSONArray(images).toString()).apply();
+    }
+
+    /** Returns the time until the slideshow is due to change the wallpaper, or -1 if it is not. */
+    private long slideshowDelay() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (!prefs.getBoolean(SLIDESHOW, false) || slideshowImages().isEmpty()) return -1;
+        int period = prefs.getInt(SLIDESHOW_PERIOD, 0);
+        if (period == 0) return prefs.getInt(SLIDESHOW_BOOT, -1) != bootCount() ? 0 : -1;
+        long elapsed = System.currentTimeMillis() - prefs.getLong(SLIDESHOW_CHANGED_AT, 0);
+        // A clock set back after the last change makes the change due.
+        return elapsed < 0 ? 0 : Math.max(0, SLIDESHOW_PERIODS_MS[period] - elapsed);
+    }
+
+    private int bootCount() {
+        return Settings.Global.getInt(getContentResolver(), Settings.Global.BOOT_COUNT, 0);
+    }
+
+    /** Returns the slideshow images in showing order, starting after the current wallpaper. */
+    private List<String> nextSlides() {
+        List<String> slides = slideshowImages();
+        Collections.rotate(slides, -(slides.indexOf(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null)) + 1));
+        return slides;
+    }
+
+    private void saveSlide(String uri) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri)
+                .putLong(SLIDESHOW_CHANGED_AT, System.currentTimeMillis()).putInt(SLIDESHOW_BOOT, bootCount()).apply();
+    }
+
+    /** Shows the next readable slideshow image; runs only while HOME is hidden. */
+    private void advanceSlideshow() {
+        if (isDestroyed()) return;
+        List<String> slides = nextSlides();
+        wallpaperLoader.execute(() -> {
+            for (String slide : slides) {
+                Bitmap bitmap = decodeWallpaper(Uri.parse(slide), 2048);
+                if (bitmap == null) continue;
+                runOnUiThread(() -> {
+                    // HOME came back while the image loaded; the change waits until it is hidden again.
+                    if (isDestroyed() || homeVisible) return;
+                    saveSlide(slide);
+                    applyWallpaper(slide, bitmap);
+                });
+                return;
+            }
         });
     }
 
@@ -1025,13 +1187,17 @@ public final class HomeActivity extends Activity {
         if (settingsWallpaperPresets == null) return;
         for (int i = 0; i < settingsWallpaperPresets.getChildCount(); i++) {
             View thumbnail = settingsWallpaperPresets.getChildAt(i);
-            GradientDrawable frame = null;
-            if (thumbnail.getTag().equals(wallpaper)) {
-                frame = round(Color.TRANSPARENT, Color.TRANSPARENT, 12);
-                frame.setStroke(dp(3), ACCENT);
-            }
-            thumbnail.setForeground(frame);
+            markThumbnail(thumbnail, thumbnail.getTag().equals(wallpaper));
         }
+    }
+
+    private void markThumbnail(View thumbnail, boolean marked) {
+        GradientDrawable frame = null;
+        if (marked) {
+            frame = round(Color.TRANSPARENT, Color.TRANSPARENT, 12);
+            frame.setStroke(dp(3), ACCENT);
+        }
+        thumbnail.setForeground(frame);
     }
 
     private void buildSystemSettings(LinearLayout content) {
@@ -1130,7 +1296,7 @@ public final class HomeActivity extends Activity {
         if (uri != null && !ContentResolver.SCHEME_ANDROID_RESOURCE.equals(uri.getScheme())) {
             // A picked image comes from its document provider, which may take seconds to start right after boot.
             wallpaperLoader.execute(() -> {
-                Bitmap bitmap = decodeWallpaper(uri);
+                Bitmap bitmap = decodeWallpaper(uri, 2048);
                 runOnUiThread(() -> {
                     // A newer choice may have replaced this one while it loaded.
                     if (!isDestroyed() && saved.equals(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null)))
@@ -1139,11 +1305,11 @@ public final class HomeActivity extends Activity {
             });
             return;
         }
-        applyWallpaper(saved, uri == null ? null : decodeWallpaper(uri));
+        applyWallpaper(saved, uri == null ? null : decodeWallpaper(uri, 2048));
     }
 
     /** Returns null if the image cannot be read. */
-    private Bitmap decodeWallpaper(Uri uri) {
+    private Bitmap decodeWallpaper(Uri uri, int maxSize) {
         try {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
@@ -1151,7 +1317,7 @@ public final class HomeActivity extends Activity {
                 BitmapFactory.decodeStream(stream, null, bounds);
             }
             int sample = 1;
-            while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2;
+            while (bounds.outWidth / sample > maxSize || bounds.outHeight / sample > maxSize) sample *= 2;
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inSampleSize = sample;
             try (InputStream stream = getContentResolver().openInputStream(uri)) {
@@ -1580,10 +1746,31 @@ public final class HomeActivity extends Activity {
             Uri uri = data.getData();
             try {
                 getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri.toString()).apply();
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri.toString())
+                        .putBoolean(SLIDESHOW, false).apply();
                 showWallpaper();
             } catch (SecurityException e) {
                 Toast.makeText(this, "Нет доступа к изображению", Toast.LENGTH_SHORT).show();
+            }
+        } else if (request == PICK_SLIDESHOW && result == RESULT_OK && data != null) {
+            ClipData clip = data.getClipData();
+            int count = clip != null ? clip.getItemCount() : data.getData() != null ? 1 : 0;
+            List<String> slides = slideshowImages();
+            boolean denied = false;
+            for (int i = 0; i < count; i++) {
+                Uri uri = clip != null ? clip.getItemAt(i).getUri() : data.getData();
+                try {
+                    getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    if (!slides.contains(uri.toString())) slides.add(uri.toString());
+                } catch (SecurityException e) {
+                    denied = true;
+                }
+            }
+            saveSlideshowImages(slides);
+            if (denied) Toast.makeText(this, "Нет доступа к части изображений", Toast.LENGTH_SHORT).show();
+            if (settingsDialog != null) {
+                settingsDialog.dismiss();
+                showSettings(3);
             }
         }
     }
