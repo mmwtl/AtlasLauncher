@@ -15,5 +15,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".ActionsProbeActivity"
+            android:configChanges="uiMode|orientation|screenSize|screenLayout|keyboardHidden|density"
+            android:exported="true"
+            android:label="@string/actions_app_name"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

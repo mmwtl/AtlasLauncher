@@ -4,5 +4,7 @@
     <string name="unregister" translatable="false">Unregister</string>
     <string name="recents_now" translatable="false">Recents now</string>
     <string name="recents_later" translatable="false">Recents in 5 s</string>
+    <string name="actions_app_name" translatable="false">Actions Probe</string>
+    <string name="actions_description" translatable="false">Actions Probe — только диагностика. Connect + read читает значения. Кнопки двигают значение на один шаг, Restore возвращает прочитанное. Path: GIB — через GInputBridge, DIRECT — напрямую через ECarX.</string>
     <string name="probe_description" translatable="false">Gesture Probe — только диагностика\nHIGH=2, дисплей 0, Rect(400,1200,600,1400) px.\nНачните касание внутри синей рамки. Автоснятие через 60 с.\nВозврат всех событий; OEM-путь может менять доставку. При сбое возврата процесс завершится.</string>
 </resources>
