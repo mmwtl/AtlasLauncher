@@ -306,7 +306,6 @@ public final class HomeActivity extends Activity {
     @Override public void onStart() {
         super.onStart();
         homeVisible = true;
-        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) reportHomeVisible(true);
         wallpaperView.removeCallbacks(slideshowStep);
         widgetHost.startListening();
     }
@@ -377,7 +376,6 @@ public final class HomeActivity extends Activity {
         if (sourceListPopup != null) sourceListPopup.dismiss();
         widgetHost.stopListening();
         homeVisible = false;
-        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) reportHomeVisible(false);
         // The slideshow changes the wallpaper only while another app covers HOME.
         long delay = slideshowDelay();
         if (delay >= 0) wallpaperView.postDelayed(slideshowStep, delay);
@@ -1259,20 +1257,13 @@ public final class HomeActivity extends Activity {
     }
 
     private void applyGestures() {
-        // Only visible HOME calls this; the service keeps its filter off while HOME is in front.
-        Intent service = new Intent(this, GestureFilterService.class)
-                .putExtra(GestureFilterService.EXTRA_HOME_VISIBLE, true);
+        Intent service = new Intent(this, GestureFilterService.class);
         try {
             if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) startForegroundService(service);
             else stopService(service);
         } catch (IllegalStateException | SecurityException e) {
             Log.w("AtlasLauncher", "Cannot change the gesture service", e);
         }
-    }
-
-    private void reportHomeVisible(boolean visible) {
-        sendBroadcast(new Intent(GestureFilterService.ACTION_HOME_VISIBLE).setPackage(getPackageName())
-                .putExtra(GestureFilterService.EXTRA_HOME_VISIBLE, visible));
     }
 
     private void applyClimatePanel() {
