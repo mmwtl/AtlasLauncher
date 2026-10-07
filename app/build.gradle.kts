@@ -37,3 +37,7 @@ android {
 if (secureSigningFile != null && secureSigningFile.isFile) {
     apply(from = secureSigningFile)
 }
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}

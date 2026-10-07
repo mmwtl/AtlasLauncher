@@ -142,6 +142,7 @@ public final class HomeActivity extends Activity {
             "Седан", "Красный карбон", "Синий поток", "Бирюза", "Горная дорога",
             "Ночной город", "Тёмный мрамор", "Горный закат"};
     private static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
+    private static final String GESTURES_ENABLED = "gestures_enabled";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     private static final String DOCK_APPS = "dock_apps";
@@ -248,6 +249,7 @@ public final class HomeActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         startDimService();
+        applyGestures();
         startupPending = true;
         widgetManager = AppWidgetManager.getInstance(this);
         widgetHost = new AppWidgetHost(this, HOST_ID) {
@@ -1245,6 +1247,23 @@ public final class HomeActivity extends Activity {
         });
         redirect.addView(settingsRedirectState, new LinearLayout.LayoutParams(-1, -2));
         updateStockHomeRedirectState();
+
+        LinearLayout gestures = settingsCard(content, "Жесты",
+                "Два пальца вверх и вниз: громкость в центре экрана, температура у левого и правого края. "
+                        + "Три пальца: яркость. Жест начинается между верхней и климатической панелями. "
+                        + "Температуре и яркости нужен GInputBridge. Касания в этой области проходят через "
+                        + "AtlasLauncher, а не через штатную службу жестов.");
+        settingsToggle(gestures, "Жесты несколькими пальцами", GESTURES_ENABLED, false, this::applyGestures);
+    }
+
+    private void applyGestures() {
+        Intent service = new Intent(this, GestureFilterService.class);
+        try {
+            if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) startForegroundService(service);
+            else stopService(service);
+        } catch (IllegalStateException | SecurityException e) {
+            Log.w("AtlasLauncher", "Cannot change the gesture service", e);
+        }
     }
 
     private void applyClimatePanel() {

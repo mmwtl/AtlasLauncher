@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <queries>
         <package android:name="com.android.launcher3" />
         <!-- OneOS media center for the media widget. -->
@@ -50,5 +51,10 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/stock_home_redirect" />
         </service>
+        <!-- Own process: a failure of the input filter must not take HOME down with it. -->
+        <service
+            android:name=".GestureFilterService"
+            android:exported="false"
+            android:process=":gestures" />
     </application>
 </manifest>
