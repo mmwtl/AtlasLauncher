@@ -31,13 +31,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Multi-finger gestures through the OneOS input dispatcher (see {@link MultiFingerGestures}).
- * Runs in its own process: this app sits between the OEM filters and the system input, so any
+ * The filter is registered only while HOME is hidden: on HOME itself it would stand between the
+ * launcher and its touches (a two-finger touch there opens widget editing), and the launcher has
+ * no use for these gestures. Runs in its own process: this app sits between the OEM filters and the system input, so any
  * failure ends only this process, which removes the filter and gives touches back to the OEM
  * ones. Every event is returned to the system unchanged before any other work; the filter never
  * swallows touches. Volume goes through AudioManager, temperature and brightness through
  * GInputBridge broadcasts, as AtlasClimateWidget does.
  */
 public final class GestureFilterService extends Service {
+    static final String ACTION_HOME_VISIBLE = "com.geely.atlaslauncher.GESTURES_HOME_VISIBLE";
+    static final String EXTRA_HOME_VISIBLE = "home_visible";
     private static final String TAG = "AtlasGestures";
     // Binder layout verified against OneOS framework.jar and EcarxInputDispatcherService.
     private static final String SERVICE_NAME = "EcarxInputDispatcherService";
@@ -94,6 +98,12 @@ public final class GestureFilterService extends Service {
             }
         }
     };
+    private final BroadcastReceiver homeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            setHomeVisible(intent.getBooleanExtra(EXTRA_HOME_VISIBLE, false));
+        }
+    };
     private final Runnable gibRefresh = new Runnable() {
         @Override
         public void run() {
@@ -106,9 +116,11 @@ public final class GestureFilterService extends Service {
     private Handler control;
     private Handler actions;
     private AudioManager audio;
+    private volatile boolean homeVisible = true;
     // Dispatcher state belongs to the control thread.
     private IBinder dispatcher;
     private boolean registrationAttempted;
+    private boolean registered;
 
     @Override
     public void onCreate() {
@@ -132,13 +144,31 @@ public final class GestureFilterService extends Service {
         replies.addAction(GIB + ".PROPERTY_FLOAT_RESULT");
         replies.addAction(GIB + ".PROPERTY_FLOAT_CHANGED");
         registerReceiver(gibReceiver, replies);
+        registerReceiver(homeReceiver, new IntentFilter(ACTION_HOME_VISIBLE));
         actions.post(gibRefresh);
-        control.post(this::register);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // A restart without an intent happens while some other app is in front.
+        setHomeVisible(intent != null && intent.getBooleanExtra(EXTRA_HOME_VISIBLE, false));
         return START_STICKY;
+    }
+
+    private void setHomeVisible(boolean visible) {
+        homeVisible = visible;
+        control.post(this::syncRegistration);
+    }
+
+    private void syncRegistration() {
+        if (homeVisible == !registered) {
+            return;
+        }
+        if (registered) {
+            unregister();
+        } else {
+            register();
+        }
     }
 
     @Override
@@ -149,6 +179,7 @@ public final class GestureFilterService extends Service {
     @Override
     public void onDestroy() {
         unregisterReceiver(gibReceiver);
+        unregisterReceiver(homeReceiver);
         control.post(() -> {
             unregister();
             Log.i(TAG, "Filter removed; ending the gesture process");
@@ -180,6 +211,7 @@ public final class GestureFilterService extends Service {
             // Even a failed reply might follow a successful server-side registration.
             registrationAttempted = true;
             if (dispatcherTransaction(REGISTER)) {
+                registered = true;
                 Log.i(TAG, "Filter registered for " + REGION.toShortString());
             } else {
                 Log.w(TAG, "Dispatcher refused the filter");
@@ -199,6 +231,9 @@ public final class GestureFilterService extends Service {
             if (!dispatcherTransaction(UNREGISTER)) {
                 stopProcess("unregister returned false; registration state uncertain");
             }
+            registered = false;
+            registrationAttempted = false;
+            Log.i(TAG, "Filter unregistered");
         } catch (RemoteException | RuntimeException error) {
             stopProcess("unregister failed: " + error);
         }
