@@ -35,7 +35,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * failure ends only this process, which removes the filter and gives touches back to the OEM
  * ones. Every event is returned to the system unchanged before any other work; the filter never
  * swallows touches. Volume goes through AudioManager, temperature and brightness through
- * GInputBridge broadcasts, as AtlasClimateWidget does.
+ * GInputBridge broadcasts, as AtlasClimateWidget does. {@link GestureHud} shows each new
+ * temperature or brightness; OneOS shows its own volume indicator.
  */
 public final class GestureFilterService extends Service {
     private static final String TAG = "AtlasGestures";
@@ -106,6 +107,7 @@ public final class GestureFilterService extends Service {
     private Handler control;
     private Handler actions;
     private AudioManager audio;
+    private GestureHud hud;
     // Dispatcher state belongs to the control thread.
     private IBinder dispatcher;
     private boolean registrationAttempted;
@@ -128,6 +130,7 @@ public final class GestureFilterService extends Service {
         actionThread.start();
         actions = new Handler(actionThread.getLooper());
         audio = getSystemService(AudioManager.class);
+        hud = new GestureHud(this);
         IntentFilter replies = new IntentFilter();
         replies.addAction(GIB + ".PROPERTY_FLOAT_RESULT");
         replies.addAction(GIB + ".PROPERTY_FLOAT_CHANGED");
@@ -149,6 +152,7 @@ public final class GestureFilterService extends Service {
     @Override
     public void onDestroy() {
         unregisterReceiver(gibReceiver);
+        hud.dismiss();
         control.post(() -> {
             unregister();
             Log.i(TAG, "Filter removed; ending the gesture process");
@@ -241,15 +245,15 @@ public final class GestureFilterService extends Service {
                     }
                     break;
                 case TEMPERATURE_LEFT:
-                    gibStep(TEMPERATURE, TEMPERATURE_ROW_LEFT, steps * TEMPERATURE_STEP,
+                    gibStep(kind, TEMPERATURE, TEMPERATURE_ROW_LEFT, steps * TEMPERATURE_STEP,
                             TEMPERATURE_MIN, TEMPERATURE_MAX);
                     break;
                 case TEMPERATURE_RIGHT:
-                    gibStep(TEMPERATURE, TEMPERATURE_ROW_RIGHT, steps * TEMPERATURE_STEP,
+                    gibStep(kind, TEMPERATURE, TEMPERATURE_ROW_RIGHT, steps * TEMPERATURE_STEP,
                             TEMPERATURE_MIN, TEMPERATURE_MAX);
                     break;
                 case BRIGHTNESS:
-                    gibStep(BRIGHTNESS, GLOBAL_AREA, steps,
+                    gibStep(kind, BRIGHTNESS, GLOBAL_AREA, steps,
                             gibValues.getOrDefault(BRIGHTNESS_MIN_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MIN_DEFAULT),
                             gibValues.getOrDefault(BRIGHTNESS_MAX_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MAX_DEFAULT));
                     break;
@@ -258,7 +262,7 @@ public final class GestureFilterService extends Service {
     }
 
     /** Moves a GInputBridge property from its last known value; no value yet means ask and skip. */
-    private void gibStep(int id, int area, float delta, float min, float max) {
+    private void gibStep(MultiFingerGestures.Kind kind, int id, int area, float delta, float min, float max) {
         String key = id + "_" + area;
         Float current = gibValues.get(key);
         if (current == null || current < 0) {
@@ -266,6 +270,8 @@ public final class GestureFilterService extends Service {
             return;
         }
         float target = Math.max(min, Math.min(max, current + delta));
+        // Shown at a limit too, so the driver sees why nothing changes.
+        main.post(() -> hud.show(kind, target, min, max));
         if (target == current) {
             return;
         }
