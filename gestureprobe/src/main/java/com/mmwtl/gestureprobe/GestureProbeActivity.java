@@ -91,6 +91,20 @@ public final class GestureProbeActivity extends Activity {
         unregisterButton.setOnClickListener(view -> requestUnregister("button"));
         buttons.addView(unregisterButton, new LinearLayout.LayoutParams(0, -2, 1));
         column.addView(buttons);
+        LinearLayout recents = new LinearLayout(this);
+        Button recentsNow = new Button(this);
+        recentsNow.setText(R.string.recents_now);
+        recentsNow.setOnClickListener(view -> openRecents("now"));
+        recents.addView(recentsNow, new LinearLayout.LayoutParams(0, -2, 1));
+        Button recentsLater = new Button(this);
+        recentsLater.setText(R.string.recents_later);
+        // Leave the app within 5 s to check starting Recents without a visible window.
+        recentsLater.setOnClickListener(view -> {
+            log("RECENTS in 5s: leave this app now");
+            ui.postDelayed(() -> openRecents("delayed 5s"), 5_000);
+        });
+        recents.addView(recentsLater, new LinearLayout.LayoutParams(0, -2, 1));
+        column.addView(recents);
         logScroll = new ScrollView(this);
         logView = new TextView(this);
         logView.setTextIsSelectable(true);
@@ -145,6 +159,16 @@ public final class GestureProbeActivity extends Activity {
             log(details.toString());
         }
         return super.dispatchTouchEvent(event);
+    }
+
+    private void openRecents(String reason) {
+        try {
+            startActivity(new Intent().setClassName("com.geely.recents",
+                    "com.geely.recents.RecentsCsdActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            log("RECENTS " + reason + ": startActivity returned");
+        } catch (RuntimeException error) {
+            log("RECENTS " + reason + " failed: " + error);
+        }
     }
 
     private void requestRegister() {
