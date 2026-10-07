@@ -6,6 +6,7 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".GestureProbeActivity"
+            android:configChanges="uiMode|orientation|screenSize|screenLayout|keyboardHidden|density"
             android:exported="true"
             android:launchMode="singleTop"
             android:screenOrientation="portrait">

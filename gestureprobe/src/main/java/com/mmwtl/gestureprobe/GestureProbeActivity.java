@@ -130,6 +130,23 @@ public final class GestureProbeActivity extends Activity {
         }
     }
 
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        // Only observes what reaches our own window; confirms end-to-end delivery of relayed events.
+        if (registrationRequested) {
+            StringBuilder details = new StringBuilder("APP ")
+                    .append(MotionEvent.actionToString(event.getAction()))
+                    .append(" pointers=").append(event.getPointerCount());
+            for (int i = 0; i < event.getPointerCount(); i++) {
+                details.append(" id=").append(event.getPointerId(i))
+                        .append(" x=").append(event.getX(i))
+                        .append(" y=").append(event.getY(i));
+            }
+            log(details.toString());
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
     private void requestRegister() {
         if (registrationRequested || stopping || destroyed) {
             return;

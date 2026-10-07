@@ -24,7 +24,12 @@ adb -s SERIAL install -r gestureprobe/build/outputs/apk/debug/gestureprobe-debug
 adb -s SERIAL shell am start -n com.mmwtl.gestureprobe/.GestureProbeActivity
 # Или сразу запросить регистрацию:
 adb -s SERIAL shell am start -n com.mmwtl.gestureprobe/.GestureProbeActivity --ez register true
-adb -s SERIAL logcat -v threadtime -s GestureProbe
+adb -s SERIAL logcat -v threadtime GestureProbe:V EcarxInputDispatcher:V '*:S'
+# До регистрации: нет ли уже фильтров (pid, область, приоритет) и виден ли сервис
+adb -s SERIAL shell service list | grep -i ecarx
+adb -s SERIAL shell dumpsys EcarxInputDispatcherService
+# Отказы SELinux
+adb -s SERIAL logcat -d | grep -i avc
 # Проверка обычного UID / SELinux-контекста запущенного процесса:
 adb -s SERIAL shell ps -AZ | grep com.mmwtl.gestureprobe
 # Аварийный откат независимо от UI и callback:
@@ -90,6 +95,7 @@ adb -s SERIAL shell am force-stop com.mmwtl.gestureprobe
 | `REGISTER result=true/false`, `REGISTER exception: …` | Ответ службы либо исключение; true ещё не доказывает приход событий. |
 | `INSTALL host=non-null` | Пришёл callback install с Binder хоста. Null приводит к FAIL_STOP. |
 | `EVENT ACTION_… pointers=… id=… x=… y=… policyFlags=… SEND transact=true (oneway)` | Событие получено и отправлено хосту; координаты каждого пальца исходные. Это не подтверждение конечной доставки. |
+| `APP ACTION_… pointers=… id=… x=… y=…` | Событие дошло до окна Activity (координаты в окне). Сравнение с `EVENT` показывает потери, дубли и порядок. |
 | `UNREGISTER …`, `UNINSTALL …` | Причина/результат снятия и callback; возможны остаточные события текущего касания. |
 | `FAIL_STOP …` | Ошибка возврата/снятия или зависание; причина и завершение своего процесса (только logcat). |
 
