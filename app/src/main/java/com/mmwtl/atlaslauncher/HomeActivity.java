@@ -185,6 +185,7 @@ public final class HomeActivity extends Activity {
     private boolean editingWidgets;
     private boolean startupPending;
     private boolean homeVisible;
+    private boolean multiTouch;
     private Dialog settingsDialog;
     private Dialog appDrawer;
     private PopupWindow sourceListPopup;
@@ -424,7 +425,7 @@ public final class HomeActivity extends Activity {
         applyClimatePanel();
         applyWidgetSideMargin();
         widgetRow.setClickable(true);
-        widgetRow.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
+        widgetRow.setOnLongClickListener(v -> startEditingByLongPress());
         widgetRow.setOnClickListener(v -> { if (editingWidgets) setEditingWidgets(false); });
         widgetRow.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
@@ -481,7 +482,7 @@ public final class HomeActivity extends Activity {
         appsIcon.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 34));
         appsIcon.setPadding(dp(18), dp(18), dp(18), dp(18));
         appsTile.setOnClickListener(v -> openAllApps());
-        appsTile.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
+        appsTile.setOnLongClickListener(v -> startEditingByLongPress());
         updateDock();
         showFavorites();
         return favoritePanel;
@@ -562,7 +563,7 @@ public final class HomeActivity extends Activity {
             if (app == null) continue;
             View item = appTile(app, false);
             item.setOnClickListener(v -> launch(app));
-            item.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
+            item.setOnLongClickListener(v -> startEditingByLongPress());
             favoriteRow.addView(item, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
         }
         int shownApps = favoriteRow.getChildCount();
@@ -1302,6 +1303,19 @@ public final class HomeActivity extends Activity {
         return false;
     }
 
+    // Multi-finger gestures are not editing: a long press that saw a second finger is ignored.
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) multiTouch = false;
+        else if (action == MotionEvent.ACTION_POINTER_DOWN) multiTouch = true;
+        return super.dispatchTouchEvent(event);
+    }
+
+    private boolean startEditingByLongPress() {
+        if (!multiTouch) setEditingWidgets(true);
+        return true;
+    }
+
     private void setEditingWidgets(boolean editing) {
         editingWidgets = editing;
         widgetControls.setVisibility(editing ? View.VISIBLE : View.GONE);
@@ -1987,7 +2001,7 @@ public final class HomeActivity extends Activity {
                         if (!editingWidgets && touchesSourceSwitch(hostView, event)) showSourceList(hostView);
                     })
                     : new FrameLayout(this);
-            hostView.setOnLongClickListener(v -> { setEditingWidgets(true); return true; });
+            hostView.setOnLongClickListener(v -> startEditingByLongPress());
             FrameLayout.LayoutParams hostParams = new FrameLayout.LayoutParams(-1, -1);
             if (dockWidget) {
                 // Inset the dock like AppWidgetHostView insets regular widgets.
