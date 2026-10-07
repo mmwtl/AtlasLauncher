@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "AtlasLauncher"
 include(":app")
+include(":gestureprobe")

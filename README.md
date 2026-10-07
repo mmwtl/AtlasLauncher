@@ -79,6 +79,7 @@ APK находится в `app/build/outputs/apk/release/` и называетс
 - [Проверка на ГУ и возврат к штатному HOME](docs/head-unit-test-and-rollback.md);
 - [План прототипа](docs/launcher-prototype-plan.md);
 - [Сведения об OEM APK](reference-apks/README.md).
+- [Gesture Probe: отдельный диагностический APK для OEM-службы касаний](gestureprobe/README.md).
 
 ## Совместимость
 

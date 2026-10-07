@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name" translatable="false">Gesture Probe</string>
+    <string name="register" translatable="false">Register</string>
+    <string name="unregister" translatable="false">Unregister</string>
+    <string name="probe_description" translatable="false">Gesture Probe — только диагностика\nHIGH=2, дисплей 0, Rect(400,1200,600,1400) px.\nНачните касание внутри синей рамки. Автоснятие через 60 с.\nВозврат всех событий; OEM-путь может менять доставку. При сбое возврата процесс завершится.</string>
+</resources>
