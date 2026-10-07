@@ -33,8 +33,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * Multi-finger gestures through the OneOS input dispatcher (see {@link MultiFingerGestures}).
  * Runs in its own process: this app sits between the OEM filters and the system input, so any
  * failure ends only this process, which removes the filter and gives touches back to the OEM
- * ones. Every event is returned to the system unchanged before any other work; the filter never
- * swallows touches. Volume goes through AudioManager, temperature and brightness through
+ * ones. Every event is returned to the system unchanged before any other work until a gesture
+ * makes its first step; then the app under the fingers gets a cancel and the rest of that touch
+ * sequence stays with the gesture, so a map or list does not move along with it. Volume goes through AudioManager, temperature and brightness through
  * GInputBridge broadcasts, as AtlasClimateWidget does. {@link GestureHud} shows each new
  * temperature or brightness; OneOS shows its own volume indicator.
  */
@@ -307,6 +308,8 @@ public final class GestureFilterService extends Service {
         private final float[] xs = new float[32];
         private final float[] ys = new float[32];
         private volatile IBinder host;
+        // The current touch sequence belongs to a gesture; only Binder calls touch it, one at a time.
+        private boolean claimed;
 
         GestureFilter() {
             attachInterface(null, FILTER_DESCRIPTOR);
@@ -335,9 +338,10 @@ public final class GestureFilterService extends Service {
                     if (event == null || host == null) {
                         throw new IllegalStateException("event or host is null");
                     }
-                    relay(event, policyFlags);
                     if (event instanceof MotionEvent) {
-                        detect((MotionEvent) event);
+                        filterMotion((MotionEvent) event, policyFlags);
+                    } else {
+                        relay(event, policyFlags);
                     }
                 }
                 // UNINSTALL keeps the host: the dispatcher caches the chosen filter until UP/CANCEL
@@ -369,14 +373,33 @@ public final class GestureFilterService extends Service {
             }
         }
 
-        private void detect(MotionEvent event) {
+        private void filterMotion(MotionEvent event, int policyFlags) throws RemoteException {
+            boolean wasClaimed = claimed && event.getActionMasked() != MotionEvent.ACTION_DOWN;
+            if (!wasClaimed) {
+                relay(event, policyFlags);
+            }
+            claimed = detect(event);
+            if (claimed && !wasClaimed) {
+                // The app saw the start of this touch: end it there. The dispatcher still passes the
+                // final finger up on its own, and the system drops it as the touch is already over.
+                MotionEvent cancel = MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                try {
+                    relay(cancel, policyFlags);
+                } finally {
+                    cancel.recycle();
+                }
+            }
+        }
+
+        private boolean detect(MotionEvent event) {
             int count = Math.min(event.getPointerCount(), ids.length);
             for (int i = 0; i < count; i++) {
                 ids[i] = event.getPointerId(i);
                 xs[i] = event.getX(i);
                 ys[i] = event.getY(i);
             }
-            gestures.onEvent(event.getActionMasked(), event.getPointerId(event.getActionIndex()),
+            return gestures.onEvent(event.getActionMasked(), event.getPointerId(event.getActionIndex()),
                     count, ids, xs, ys);
         }
     }

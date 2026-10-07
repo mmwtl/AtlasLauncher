@@ -1,6 +1,7 @@
 package com.mmwtl.atlaslauncher;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Before;
@@ -19,7 +20,7 @@ public class MultiFingerGesturesTest {
     }
 
     /** Sends one event; pointer ids are the indices of the coordinate pairs. */
-    private void send(int action, int actionId, float... xy) {
+    private boolean send(int action, int actionId, float... xy) {
         int count = xy.length / 2;
         int[] ids = new int[count];
         float[] xs = new float[count];
@@ -29,7 +30,7 @@ public class MultiFingerGesturesTest {
             xs[i] = xy[2 * i];
             ys[i] = xy[2 * i + 1];
         }
-        gestures.onEvent(action, actionId, count, ids, xs, ys);
+        return gestures.onEvent(action, actionId, count, ids, xs, ys);
     }
 
     private void twoFingersDown(float x1, float x2, float y) {
@@ -113,6 +114,25 @@ public class MultiFingerGesturesTest {
         send(MultiFingerGestures.ACTION_POINTER_UP, 2, 600, 1000, 800, 1000, 700, 1000);
         send(MultiFingerGestures.ACTION_MOVE, 0, 600, 920, 800, 920);
         assertEquals(List.of("VOLUME:1"), events);
+    }
+
+    @Test
+    public void sequenceIsClaimedFromTheFirstStepUntilTheNextTouch() {
+        assertFalse(send(MultiFingerGestures.ACTION_DOWN, 0, 600, 1000));
+        assertFalse(send(MultiFingerGestures.ACTION_POINTER_DOWN, 1, 600, 1000, 800, 1000));
+        assertFalse(send(MultiFingerGestures.ACTION_MOVE, 0, 600, 970, 800, 970));
+        assertTrue(send(MultiFingerGestures.ACTION_MOVE, 0, 600, 930, 800, 930));
+        assertTrue(send(MultiFingerGestures.ACTION_POINTER_UP, 1, 600, 930, 800, 930));
+        assertTrue(send(MultiFingerGestures.ACTION_MOVE, 0, 600, 900));
+        assertTrue(send(MultiFingerGestures.ACTION_UP, 0, 600, 900));
+        assertFalse(send(MultiFingerGestures.ACTION_DOWN, 0, 600, 1000));
+    }
+
+    @Test
+    public void ignoredTwoFingerTouchIsNeverClaimed() {
+        twoFingersDown(418, 550, 1284);
+        assertFalse(send(MultiFingerGestures.ACTION_MOVE, 0, 943, 1371, 1051, 1398));
+        assertFalse(send(MultiFingerGestures.ACTION_UP, 0, 943, 1371));
     }
 
     @Test

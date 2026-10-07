@@ -33,6 +33,7 @@ final class MultiFingerGestures {
     private Kind kind;
     private float anchorX;
     private float anchorY;
+    private boolean claimed;
 
     MultiFingerGestures(int screenWidth, Listener listener) {
         this.screenWidth = screenWidth;
@@ -41,14 +42,20 @@ final class MultiFingerGestures {
 
     /**
      * Feeds one motion event: {@code actionId} is the pointer id that went down or up, and the
-     * arrays hold every pointer of the event, including the one that is going up.
+     * arrays hold every pointer of the event, including the one that is going up. Returns whether
+     * the touch sequence is claimed: a gesture has made a step since the first finger went down,
+     * so the rest of the sequence, up to and including the last finger up, belongs to it.
      */
-    synchronized void onEvent(int action, int actionId, int pointerCount, int[] ids, float[] x, float[] y) {
+    synchronized boolean onEvent(int action, int actionId, int pointerCount, int[] ids, float[] x, float[] y) {
+        if (action == ACTION_DOWN) {
+            claimed = false;
+        }
         if (action == ACTION_UP || action == ACTION_CANCEL) {
             setPointers(0, null, null, null, -1);
-            return;
+        } else {
+            setPointers(pointerCount, ids, x, y, action == ACTION_POINTER_UP ? actionId : -1);
         }
-        setPointers(pointerCount, ids, x, y, action == ACTION_POINTER_UP ? actionId : -1);
+        return claimed;
     }
 
     private void setPointers(int pointerCount, int[] ids, float[] x, float[] y, int skippedId) {
@@ -102,6 +109,7 @@ final class MultiFingerGestures {
         int steps = (int) (-dy / stepPx);
         if (steps != 0) {
             anchorY -= steps * stepPx;
+            claimed = true;
             listener.onSteps(kind, steps);
         }
     }
