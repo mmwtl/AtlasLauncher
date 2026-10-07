@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
+import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
@@ -27,7 +28,7 @@ import java.util.Locale;
  * the gestures still work, only silently. Must be used on the main thread.
  */
 final class GestureHud {
-    private static final int SURFACE = Color.argb(240, 35, 37, 40);
+    private static final int SURFACE = Color.rgb(35, 37, 40);
     private static final int RAISED = Color.rgb(64, 67, 71);
     private static final int TEXT = Color.rgb(241, 242, 244);
     private static final int MUTED = Color.rgb(196, 199, 202);
@@ -48,6 +49,8 @@ final class GestureHud {
     private TextView title;
     private TextView value;
     private View fill;
+    private ClipDrawable temperatureFill;
+    private ClipDrawable brightnessFill;
     private float fillFraction;
     private ValueAnimator fillAnimator;
     private WindowManager.LayoutParams params;
@@ -71,7 +74,7 @@ final class GestureHud {
                 : kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT ? "Пассажир" : "Яркость");
         value.setText(temperature ? String.format(Locale.ROOT, "%.1f°", current)
                 : String.valueOf(Math.round(current)));
-        ((GradientDrawable) fill.getBackground()).setColor(temperature ? blend(COLD, HOT, fraction) : ACCENT);
+        fill.setBackground(temperature ? temperatureFill : brightnessFill);
         animateFill(fraction);
 
         int gravity = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT ? Gravity.START
@@ -103,7 +106,9 @@ final class GestureHud {
         card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(28), dp(24), dp(28), dp(28));
-        card.setBackground(rounded(SURFACE, dp(28)));
+        GradientDrawable background = rounded(SURFACE, dp(28));
+        background.setStroke(dp(1), RAISED);
+        card.setBackground(background);
         card.setElevation(dp(12));
         card.setAlpha(0);
 
@@ -130,9 +135,13 @@ final class GestureHud {
 
         FrameLayout bar = new FrameLayout(context);
         bar.setBackground(rounded(RAISED, dp(BAR_HEIGHT / 2)));
+        // The fill reveals a fixed cold-to-warm gradient up to the current value.
+        GradientDrawable gradient = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[] {COLD, HOT});
+        gradient.setCornerRadius(dp(BAR_HEIGHT / 2));
+        temperatureFill = new ClipDrawable(gradient, Gravity.START, ClipDrawable.HORIZONTAL);
+        brightnessFill = new ClipDrawable(rounded(ACCENT, dp(BAR_HEIGHT / 2)), Gravity.START, ClipDrawable.HORIZONTAL);
         fill = new View(context);
-        fill.setBackground(rounded(ACCENT, dp(BAR_HEIGHT / 2)));
-        bar.addView(fill, new FrameLayout.LayoutParams(0, -1));
+        bar.addView(fill, new FrameLayout.LayoutParams(-1, -1));
         card.addView(bar, new LinearLayout.LayoutParams(-1, dp(BAR_HEIGHT)));
 
         params = new WindowManager.LayoutParams(dp(CARD_WIDTH), WindowManager.LayoutParams.WRAP_CONTENT,
@@ -147,13 +156,12 @@ final class GestureHud {
         if (fillAnimator != null) {
             fillAnimator.cancel();
         }
-        int barWidth = dp(CARD_WIDTH - 56);
         fillAnimator = ValueAnimator.ofFloat(fillFraction, fraction);
         fillAnimator.setDuration(160);
         fillAnimator.addUpdateListener(animation -> {
             fillFraction = (float) animation.getAnimatedValue();
-            fill.getLayoutParams().width = Math.max(dp(BAR_HEIGHT), Math.round(barWidth * fillFraction));
-            fill.requestLayout();
+            temperatureFill.setLevel(Math.round(10_000 * fillFraction));
+            brightnessFill.setLevel(Math.round(10_000 * fillFraction));
         });
         fillAnimator.start();
     }
@@ -169,12 +177,6 @@ final class GestureHud {
         return drawable;
     }
 
-    private static int blend(int from, int to, float fraction) {
-        return Color.rgb(
-                Math.round(Color.red(from) + (Color.red(to) - Color.red(from)) * fraction),
-                Math.round(Color.green(from) + (Color.green(to) - Color.green(from)) * fraction),
-                Math.round(Color.blue(from) + (Color.blue(to) - Color.blue(from)) * fraction));
-    }
 
     private int dp(int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
