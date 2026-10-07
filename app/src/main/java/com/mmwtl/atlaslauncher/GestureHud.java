@@ -23,8 +23,8 @@ import java.util.Locale;
 
 /**
  * Card over other apps that shows the value a gesture has just set: a title, a large number and
- * a bar across the allowed range. Driver temperature appears at the left edge, passenger at the
- * right, brightness in the centre. Needs the "display over other apps" permission; without it
+ * a bar across the allowed range, near the top of the screen. Driver temperature appears at the
+ * left edge, passenger at the right, brightness in the centre. Needs the "display over other apps" permission; without it
  * the gestures still work, only silently. Must be used on the main thread.
  */
 final class GestureHud {
@@ -35,9 +35,11 @@ final class GestureHud {
     private static final int ACCENT = Color.rgb(46, 150, 246);
     private static final int COLD = Color.rgb(46, 150, 246);
     private static final int HOT = Color.rgb(240, 110, 60);
-    private static final int CARD_WIDTH = 340;
-    private static final int BAR_HEIGHT = 10;
+    private static final int CARD_WIDTH = 460;
+    private static final int BAR_HEIGHT = 14;
     private static final int EDGE_MARGIN = 48;
+    // Below the status bar strip.
+    private static final int TOP_MARGIN = 112;
     private static final long VISIBLE_MS = 1500;
 
     private final Context context;
@@ -79,8 +81,9 @@ final class GestureHud {
 
         int gravity = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT ? Gravity.START
                 : kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT ? Gravity.END : Gravity.CENTER_HORIZONTAL;
-        if (params.gravity != (gravity | Gravity.CENTER_VERTICAL) || card.getParent() == null) {
-            params.gravity = gravity | Gravity.CENTER_VERTICAL;
+        if (params.gravity != (gravity | Gravity.TOP) || card.getParent() == null) {
+            params.gravity = gravity | Gravity.TOP;
+            params.y = TOP_MARGIN;
             params.x = gravity == Gravity.CENTER_HORIZONTAL ? 0 : EDGE_MARGIN;
             if (card.getParent() == null) {
                 windows.addView(card, params);
@@ -105,8 +108,8 @@ final class GestureHud {
     private void create() {
         card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(28), dp(24), dp(28), dp(28));
-        GradientDrawable background = rounded(SURFACE, dp(28));
+        card.setPadding(dp(36), dp(30), dp(36), dp(36));
+        GradientDrawable background = rounded(SURFACE, dp(36));
         background.setStroke(dp(1), RAISED);
         card.setBackground(background);
         card.setElevation(dp(12));
@@ -115,22 +118,23 @@ final class GestureHud {
         LinearLayout header = new LinearLayout(context);
         header.setGravity(Gravity.CENTER_VERTICAL);
         icon = new ImageView(context);
-        header.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        header.addView(icon, new LinearLayout.LayoutParams(dp(38), dp(38)));
         title = new TextView(context);
         title.setTextColor(MUTED);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        title.setPadding(dp(12), 0, 0, 0);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setPadding(dp(14), 0, 0, 0);
         header.addView(title);
         card.addView(header);
 
         value = new TextView(context);
         value.setTextColor(TEXT);
-        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 64);
-        value.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 104);
+        value.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         value.setIncludeFontPadding(false);
         LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(-2, -2);
-        valueParams.topMargin = dp(12);
-        valueParams.bottomMargin = dp(20);
+        valueParams.topMargin = dp(14);
+        valueParams.bottomMargin = dp(26);
         card.addView(value, valueParams);
 
         FrameLayout bar = new FrameLayout(context);
