@@ -148,7 +148,7 @@ public final class HomeActivity extends Activity {
     private static final String DOCK_APPS = "dock_apps";
     private static final String DRAWER_ICON_SIZE = "drawer_icon_size";
     private static final String DOCK_LABELS = "drawer_labels";
-    private static final String DRAWER_ACTIVITY = "drawer_activity";
+    static final String DRAWER_ACTIVITY = "drawer_activity";
     private static final String GIB_LAUNCHER = "com.salat.gbinder/com.salat.gbinder.AppLauncher";
     private static final String CLOCK_FORMAT = "clock_format";
     private static final String CLOCK_WEIGHT = "clock_weight";
@@ -1251,7 +1251,7 @@ public final class HomeActivity extends Activity {
 
         LinearLayout gestures = settingsCard(content, "Жесты",
                 "Два пальца вверх и вниз: громкость в центре экрана, температура у левого и правого края. "
-                        + "Три пальца: яркость. Жест начинается между верхней и климатической панелями. "
+                        + "Три пальца: яркость. Щипок четырьмя пальцами: как кнопка «Все приложения». Жест начинается между верхней и климатической панелями. "
                         + "Температуре и яркости нужен GInputBridge. Касания в этой области проходят через "
                         + "AtlasLauncher, а не через штатную службу жестов.");
         settingsToggle(gestures, "Жесты несколькими пальцами", GESTURES_ENABLED, false, this::applyGestures);

@@ -169,6 +169,41 @@ public class MultiFingerGesturesTest {
         assertEquals(List.of("VOLUME:2", "VOLUME:-2"), events);
     }
 
+    private void fourFingersDown(float... xy) {
+        send(MultiFingerGestures.ACTION_DOWN, 0, xy[0], xy[1]);
+        send(MultiFingerGestures.ACTION_POINTER_DOWN, 1, xy[0], xy[1], xy[2], xy[3]);
+        send(MultiFingerGestures.ACTION_POINTER_DOWN, 2, xy[0], xy[1], xy[2], xy[3], xy[4], xy[5]);
+        send(MultiFingerGestures.ACTION_POINTER_DOWN, 3, xy);
+    }
+
+    @Test
+    public void fourFingerPinchOpensAllAppsOnce() {
+        fourFingersDown(500, 900, 900, 900, 500, 1300, 900, 1300);
+        assertFalse(send(MultiFingerGestures.ACTION_MOVE, 0, 560, 960, 840, 960, 560, 1240, 840, 1240));
+        assertTrue(send(MultiFingerGestures.ACTION_MOVE, 0, 620, 1020, 780, 1020, 620, 1180, 780, 1180));
+        send(MultiFingerGestures.ACTION_MOVE, 0, 680, 1080, 720, 1080, 680, 1120, 720, 1120);
+        assertEquals(List.of("ALL_APPS:1"), events);
+    }
+
+    @Test
+    public void fourFingersSpreadingOrSwipingDoNothing() {
+        fourFingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 400, 800, 1000, 800, 400, 1400, 1000, 1400);
+        send(MultiFingerGestures.ACTION_UP, 0, 400, 800);
+        fourFingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 700, 800, 700, 600, 900, 800, 900);
+        assertTrue(events.isEmpty());
+    }
+
+    @Test
+    public void threeFingerPinchDoesNotChangeBrightness() {
+        send(MultiFingerGestures.ACTION_DOWN, 0, 500, 900);
+        send(MultiFingerGestures.ACTION_POINTER_DOWN, 1, 500, 900, 900, 900);
+        send(MultiFingerGestures.ACTION_POINTER_DOWN, 2, 500, 900, 900, 900, 700, 1300);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 1000, 800, 1000, 700, 1100);
+        assertTrue(events.isEmpty());
+    }
+
     @Test
     public void cancelEndsTheGesture() {
         twoFingersDown(600, 800, 1000);

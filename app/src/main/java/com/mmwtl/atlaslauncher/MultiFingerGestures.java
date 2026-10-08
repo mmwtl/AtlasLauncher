@@ -3,12 +3,12 @@ package com.mmwtl.atlaslauncher;
 /**
  * Recognises vertical two- and three-finger swipes from pointer samples. Two fingers adjust volume
  * in the centre of the screen and the driver or passenger temperature near the left or right edge;
- * three fingers adjust brightness anywhere. Every finger has to travel the same way and the
+ * three fingers adjust brightness anywhere, and a pinch of four or more fingers opens all apps. Every finger has to travel the same way and the
  * fingers have to keep their spread, so pinch zoom, rotation and a zoom with one finger resting
  * stay with the app. Has no Android dependencies, so it runs in JVM tests.
  */
 final class MultiFingerGestures {
-    enum Kind { VOLUME, TEMPERATURE_LEFT, TEMPERATURE_RIGHT, BRIGHTNESS }
+    enum Kind { VOLUME, TEMPERATURE_LEFT, TEMPERATURE_RIGHT, BRIGHTNESS, ALL_APPS }
 
     interface Listener {
         /** {@code steps} is positive for an upward swipe and negative for a downward one. */
@@ -28,6 +28,8 @@ final class MultiFingerGestures {
     static final int BRIGHTNESS_STEP_PX = 70;
     /** Spread change that is always tolerated; beyond it, it must stay under half the travel. */
     static final int SPREAD_TOLERANCE_PX = 40;
+    /** A pinch has brought the fingers to this share of their starting spread. */
+    static final float PINCH_RATIO = 0.6f;
 
     private final int screenWidth;
     private final Listener listener;
@@ -92,7 +94,9 @@ final class MultiFingerGestures {
     /** The finger count changed: begin a new gesture, or none if the fingers do not fit one. */
     private void start() {
         kind = null;
-        if (count == 3) {
+        if (count >= 4) {
+            kind = Kind.ALL_APPS;
+        } else if (count == 3) {
             kind = Kind.BRIGHTNESS;
         } else if (count == 2) {
             int zone = zone(xs[0]);
@@ -108,6 +112,15 @@ final class MultiFingerGestures {
     }
 
     private void follow() {
+        if (kind == Kind.ALL_APPS) {
+            if (spread() < startSpread * PINCH_RATIO) {
+                // Once per touch: the pinch is done.
+                kind = null;
+                claimed = true;
+                listener.onSteps(Kind.ALL_APPS, 1);
+            }
+            return;
+        }
         float dx = mean(xs) - anchorX;
         float dy = mean(ys) - anchorY;
         int stepPx = kind == Kind.VOLUME ? VOLUME_STEP_PX

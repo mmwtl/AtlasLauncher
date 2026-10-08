@@ -4,7 +4,9 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -37,7 +39,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * makes its first step; then the app under the fingers gets a cancel and the rest of that touch
  * sequence stays with the gesture, so a map or list does not move along with it. Volume goes through AudioManager, temperature and brightness through
  * GInputBridge broadcasts, as AtlasClimateWidget does. {@link GestureHud} shows each new
- * temperature or brightness; OneOS shows its own volume indicator.
+ * temperature or brightness; OneOS shows its own volume indicator. A four-finger pinch does what
+ * the "All apps" dock button does.
  */
 public final class GestureFilterService extends Service {
     private static final String TAG = "AtlasGestures";
@@ -122,7 +125,7 @@ public final class GestureFilterService extends Service {
         startForeground(1, new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_menu_compass)
                 .setContentTitle("Жесты включены")
-                .setContentText("Два пальца: громкость и температура, три пальца: яркость")
+                .setContentText("Два пальца: громкость и температура, три: яркость, щипок четырьмя: приложения")
                 .build());
         controlThread = new HandlerThread("GesturesControl");
         controlThread.start();
@@ -258,8 +261,35 @@ public final class GestureFilterService extends Service {
                             gibValues.getOrDefault(BRIGHTNESS_MIN_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MIN_DEFAULT),
                             gibValues.getOrDefault(BRIGHTNESS_MAX_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MAX_DEFAULT));
                     break;
+                case ALL_APPS:
+                    main.post(this::openAllApps);
+                    break;
             }
         });
+    }
+
+    /**
+     * Opens the chosen "All apps" activity directly, so GLauncher or another app does not show
+     * HOME first; the built-in catalog is part of HOME. Runs from the background: Android 11 lets
+     * the current HOME and apps allowed to draw over others start activities from there.
+     */
+    @SuppressWarnings("deprecation")
+    private void openAllApps() {
+        // HOME writes this preference in its own process; MULTI_PROCESS rereads the changed file.
+        String target = getSharedPreferences(HomeActivity.PREFS, MODE_MULTI_PROCESS)
+                .getString(HomeActivity.DRAWER_ACTIVITY, "");
+        ComponentName component = ComponentName.unflattenFromString(target);
+        if (component != null) {
+            try {
+                startActivity(new Intent(Intent.ACTION_MAIN).setComponent(component)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
+                return;
+            } catch (ActivityNotFoundException | SecurityException error) {
+                Log.w(TAG, "Cannot open " + target + "; HOME will report it", error);
+            }
+        }
+        startActivity(new Intent(this, HomeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, true));
     }
 
     /** Moves a GInputBridge property from its last known value; no value yet means ask and skip. */
