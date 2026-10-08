@@ -3,7 +3,9 @@ package com.mmwtl.atlaslauncher;
 /**
  * Recognises vertical two- and three-finger swipes from pointer samples. Two fingers adjust volume
  * in the centre of the screen and the driver or passenger temperature near the left or right edge;
- * three fingers adjust brightness anywhere. Has no Android dependencies, so it runs in JVM tests.
+ * three fingers adjust brightness anywhere. Every finger has to travel the same way and the
+ * fingers have to keep their spread, so pinch zoom, rotation and a zoom with one finger resting
+ * stay with the app. Has no Android dependencies, so it runs in JVM tests.
  */
 final class MultiFingerGestures {
     enum Kind { VOLUME, TEMPERATURE_LEFT, TEMPERATURE_RIGHT, BRIGHTNESS }
@@ -24,15 +26,20 @@ final class MultiFingerGestures {
     static final int VOLUME_STEP_PX = 60;
     static final int TEMPERATURE_STEP_PX = 80;
     static final int BRIGHTNESS_STEP_PX = 70;
+    /** Spread change that is always tolerated; beyond it, it must stay under half the travel. */
+    static final int SPREAD_TOLERANCE_PX = 40;
 
     private final int screenWidth;
     private final Listener listener;
     private float[] xs = new float[0];
     private float[] ys = new float[0];
+    private float[] fingerAnchorYs = new float[0];
     private int count;
     private Kind kind;
     private float anchorX;
     private float anchorY;
+    private float startY;
+    private float startSpread;
     private boolean claimed;
 
     MultiFingerGestures(int screenWidth, Listener listener) {
@@ -63,6 +70,7 @@ final class MultiFingerGestures {
         if (xs.length < pointerCount) {
             xs = new float[pointerCount];
             ys = new float[pointerCount];
+            fingerAnchorYs = new float[pointerCount];
         }
         int kept = 0;
         for (int i = 0; i < pointerCount; i++) {
@@ -94,6 +102,9 @@ final class MultiFingerGestures {
         }
         anchorX = mean(xs);
         anchorY = mean(ys);
+        startY = anchorY;
+        startSpread = spread();
+        System.arraycopy(ys, 0, fingerAnchorYs, 0, count);
     }
 
     private void follow() {
@@ -106,12 +117,40 @@ final class MultiFingerGestures {
             kind = null;
             return;
         }
+        // Fingers moving apart or together are a zoom, whatever their middle does.
+        float spreadChange = Math.abs(spread() - startSpread);
+        if (spreadChange > SPREAD_TOLERANCE_PX && spreadChange > Math.abs(mean(ys) - startY) / 2) {
+            kind = null;
+            return;
+        }
         int steps = (int) (-dy / stepPx);
-        if (steps != 0) {
+        if (steps != 0 && everyFingerMoved(steps > 0 ? -1 : 1, stepPx / 2f)) {
             anchorY -= steps * stepPx;
+            System.arraycopy(ys, 0, fingerAnchorYs, 0, count);
             claimed = true;
             listener.onSteps(kind, steps);
         }
+    }
+
+    /** Whether each finger has moved at least {@code distance} along {@code direction} (+1 is down). */
+    private boolean everyFingerMoved(int direction, float distance) {
+        for (int i = 0; i < count; i++) {
+            if ((ys[i] - fingerAnchorYs[i]) * direction < distance) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Mean distance of the fingers from their middle point. */
+    private float spread() {
+        float middleX = mean(xs);
+        float middleY = mean(ys);
+        float sum = 0;
+        for (int i = 0; i < count; i++) {
+            sum += (float) Math.hypot(xs[i] - middleX, ys[i] - middleY);
+        }
+        return sum / count;
     }
 
     /** 0 for the left quarter, 1 for the centre half, 2 for the right quarter. */

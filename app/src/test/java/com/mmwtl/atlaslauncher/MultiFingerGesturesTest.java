@@ -136,6 +136,40 @@ public class MultiFingerGesturesTest {
     }
 
     @Test
+    public void zoomWithOneFingerRestingIsNotAGesture() {
+        twoFingersDown(600, 800, 1000);
+        // Only the second finger travels up: the middle moves 75 px, a volume step without the checks.
+        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 1000, 800, 900);
+        assertFalse(send(MultiFingerGestures.ACTION_MOVE, 0, 600, 1000, 800, 850));
+        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 1000, 800, 700);
+        assertTrue(events.isEmpty());
+    }
+
+    @Test
+    public void verticalPinchIsNotAGesture() {
+        twoFingersDown(700, 720, 1000);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 700, 900, 720, 1100);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 700, 800, 720, 1150);
+        assertTrue(events.isEmpty());
+    }
+
+    @Test
+    public void slightSpreadDriftKeepsTheGesture() {
+        twoFingersDown(600, 800, 1000);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 590, 930, 815, 935);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 585, 860, 820, 870);
+        assertEquals(List.of("VOLUME:1", "VOLUME:1"), events);
+    }
+
+    @Test
+    public void directionCanReverseWithinOneTouch() {
+        twoFingersDown(600, 800, 1000);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 870, 800, 870);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 1000, 800, 1000);
+        assertEquals(List.of("VOLUME:2", "VOLUME:-2"), events);
+    }
+
+    @Test
     public void cancelEndsTheGesture() {
         twoFingersDown(600, 800, 1000);
         send(MultiFingerGestures.ACTION_CANCEL, 0, 600, 1000, 800, 1000);
