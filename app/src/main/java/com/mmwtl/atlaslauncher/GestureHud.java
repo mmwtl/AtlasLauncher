@@ -93,6 +93,8 @@ final class GestureHud {
                 : kind == MultiFingerGestures.Kind.FAN ? R.drawable.ic_fan : R.drawable.ic_brightness);
         title.setText(titleText);
         value.setText(valueText);
+        // A fan profile name is a word, not a number: smaller, so it stays on one line.
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, valueText.length() > 5 ? 72 : 104);
         fill.setBackground(temperature ? temperatureFill : brightnessFill);
         animateFill(fraction);
 
@@ -149,6 +151,7 @@ final class GestureHud {
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 104);
         value.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         value.setIncludeFontPadding(false);
+        value.setSingleLine();
         LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(-2, -2);
         valueParams.topMargin = dp(14);
         valueParams.bottomMargin = dp(26);
