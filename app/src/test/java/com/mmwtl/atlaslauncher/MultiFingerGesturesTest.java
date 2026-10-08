@@ -238,9 +238,31 @@ public class MultiFingerGesturesTest {
     @Test
     public void fourFingerPinchGoesHomeOnce() {
         fingersDown(500, 900, 900, 900, 500, 1300, 900, 1300);
-        assertEquals(Decision.UNDECIDED, send(MOVE, 0, 560, 960, 840, 960, 560, 1240, 840, 1240));
-        assertEquals(Decision.CLAIMED, send(MOVE, 0, 620, 1020, 780, 1020, 620, 1180, 780, 1180));
+        assertEquals(Decision.UNDECIDED, send(MOVE, 0, 520, 920, 880, 920, 520, 1280, 880, 1280));
+        // A quarter closer is enough.
+        assertEquals(Decision.CLAIMED, send(MOVE, 0, 555, 955, 845, 955, 555, 1245, 845, 1245));
         send(MOVE, 0, 680, 1080, 720, 1080, 680, 1120, 720, 1120);
+        assertEquals(List.of("HOME:1"), events);
+    }
+
+    @Test
+    public void pinchCountsFromTheMomentFourFingersLand() {
+        send(DOWN, 0, 500, 900);
+        send(POINTER_DOWN, 1, 500, 900, 900, 900);
+        send(POINTER_DOWN, 2, 500, 900, 900, 900, 500, 1300);
+        send(POINTER_DOWN, 3, 500, 900, 900, 900, 500, 1300, 900, 1300);
+        send(MOVE, 0, 555, 955, 845, 955, 555, 1245, 845, 1245);
+        assertEquals(List.of("HOME:1"), events);
+    }
+
+    @Test
+    public void fifthFingerKeepsThePinchProgress() {
+        fingersDown(500, 900, 900, 900, 500, 1300, 900, 1300);
+        send(MOVE, 0, 530, 930, 870, 930, 530, 1270, 870, 1270);
+        send(POINTER_DOWN, 4, 530, 930, 870, 930, 530, 1270, 870, 1270, 700, 1100);
+        assertTrue(events.isEmpty());
+        // Without the carried progress the fifth finger would restart the count here.
+        send(MOVE, 0, 555, 955, 845, 955, 555, 1245, 845, 1245, 700, 1100);
         assertEquals(List.of("HOME:1"), events);
     }
 

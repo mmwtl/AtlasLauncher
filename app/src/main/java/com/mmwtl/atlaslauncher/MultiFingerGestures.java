@@ -7,8 +7,10 @@ package com.mmwtl.atlaslauncher;
  * swiped up open all apps. Every finger has to travel the same way and the fingers have to keep
  * their spread, so pinch zoom, rotation and a zoom with one finger resting stay with the app.
  *
- * <p>Fingers land and lift one by one, so a gesture waits until the finger count has settled,
- * a touch belongs to the most fingers it has had, and it makes at most one gesture. Has no
+ * <p>Fingers land and lift one by one, so a two- or three-finger gesture waits until the finger
+ * count has settled, a touch belongs to the most fingers it has had, and it makes at most one
+ * gesture. Four or more fingers start at once, as nothing above them could be mistaken for them,
+ * and a fifth finger keeps the progress already made. Has no
  * Android dependencies, so it runs in JVM tests.
  */
 final class MultiFingerGestures {
@@ -48,7 +50,7 @@ final class MultiFingerGestures {
     /** Spread change that is always tolerated; beyond it, it must stay under half the travel. */
     static final int SPREAD_TOLERANCE_PX = 40;
     /** A pinch has brought the fingers to this share of their starting spread. */
-    static final float PINCH_RATIO = 0.6f;
+    static final float PINCH_RATIO = 0.75f;
     static final int ALL_APPS_SWIPE_PX = 150;
 
     private final int screenWidth;
@@ -97,6 +99,9 @@ final class MultiFingerGestures {
 
     private void setPointers(int pointerCount, int[] ids, float[] x, float[] y, int skippedId, long time) {
         int previous = count;
+        boolean wasMany = manyFingers;
+        float pinched = wasMany ? spread() / startSpread : 1;
+        float risen = wasMany ? startY - mean(ys) : 0;
         if (xs.length < pointerCount) {
             xs = new float[pointerCount];
             ys = new float[pointerCount];
@@ -115,6 +120,14 @@ final class MultiFingerGestures {
         count = kept;
         if (count != previous) {
             start(time);
+            if (wasMany && manyFingers) {
+                // Four and five fingers alike: carry the pinch or swipe over to the new set of fingers.
+                startSpread = spread() / pinched;
+                startY += risen;
+                for (int i = 0; i < count; i++) {
+                    fingerAnchorYs[i] += risen;
+                }
+            }
         } else if (kind != null || manyFingers) {
             if (time < settleUntil) {
                 anchor();
@@ -145,7 +158,7 @@ final class MultiFingerGestures {
             }
         }
         stepped = false;
-        settleUntil = time + SETTLE_MS;
+        settleUntil = manyFingers ? time : time + SETTLE_MS;
         anchor();
     }
 
