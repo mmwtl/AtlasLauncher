@@ -30,6 +30,8 @@ import android.view.Display;
 import android.view.InputEvent;
 import android.view.MotionEvent;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -39,7 +41,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * failure ends only this process, which removes the filter and gives touches back to the OEM
  * ones. Every event is returned to the system unchanged before any other work until a gesture
  * makes its first step; then the app under the fingers gets a cancel and the rest of that touch
- * sequence stays with the gesture, so a map or list does not move along with it. Volume goes through AudioManager, temperature and brightness through
+ * sequence stays with the gesture, so a map or list does not move along with it. In priority mode
+ * (an option) touches that may still become a gesture are held back instead and handed to the app
+ * only once they turn out not to be one, at most {@link #HOLD_MAX_MS} late. Volume goes through AudioManager, temperature and brightness through
  * GInputBridge broadcasts, as AtlasClimateWidget does. {@link GestureHud} shows each new
  * temperature or brightness; OneOS shows its own volume indicator. Four fingers pinched together go
  * home; four fingers swiped up do what the "All apps" dock button does.
@@ -80,8 +84,11 @@ public final class GestureFilterService extends Service {
     private static final int MAX_VOLUME_STEPS = 3;
     private static final long GIB_REFRESH_MS = 60_000;
     private static final String CHANNEL = "gestures";
+    static final String EXTRA_PRIORITY = "priority";
+    private static final long HOLD_MAX_MS = 500;
 
     private final Handler main = new Handler(Looper.getMainLooper());
+    private volatile boolean priority;
     private final GestureFilter filter = new GestureFilter();
     private final MultiFingerGestures gestures = new MultiFingerGestures(SCREEN_WIDTH, this::onSteps);
     // GInputBridge subscriptions live in its memory only, so they are repeated.
@@ -146,7 +153,13 @@ public final class GestureFilterService extends Service {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // HOME passes the current value; a restart after the process died rereads the file it writes.
+        priority = intent != null && intent.hasExtra(EXTRA_PRIORITY)
+                ? intent.getBooleanExtra(EXTRA_PRIORITY, false)
+                : getSharedPreferences(HomeActivity.PREFS, MODE_MULTI_PROCESS)
+                        .getBoolean(HomeActivity.GESTURES_PRIORITY, false);
         return START_STICKY;
     }
 
@@ -357,8 +370,26 @@ public final class GestureFilterService extends Service {
         private final float[] xs = new float[32];
         private final float[] ys = new float[32];
         private volatile IBinder host;
-        // The current touch sequence belongs to a gesture; only Binder calls touch it, one at a time.
+        // Touch sequence state, shared by Binder calls and the hold timeout under this object's lock.
+        // The sequence belongs to a gesture:
         private boolean claimed;
+        // Priority mode: events held back while the touch may still become a gesture, and whether
+        // this touch has already been handed to the app, so it is not held again.
+        private final List<MotionEvent> held = new ArrayList<>();
+        private final List<Integer> heldFlags = new ArrayList<>();
+        private boolean released;
+        // What the app has seen last, to end its touch when a gesture takes over.
+        private MotionEvent lastRelayed;
+        private int lastFlags;
+        private final Runnable holdTimeout = () -> {
+            synchronized (this) {
+                try {
+                    flushHeld();
+                } catch (RemoteException | RuntimeException error) {
+                    stopProcess("hold flush failure: " + error);
+                }
+            }
+        };
 
         GestureFilter() {
             attachInterface(null, FILTER_DESCRIPTOR);
@@ -422,26 +453,99 @@ public final class GestureFilterService extends Service {
             }
         }
 
-        private void filterMotion(MotionEvent event, int policyFlags) throws RemoteException {
-            boolean wasClaimed = claimed && event.getActionMasked() != MotionEvent.ACTION_DOWN;
-            if (!wasClaimed) {
-                relay(event, policyFlags);
+        private synchronized void filterMotion(MotionEvent event, int policyFlags) throws RemoteException {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                flushHeld();
+                claimed = false;
+                released = false;
             }
-            claimed = detect(event);
-            if (claimed && !wasClaimed) {
-                // The app saw the start of this touch: end it there. The dispatcher still passes the
-                // final finger up on its own, and the system drops it as the touch is already over.
-                MotionEvent cancel = MotionEvent.obtain(event);
-                cancel.setAction(MotionEvent.ACTION_CANCEL);
-                try {
-                    relay(cancel, policyFlags);
-                } finally {
-                    cancel.recycle();
+            if (claimed) {
+                // The rest of the touch is the gesture's own.
+                detect(event);
+                return;
+            }
+            boolean holding = priority;
+            if (!holding) {
+                relayTracked(event, policyFlags);
+            }
+            MultiFingerGestures.Decision decision = detect(event);
+            if (decision == MultiFingerGestures.Decision.CLAIMED) {
+                claimed = true;
+                dropHeld();
+                cancelAppTouch();
+            } else if (!holding) {
+                return;
+            } else if (decision == MultiFingerGestures.Decision.UNDECIDED && !released) {
+                hold(event, policyFlags);
+            } else {
+                if (event.getPointerCount() > 1) {
+                    released = true;
                 }
+                flushHeld();
+                relayTracked(event, policyFlags);
             }
         }
 
-        private boolean detect(MotionEvent event) {
+        private void relayTracked(MotionEvent event, int policyFlags) throws RemoteException {
+            relay(event, policyFlags);
+            if (lastRelayed != null) {
+                lastRelayed.recycle();
+            }
+            lastRelayed = MotionEvent.obtain(event);
+            lastFlags = policyFlags;
+        }
+
+        /**
+         * Ends the touch the app has seen. The dispatcher still passes the final finger up on its own,
+         * and the system drops it as that touch is already over.
+         */
+        private void cancelAppTouch() throws RemoteException {
+            if (lastRelayed == null) {
+                return;
+            }
+            lastRelayed.setAction(MotionEvent.ACTION_CANCEL);
+            try {
+                relay(lastRelayed, lastFlags);
+            } finally {
+                lastRelayed.recycle();
+                lastRelayed = null;
+            }
+        }
+
+        private void hold(MotionEvent event, int policyFlags) {
+            if (held.isEmpty()) {
+                control.postDelayed(holdTimeout, HOLD_MAX_MS);
+            }
+            held.add(MotionEvent.obtain(event));
+            heldFlags.add(policyFlags);
+        }
+
+        /** Hands the held events to the app, late but in order; from then on this touch is the app's. */
+        private void flushHeld() throws RemoteException {
+            control.removeCallbacks(holdTimeout);
+            if (held.isEmpty()) {
+                return;
+            }
+            released = true;
+            try {
+                for (int i = 0; i < held.size(); i++) {
+                    relayTracked(held.get(i), heldFlags.get(i));
+                }
+            } finally {
+                dropHeld();
+            }
+        }
+
+        private void dropHeld() {
+            control.removeCallbacks(holdTimeout);
+            for (MotionEvent event : held) {
+                event.recycle();
+            }
+            held.clear();
+            heldFlags.clear();
+        }
+
+        private MultiFingerGestures.Decision detect(MotionEvent event) {
             int count = Math.min(event.getPointerCount(), ids.length);
             for (int i = 0; i < count; i++) {
                 ids[i] = event.getPointerId(i);
@@ -449,7 +553,7 @@ public final class GestureFilterService extends Service {
                 ys[i] = event.getY(i);
             }
             return gestures.onEvent(event.getActionMasked(), event.getPointerId(event.getActionIndex()),
-                    count, ids, xs, ys);
+                    count, ids, xs, ys, event.getEventTime());
         }
     }
 }

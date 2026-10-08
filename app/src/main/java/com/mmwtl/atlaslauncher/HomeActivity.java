@@ -143,6 +143,7 @@ public final class HomeActivity extends Activity {
             "Ночной город", "Тёмный мрамор", "Горный закат"};
     private static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
     private static final String GESTURES_ENABLED = "gestures_enabled";
+    static final String GESTURES_PRIORITY = "gestures_priority";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     private static final String DOCK_APPS = "dock_apps";
@@ -1255,6 +1256,11 @@ public final class HomeActivity extends Activity {
                         + "Температуре и яркости нужен GInputBridge. Касания в этой области проходят через "
                         + "AtlasLauncher, а не через штатную службу жестов.");
         settingsToggle(gestures, "Жесты несколькими пальцами", GESTURES_ENABLED, false, this::applyGestures);
+        settingsToggle(gestures, "Жесты важнее приложений", GESTURES_PRIORITY, false, this::applyGestures);
+        gestures.addView(label("Включено: касание несколькими пальцами сначала проверяется как жест, и приложение "
+                + "не сдвигается под ним. Масштаб и поворот в картах начнутся немного позже, до полусекунды. "
+                + "Выключено: приложение получает касание сразу, а при срабатывании жеста оно отменяется.",
+                14, NEUTRAL_MUTED, false));
         gestures.addView(label("Нужно разрешение «Поверх других приложений»: без него не будет карточек "
                 + "с температурой и яркостью, а жесты четырьмя пальцами не смогут открыть главный экран "
                 + "и приложения поверх другого приложения.", 14, NEUTRAL_MUTED, false));
@@ -1268,7 +1274,8 @@ public final class HomeActivity extends Activity {
     }
 
     private void applyGestures() {
-        Intent service = new Intent(this, GestureFilterService.class);
+        Intent service = new Intent(this, GestureFilterService.class).putExtra(GestureFilterService.EXTRA_PRIORITY,
+                getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_PRIORITY, false));
         try {
             if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) startForegroundService(service);
             else stopService(service);
