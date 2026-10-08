@@ -177,21 +177,41 @@ public class MultiFingerGesturesTest {
     }
 
     @Test
-    public void fourFingerPinchOpensAllAppsOnce() {
+    public void fourFingerPinchGoesHomeOnce() {
         fourFingersDown(500, 900, 900, 900, 500, 1300, 900, 1300);
         assertFalse(send(MultiFingerGestures.ACTION_MOVE, 0, 560, 960, 840, 960, 560, 1240, 840, 1240));
         assertTrue(send(MultiFingerGestures.ACTION_MOVE, 0, 620, 1020, 780, 1020, 620, 1180, 780, 1180));
         send(MultiFingerGestures.ACTION_MOVE, 0, 680, 1080, 720, 1080, 680, 1120, 720, 1120);
+        assertEquals(List.of("HOME:1"), events);
+    }
+
+    @Test
+    public void fourFingersUpOpenAllAppsOnce() {
+        fourFingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
+        assertFalse(send(MultiFingerGestures.ACTION_MOVE, 0, 600, 900, 800, 905, 600, 1100, 800, 1100));
+        assertTrue(send(MultiFingerGestures.ACTION_MOVE, 0, 605, 840, 800, 845, 600, 1040, 795, 1045));
+        send(MultiFingerGestures.ACTION_MOVE, 0, 605, 600, 800, 600, 600, 800, 795, 800);
         assertEquals(List.of("ALL_APPS:1"), events);
     }
 
     @Test
-    public void fourFingersSpreadingOrSwipingDoNothing() {
+    public void fiveFingersPinchGoesHomeToo() {
+        fourFingersDown(500, 900, 900, 900, 500, 1300, 900, 1300);
+        send(MultiFingerGestures.ACTION_POINTER_DOWN, 4, 500, 900, 900, 900, 500, 1300, 900, 1300, 700, 1400);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 650, 1050, 750, 1050, 650, 1150, 750, 1150, 700, 1180);
+        assertEquals(List.of("HOME:1"), events);
+    }
+
+    @Test
+    public void fourFingersSpreadingDownOrOneFingerUpDoNothing() {
         fourFingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
         send(MultiFingerGestures.ACTION_MOVE, 0, 400, 800, 1000, 800, 400, 1400, 1000, 1400);
         send(MultiFingerGestures.ACTION_UP, 0, 400, 800);
         fourFingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
-        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 700, 800, 700, 600, 900, 800, 900);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 1300, 800, 1300, 600, 1500, 800, 1500);
+        send(MultiFingerGestures.ACTION_UP, 0, 600, 1300);
+        fourFingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
+        send(MultiFingerGestures.ACTION_MOVE, 0, 600, 1000, 800, 1000, 600, 1200, 800, 500);
         assertTrue(events.isEmpty());
     }
 

@@ -10,6 +10,8 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
@@ -39,8 +41,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * makes its first step; then the app under the fingers gets a cancel and the rest of that touch
  * sequence stays with the gesture, so a map or list does not move along with it. Volume goes through AudioManager, temperature and brightness through
  * GInputBridge broadcasts, as AtlasClimateWidget does. {@link GestureHud} shows each new
- * temperature or brightness; OneOS shows its own volume indicator. A four-finger pinch does what
- * the "All apps" dock button does.
+ * temperature or brightness; OneOS shows its own volume indicator. Four fingers pinched together go
+ * home; four fingers swiped up do what the "All apps" dock button does.
  */
 public final class GestureFilterService extends Service {
     private static final String TAG = "AtlasGestures";
@@ -125,7 +127,7 @@ public final class GestureFilterService extends Service {
         startForeground(1, new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_menu_compass)
                 .setContentTitle("Жесты включены")
-                .setContentText("Два пальца: громкость и температура, три: яркость, щипок четырьмя: приложения")
+                .setContentText("Два пальца: громкость и температура, три: яркость, четыре: домой и приложения")
                 .build());
         controlThread = new HandlerThread("GesturesControl");
         controlThread.start();
@@ -261,11 +263,28 @@ public final class GestureFilterService extends Service {
                             gibValues.getOrDefault(BRIGHTNESS_MIN_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MIN_DEFAULT),
                             gibValues.getOrDefault(BRIGHTNESS_MAX_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MAX_DEFAULT));
                     break;
+                case HOME:
+                    main.post(this::openHome);
+                    break;
                 case ALL_APPS:
                     main.post(this::openAllApps);
                     break;
             }
         });
+    }
+
+    /** Opens AtlasLauncher straight away when it is HOME, so the system does not pick Launcher3 first. */
+    private void openHome() {
+        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo resolved = getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
+        if (resolved != null && getPackageName().equals(resolved.activityInfo.packageName)) {
+            home = new Intent(this, HomeActivity.class);
+        }
+        try {
+            startActivity(home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (ActivityNotFoundException | SecurityException error) {
+            Log.w(TAG, "Cannot open HOME", error);
+        }
     }
 
     /**
