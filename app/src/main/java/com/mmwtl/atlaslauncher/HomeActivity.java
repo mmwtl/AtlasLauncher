@@ -1255,8 +1255,9 @@ public final class HomeActivity extends Activity {
                         + "Температуре и яркости нужен GInputBridge. Касания в этой области проходят через "
                         + "AtlasLauncher, а не через штатную службу жестов.");
         settingsToggle(gestures, "Жесты несколькими пальцами", GESTURES_ENABLED, false, this::applyGestures);
-        gestures.addView(label("Новую температуру и яркость показывает карточка поверх приложений. "
-                + "Для неё нужно разрешение «Поверх других приложений».", 14, NEUTRAL_MUTED, false));
+        gestures.addView(label("Нужно разрешение «Поверх других приложений»: без него не будет карточек "
+                + "с температурой и яркостью, а жесты четырьмя пальцами не смогут открыть главный экран "
+                + "и приложения поверх другого приложения.", 14, NEUTRAL_MUTED, false));
         settingsAction(gestures, "Разрешить показ поверх приложений  ↗", () -> {
             try {
                 startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));

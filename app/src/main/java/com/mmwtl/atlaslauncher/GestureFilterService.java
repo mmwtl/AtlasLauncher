@@ -289,8 +289,8 @@ public final class GestureFilterService extends Service {
 
     /**
      * Opens the chosen "All apps" activity directly, so GLauncher or another app does not show
-     * HOME first; the built-in catalog is part of HOME. Runs from the background: Android 11 lets
-     * the current HOME and apps allowed to draw over others start activities from there.
+     * HOME first; the built-in catalog is part of HOME. Runs from the background, which Android 11
+     * allows only with the "display over other apps" permission; being HOME is not enough.
      */
     @SuppressWarnings("deprecation")
     private void openAllApps() {
