@@ -22,10 +22,11 @@ import android.widget.TextView;
 import java.util.Locale;
 
 /**
- * Card over other apps that shows the value a gesture has just set: a title, a large number and
+ * Card over other apps that shows the value a gesture has just set: a title, a large value and
  * a bar across the allowed range, near the top of the screen. Driver temperature appears at the
- * left edge, passenger at the right, brightness in the centre. Needs the "display over other apps" permission; without it
- * the gestures still work, only silently. Must be used on the main thread.
+ * left edge, passenger at the right, brightness and fan in the centre. Needs the "display over
+ * other apps" permission; without it the gestures still work, only silently. Must be used on the
+ * main thread.
  */
 final class GestureHud {
     private static final int SURFACE = Color.rgb(35, 37, 40);
@@ -63,19 +64,35 @@ final class GestureHud {
     }
 
     void show(MultiFingerGestures.Kind kind, float current, float min, float max) {
-        if (!Settings.canDrawOverlays(context) || max <= min) {
+        if (max <= min) {
+            return;
+        }
+        boolean temperature = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT
+                || kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT;
+        present(kind, kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT ? "Водитель"
+                        : kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT ? "Пассажир" : "Яркость",
+                temperature ? String.format(Locale.ROOT, "%.1f°", current) : String.valueOf(Math.round(current)),
+                Math.max(0, Math.min(1, (current - min) / (max - min))));
+    }
+
+    /** Fan speed or, in climate AUTO, the auto-fan profile; {@code fraction} places it on the bar. */
+    void showFan(String title, String text, float fraction) {
+        present(MultiFingerGestures.Kind.FAN, title, text, fraction);
+    }
+
+    private void present(MultiFingerGestures.Kind kind, String titleText, String valueText, float fraction) {
+        if (!Settings.canDrawOverlays(context)) {
             return;
         }
         if (card == null) {
             create();
         }
-        boolean temperature = kind != MultiFingerGestures.Kind.BRIGHTNESS;
-        float fraction = Math.max(0, Math.min(1, (current - min) / (max - min)));
-        icon.setImageResource(temperature ? R.drawable.ic_temperature : R.drawable.ic_brightness);
-        title.setText(kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT ? "Водитель"
-                : kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT ? "Пассажир" : "Яркость");
-        value.setText(temperature ? String.format(Locale.ROOT, "%.1f°", current)
-                : String.valueOf(Math.round(current)));
+        boolean temperature = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT
+                || kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT;
+        icon.setImageResource(temperature ? R.drawable.ic_temperature
+                : kind == MultiFingerGestures.Kind.FAN ? R.drawable.ic_fan : R.drawable.ic_brightness);
+        title.setText(titleText);
+        value.setText(valueText);
         fill.setBackground(temperature ? temperatureFill : brightnessFill);
         animateFill(fraction);
 

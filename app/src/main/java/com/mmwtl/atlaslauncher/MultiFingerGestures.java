@@ -1,9 +1,9 @@
 package com.mmwtl.atlaslauncher;
 
 /**
- * Recognises vertical two- and three-finger swipes from pointer samples. Two fingers adjust volume
- * in the centre of the screen and the driver or passenger temperature near the left or right edge;
- * three fingers adjust brightness anywhere. Four or more fingers pinched together go home, and
+ * Recognises multi-finger swipes from pointer samples. Two fingers up and down adjust volume in
+ * the centre of the screen and the driver or passenger temperature near the left or right edge;
+ * three fingers anywhere adjust brightness up and down and the fan sideways. Four or more fingers pinched together go home, and
  * swiped up open all apps. Every finger has to travel the same way and the fingers have to keep
  * their spread, so pinch zoom, rotation and a zoom with one finger resting stay with the app.
  *
@@ -12,7 +12,7 @@ package com.mmwtl.atlaslauncher;
  * Android dependencies, so it runs in JVM tests.
  */
 final class MultiFingerGestures {
-    enum Kind { VOLUME, TEMPERATURE_LEFT, TEMPERATURE_RIGHT, BRIGHTNESS, HOME, ALL_APPS }
+    enum Kind { VOLUME, TEMPERATURE_LEFT, TEMPERATURE_RIGHT, BRIGHTNESS, FAN, HOME, ALL_APPS }
 
     /** What the touch sequence is so far. */
     enum Decision {
@@ -25,7 +25,7 @@ final class MultiFingerGestures {
     }
 
     interface Listener {
-        /** {@code steps} is positive for an upward swipe and negative for a downward one. */
+        /** {@code steps} is positive for a swipe up or right and negative for down or left. */
         void onSteps(Kind kind, int steps);
     }
 
@@ -40,6 +40,7 @@ final class MultiFingerGestures {
     static final int VOLUME_STEP_PX = 60;
     static final int TEMPERATURE_STEP_PX = 80;
     static final int BRIGHTNESS_STEP_PX = 70;
+    static final int FAN_STEP_PX = 80;
     /** The first step of a swipe needs this much more travel than the next ones. */
     static final float FIRST_STEP_FACTOR = 1.5f;
     /** After the finger count changes, movement only moves the starting point for this long. */
@@ -54,6 +55,7 @@ final class MultiFingerGestures {
     private final Listener listener;
     private float[] xs = new float[0];
     private float[] ys = new float[0];
+    private float[] fingerAnchorXs = new float[0];
     private float[] fingerAnchorYs = new float[0];
     private int count;
     private int maxCount;
@@ -98,6 +100,7 @@ final class MultiFingerGestures {
         if (xs.length < pointerCount) {
             xs = new float[pointerCount];
             ys = new float[pointerCount];
+            fingerAnchorXs = new float[pointerCount];
             fingerAnchorYs = new float[pointerCount];
         }
         int kept = 0;
@@ -155,6 +158,11 @@ final class MultiFingerGestures {
         startX = anchorX;
         startY = anchorY;
         startSpread = spread();
+        anchorFingers();
+    }
+
+    private void anchorFingers() {
+        System.arraycopy(xs, 0, fingerAnchorXs, 0, count);
         System.arraycopy(ys, 0, fingerAnchorYs, 0, count);
     }
 
@@ -165,7 +173,7 @@ final class MultiFingerGestures {
             finish(Kind.HOME);
         } else if (rise >= ALL_APPS_SWIPE_PX
                 && Math.abs(spread - startSpread) <= Math.max(SPREAD_TOLERANCE_PX, rise / 2)
-                && everyFingerMoved(-1, ALL_APPS_SWIPE_PX / 2f)) {
+                && everyFingerMoved(false, 1, ALL_APPS_SWIPE_PX / 2f)) {
             finish(Kind.ALL_APPS);
         } else if (spread > startSpread / PINCH_RATIO || -rise > ALL_APPS_SWIPE_PX / 2f
                 || Math.abs(mean(xs) - startX) > ALL_APPS_SWIPE_PX) {
@@ -183,37 +191,54 @@ final class MultiFingerGestures {
     private void follow() {
         float dx = mean(xs) - anchorX;
         float dy = mean(ys) - anchorY;
-        int stepPx = kind == Kind.VOLUME ? VOLUME_STEP_PX
-                : kind == Kind.BRIGHTNESS ? BRIGHTNESS_STEP_PX : TEMPERATURE_STEP_PX;
-        // A mostly horizontal drag is not ours; it stays ignored until the finger count changes.
-        if (Math.abs(dx) > stepPx && Math.abs(dx) > Math.abs(dy)) {
+        // Three fingers choose their axis with the first step: up and down is brightness, sideways the fan.
+        if (count == 3 && !stepped) {
+            kind = Math.abs(dx) > Math.abs(dy) ? Kind.FAN : Kind.BRIGHTNESS;
+        }
+        boolean sideways = kind == Kind.FAN;
+        // Positive along the axis is up or right.
+        float along = sideways ? dx : -dy;
+        float across = sideways ? dy : dx;
+        int stepPx = kind == Kind.VOLUME ? VOLUME_STEP_PX : kind == Kind.BRIGHTNESS ? BRIGHTNESS_STEP_PX
+                : kind == Kind.FAN ? FAN_STEP_PX : TEMPERATURE_STEP_PX;
+        // A drag mostly across the axis is not ours; it stays ignored until the finger count changes.
+        if (Math.abs(across) > stepPx && Math.abs(across) > Math.abs(along)) {
             kind = null;
             return;
         }
         // Fingers moving apart or together are a zoom, whatever their middle does.
+        float travel = sideways ? mean(xs) - startX : mean(ys) - startY;
         float spreadChange = Math.abs(spread() - startSpread);
-        if (spreadChange > SPREAD_TOLERANCE_PX && spreadChange > Math.abs(mean(ys) - startY) / 2) {
+        if (spreadChange > SPREAD_TOLERANCE_PX && spreadChange > Math.abs(travel) / 2) {
             kind = null;
             return;
         }
-        float rise = -dy;
         float needed = stepped ? stepPx : stepPx * FIRST_STEP_FACTOR;
-        int direction = rise > 0 ? 1 : -1;
-        if (Math.abs(rise) < needed || !everyFingerMoved(-direction, needed / 2)) {
+        int direction = along > 0 ? 1 : -1;
+        if (Math.abs(along) < needed || !everyFingerMoved(sideways, direction, needed / 2)) {
             return;
         }
-        int steps = stepped ? (int) (rise / stepPx) : direction;
-        anchorY -= stepped ? steps * stepPx : direction * needed;
-        System.arraycopy(ys, 0, fingerAnchorYs, 0, count);
+        int steps = stepped ? (int) (along / stepPx) : direction;
+        float shift = stepped ? steps * stepPx : direction * needed;
+        if (sideways) {
+            anchorX += shift;
+        } else {
+            anchorY -= shift;
+        }
+        anchorFingers();
         stepped = true;
         claimed = true;
         listener.onSteps(kind, steps);
     }
 
-    /** Whether each finger has moved at least {@code distance} along {@code direction} (+1 is down). */
-    private boolean everyFingerMoved(int direction, float distance) {
+    /**
+     * Whether each finger has moved at least {@code distance} in {@code direction} along the axis
+     * since the last step; +1 is right when {@code sideways}, up otherwise.
+     */
+    private boolean everyFingerMoved(boolean sideways, int direction, float distance) {
         for (int i = 0; i < count; i++) {
-            if ((ys[i] - fingerAnchorYs[i]) * direction < distance) {
+            float moved = sideways ? xs[i] - fingerAnchorXs[i] : fingerAnchorYs[i] - ys[i];
+            if (moved * direction < distance) {
                 return false;
             }
         }

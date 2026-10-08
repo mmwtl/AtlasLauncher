@@ -45,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * (an option) touches that may still become a gesture are held back instead and handed to the app
  * only once they turn out not to be one, at most {@link #HOLD_MAX_MS} late. Volume goes through AudioManager, temperature and brightness through
  * GInputBridge broadcasts, as AtlasClimateWidget does. {@link GestureHud} shows each new
- * temperature or brightness; OneOS shows its own volume indicator. Four fingers pinched together go
+ * temperature, brightness or fan setting; OneOS shows its own volume indicator. Four fingers pinched together go
  * home; four fingers swiped up do what the "All apps" dock button does.
  */
 public final class GestureFilterService extends Service {
@@ -80,6 +80,17 @@ public final class GestureFilterService extends Service {
     private static final int BRIGHTNESS_MAX_ID = 538248448;
     private static final float BRIGHTNESS_MIN_DEFAULT = 1;
     private static final float BRIGHTNESS_MAX_DEFAULT = 12;
+    // Climate values as AtlasClimateWidget uses them on Atlas.
+    private static final int CLIMATE_AUTO = 268501504;
+    private static final int CLIMATE_AUTO_ZONE = 1;
+    private static final int FAN_SPEED = 268566784;
+    private static final int FAN_SPEED_AUTO = 268566794;
+    private static final int FAN_SPEED_LEVEL_1 = 268566785;
+    private static final int FAN_LEVELS = 9;
+    private static final int AUTO_FAN_SETTING = 268567040;
+    private static final int FAN_ZONE = 8;
+    private static final int[] FAN_PROFILES = {268567044, 268567041, 268567042, 268567043, 268567045};
+    private static final String[] FAN_PROFILE_NAMES = {"Тихо", "Мягко", "Комфорт", "Сильно", "Макс"};
     private static final int GLOBAL_AREA = Integer.MIN_VALUE;
     private static final int MAX_VOLUME_STEPS = 3;
     private static final long GIB_REFRESH_MS = 60_000;
@@ -93,6 +104,8 @@ public final class GestureFilterService extends Service {
     private final MultiFingerGestures gestures = new MultiFingerGestures(SCREEN_WIDTH, this::onSteps);
     // GInputBridge subscriptions live in its memory only, so they are repeated.
     private final Map<String, Float> gibValues = new ConcurrentHashMap<>();
+    // Integer properties apart: their values are enum codes too large for a float.
+    private final Map<String, Integer> gibInts = new ConcurrentHashMap<>();
     private final BroadcastReceiver gibReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -101,8 +114,12 @@ public final class GestureFilterService extends Service {
             Object area = extras == null ? null : extras.get("area");
             Object value = extras == null ? null : extras.get("value");
             try {
-                gibValues.put(id.toString().trim() + "_" + area.toString().trim(),
-                        Float.parseFloat(value.toString().trim()));
+                String key = id.toString().trim() + "_" + area.toString().trim();
+                if (intent.getAction().contains("_INT_")) {
+                    gibInts.put(key, (int) Math.round(Double.parseDouble(value.toString().trim())));
+                } else {
+                    gibValues.put(key, Float.parseFloat(value.toString().trim()));
+                }
             } catch (RuntimeException error) {
                 // Not a number or an incomplete reply: the value stays unknown.
             }
@@ -134,7 +151,7 @@ public final class GestureFilterService extends Service {
         startForeground(1, new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_menu_compass)
                 .setContentTitle("Жесты включены")
-                .setContentText("Два пальца: громкость и температура, три: яркость, четыре: домой и приложения")
+                .setContentText("Два пальца: громкость и температура, три: яркость и обдув, четыре: домой и приложения")
                 .build());
         controlThread = new HandlerThread("GesturesControl");
         controlThread.start();
@@ -147,6 +164,8 @@ public final class GestureFilterService extends Service {
         IntentFilter replies = new IntentFilter();
         replies.addAction(GIB + ".PROPERTY_FLOAT_RESULT");
         replies.addAction(GIB + ".PROPERTY_FLOAT_CHANGED");
+        replies.addAction(GIB + ".PROPERTY_INT_RESULT");
+        replies.addAction(GIB + ".PROPERTY_INT_CHANGED");
         registerReceiver(gibReceiver, replies);
         actions.post(gibRefresh);
         control.post(this::register);
@@ -276,6 +295,9 @@ public final class GestureFilterService extends Service {
                             gibValues.getOrDefault(BRIGHTNESS_MIN_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MIN_DEFAULT),
                             gibValues.getOrDefault(BRIGHTNESS_MAX_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MAX_DEFAULT));
                     break;
+                case FAN:
+                    fanStep(steps);
+                    break;
                 case HOME:
                     main.post(this::openHome);
                     break;
@@ -343,6 +365,49 @@ public final class GestureFilterService extends Service {
         sendGib("SET_FLOAT_PROPERTY", id, area, target);
     }
 
+    /**
+     * In climate AUTO the car ignores a manual fan speed, so there the gesture moves the auto-fan
+     * profile instead; outside AUTO it sets the speed, 1 to 9. Same rules as AtlasClimateWidget.
+     */
+    private void fanStep(int steps) {
+        Integer auto = gibInts.get(CLIMATE_AUTO + "_" + CLIMATE_AUTO_ZONE);
+        Integer speed = gibInts.get(FAN_SPEED + "_" + FAN_ZONE);
+        if (auto == null && speed == null) {
+            refreshGib();
+            return;
+        }
+        if (auto != null ? auto == 1 : speed == FAN_SPEED_AUTO) {
+            String key = AUTO_FAN_SETTING + "_" + FAN_ZONE;
+            Integer profile = gibInts.get(key);
+            int index = -1;
+            for (int i = 0; profile != null && i < FAN_PROFILES.length; i++) {
+                if (FAN_PROFILES[i] == profile) {
+                    index = i;
+                }
+            }
+            // A profile outside these five snaps to the middle one, as in the climate widget.
+            int next = index < 0 ? FAN_PROFILES.length / 2
+                    : Math.max(0, Math.min(FAN_PROFILES.length - 1, index + steps));
+            main.post(() -> hud.showFan("Обдув · авто", FAN_PROFILE_NAMES[next],
+                    next / (FAN_PROFILES.length - 1f)));
+            if (next != index) {
+                gibInts.put(key, FAN_PROFILES[next]);
+                sendGib("SET_INT_PROPERTY", AUTO_FAN_SETTING, FAN_ZONE, FAN_PROFILES[next]);
+            }
+            return;
+        }
+        int level = speed == null ? 0 : speed - FAN_SPEED_LEVEL_1 + 1;
+        if (level < 1 || level > FAN_LEVELS) {
+            level = 0;
+        }
+        int next = Math.max(1, Math.min(FAN_LEVELS, level + steps));
+        main.post(() -> hud.showFan("Обдув", String.valueOf(next), (next - 1f) / (FAN_LEVELS - 1)));
+        if (next != level) {
+            gibInts.put(FAN_SPEED + "_" + FAN_ZONE, FAN_SPEED_LEVEL_1 + next - 1);
+            sendGib("SET_INT_PROPERTY", FAN_SPEED, FAN_ZONE, FAN_SPEED_LEVEL_1 + next - 1);
+        }
+    }
+
     private void refreshGib() {
         for (int[] property : new int[][] {{TEMPERATURE, TEMPERATURE_ROW_LEFT}, {TEMPERATURE, TEMPERATURE_ROW_RIGHT},
                 {BRIGHTNESS, GLOBAL_AREA}}) {
@@ -351,12 +416,19 @@ public final class GestureFilterService extends Service {
         }
         sendGib("GET_FLOAT_PROPERTY", BRIGHTNESS_MIN_ID, GLOBAL_AREA, null);
         sendGib("GET_FLOAT_PROPERTY", BRIGHTNESS_MAX_ID, GLOBAL_AREA, null);
+        for (int[] property : new int[][] {{CLIMATE_AUTO, CLIMATE_AUTO_ZONE}, {FAN_SPEED, FAN_ZONE},
+                {AUTO_FAN_SETTING, FAN_ZONE}}) {
+            sendGib("LISTEN_PROPERTY_CHANGES", property[0], property[1], null);
+            sendGib("GET_INT_PROPERTY", property[0], property[1], null);
+        }
     }
 
-    private void sendGib(String action, int id, int area, Float value) {
+    private void sendGib(String action, int id, int area, Number value) {
         Intent intent = new Intent(GIB + "." + action).setPackage(GIB).putExtra("id", id).putExtra("area", area);
-        if (value != null) {
-            intent.putExtra("value", value);
+        if (value instanceof Integer) {
+            intent.putExtra("value", value.intValue());
+        } else if (value != null) {
+            intent.putExtra("value", value.floatValue());
         }
         try {
             sendBroadcast(intent);

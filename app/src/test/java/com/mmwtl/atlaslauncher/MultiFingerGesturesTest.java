@@ -115,6 +115,24 @@ public class MultiFingerGesturesTest {
     }
 
     @Test
+    public void threeFingersSidewaysChangeTheFan() {
+        fingersDown(400, 1000, 600, 1000, 500, 1150);
+        send(MOVE, 0, 530, 1005, 730, 1005, 630, 1150);
+        send(MOVE, 0, 610, 1010, 810, 1010, 710, 1160);
+        send(MOVE, 0, 450, 1010, 650, 1010, 550, 1160);
+        assertEquals(List.of("FAN:1", "FAN:1", "FAN:-1"), events);
+    }
+
+    @Test
+    public void threeFingersKeepTheirFirstAxis() {
+        fingersDown(400, 1000, 600, 1000, 500, 1150);
+        send(MOVE, 0, 400, 890, 600, 890, 500, 1040);
+        // After a brightness step a sideways drag is not the fan.
+        send(MOVE, 0, 600, 890, 800, 890, 700, 1040);
+        assertEquals(List.of("BRIGHTNESS:1"), events);
+    }
+
+    @Test
     public void oneFingerNeverTriggers() {
         assertEquals(Decision.PASS, send(DOWN, 0, 700, 1000));
         assertEquals(Decision.PASS, send(MOVE, 0, 700, 300));
