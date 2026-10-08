@@ -150,13 +150,12 @@ public class MultiFingerGesturesTest {
     }
 
     @Test
-    public void movementWhileFingersSettleOnlyMovesTheStart() {
+    public void movementWhileFingersSettleCountsOnceSettled() {
         send(DOWN, 0, 600, 1000);
         send(POINTER_DOWN, 1, 600, 1000, 800, 1000);
-        send(MOVE, 0, 600, 800, 800, 800);
+        send(MOVE, 0, 600, 900, 800, 900);
         assertTrue(events.isEmpty());
-        settle(600, 800, 800, 800);
-        send(MOVE, 0, 600, 700, 800, 700);
+        settle(600, 900, 800, 900);
         assertEquals(List.of("VOLUME:1"), events);
     }
 
@@ -231,7 +230,7 @@ public class MultiFingerGesturesTest {
     public void directionCanReverseWithinOneTouch() {
         twoFingersDown(600, 800, 1000);
         send(MOVE, 0, 600, 850, 800, 850);
-        send(MOVE, 0, 600, 1030, 800, 1030);
+        send(MOVE, 0, 600, 1050, 800, 1050);
         assertEquals(List.of("VOLUME:1", "VOLUME:-2"), events);
     }
 

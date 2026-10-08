@@ -40,12 +40,12 @@ final class MultiFingerGestures {
     static final int ACTION_POINTER_UP = 6;
 
     static final int VOLUME_STEP_PX = 60;
-    static final int TEMPERATURE_STEP_PX = 80;
+    static final int TEMPERATURE_STEP_PX = 60;
     static final int BRIGHTNESS_STEP_PX = 70;
     static final int FAN_STEP_PX = 80;
     /** The first step of a swipe needs this much more travel than the next ones. */
-    static final float FIRST_STEP_FACTOR = 1.5f;
-    /** After the finger count changes, movement only moves the starting point for this long. */
+    static final float FIRST_STEP_FACTOR = 1.25f;
+    /** After the finger count changes, no step is made for this long; the movement still counts. */
     static final long SETTLE_MS = 200;
     /** Spread change that is always tolerated; beyond it, it must stay under half the travel. */
     static final int SPREAD_TOLERANCE_PX = 40;
@@ -128,10 +128,8 @@ final class MultiFingerGestures {
                     fingerAnchorYs[i] += risen;
                 }
             }
-        } else if (kind != null || manyFingers) {
-            if (time < settleUntil) {
-                anchor();
-            } else if (manyFingers) {
+        } else if ((kind != null || manyFingers) && time >= settleUntil) {
+            if (manyFingers) {
                 followMany();
             } else {
                 follow();
