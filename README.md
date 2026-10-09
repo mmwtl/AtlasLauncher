@@ -81,3 +81,7 @@ ANDROID_USER_HOME="$PWD/.android-user" ./gradlew :app:assembleRelease -x :app:li
 Штатные Launcher3 и SystemUI должны оставаться установленными.
 Если после ручной установки «Настроек» (`com.android.settings`) кнопка Home всегда открывает Launcher3,
 см. [Устранение проблем](docs/guide/troubleshooting.md#home-всегда-открывает-launcher3-после-установки-настроек).
+
+## Лицензия
+
+[MIT](LICENSE): код можно использовать, изменять и распространять, в том числе в коммерческих проектах, при сохранении уведомления об авторских правах.
