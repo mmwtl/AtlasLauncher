@@ -43,18 +43,25 @@ final class MultiFingerGestures {
     static final int TEMPERATURE_STEP_PX = 60;
     static final int BRIGHTNESS_STEP_PX = 70;
     static final int FAN_STEP_PX = 80;
-    /** The first step of a swipe needs this much more travel than the next ones. */
-    static final float FIRST_STEP_FACTOR = 1.25f;
     /** After the finger count changes, no step is made for this long; the movement still counts. */
     static final long SETTLE_MS = 200;
     /** Spread change that is always tolerated; beyond it, it must stay under half the travel. */
     static final int SPREAD_TOLERANCE_PX = 40;
-    /** A pinch has brought the fingers to this share of their starting spread. */
-    static final float PINCH_RATIO = 0.75f;
-    static final int ALL_APPS_SWIPE_PX = 150;
+    /** Trigger levels for {@link #setTrigger}: how much travel a gesture needs before it acts. */
+    static final int TRIGGER_EARLY = 0;
+    static final int TRIGGER_NORMAL = 1;
+    static final int TRIGGER_LATE = 2;
+    // Per trigger level. The first step of a swipe needs this much more travel than the next ones.
+    private static final float[] FIRST_STEP_FACTORS = {1f, 1.25f, 1.5f};
+    // A pinch has brought the fingers to this share of their starting spread.
+    private static final float[] PINCH_RATIOS = {0.8f, 0.75f, 0.6f};
+    private static final int[] ALL_APPS_SWIPES_PX = {120, 150, 180};
 
     private final int screenWidth;
     private final Listener listener;
+    private float firstStepFactor = FIRST_STEP_FACTORS[TRIGGER_NORMAL];
+    private float pinchRatio = PINCH_RATIOS[TRIGGER_NORMAL];
+    private int allAppsSwipePx = ALL_APPS_SWIPES_PX[TRIGGER_NORMAL];
     private float[] xs = new float[0];
     private float[] ys = new float[0];
     private float[] fingerAnchorXs = new float[0];
@@ -76,6 +83,13 @@ final class MultiFingerGestures {
     MultiFingerGestures(int screenWidth, Listener listener) {
         this.screenWidth = screenWidth;
         this.listener = listener;
+    }
+
+    /** One of the {@code TRIGGER_} levels. */
+    synchronized void setTrigger(int level) {
+        firstStepFactor = FIRST_STEP_FACTORS[level];
+        pinchRatio = PINCH_RATIOS[level];
+        allAppsSwipePx = ALL_APPS_SWIPES_PX[level];
     }
 
     /**
@@ -180,14 +194,14 @@ final class MultiFingerGestures {
     private void followMany() {
         float spread = spread();
         float rise = startY - mean(ys);
-        if (spread < startSpread * PINCH_RATIO) {
+        if (spread < startSpread * pinchRatio) {
             finish(Kind.HOME);
-        } else if (rise >= ALL_APPS_SWIPE_PX
+        } else if (rise >= allAppsSwipePx
                 && Math.abs(spread - startSpread) <= Math.max(SPREAD_TOLERANCE_PX, rise / 2)
-                && everyFingerMoved(false, 1, ALL_APPS_SWIPE_PX / 2f)) {
+                && everyFingerMoved(false, 1, allAppsSwipePx / 2f)) {
             finish(Kind.ALL_APPS);
-        } else if (spread > startSpread / PINCH_RATIO || -rise > ALL_APPS_SWIPE_PX / 2f
-                || Math.abs(mean(xs) - startX) > ALL_APPS_SWIPE_PX) {
+        } else if (spread > startSpread / pinchRatio || -rise > allAppsSwipePx / 2f
+                || Math.abs(mean(xs) - startX) > allAppsSwipePx) {
             // Spreading, moving down or sideways: not ours.
             manyFingers = false;
         }
@@ -224,7 +238,7 @@ final class MultiFingerGestures {
             kind = null;
             return;
         }
-        float needed = stepped ? stepPx : stepPx * FIRST_STEP_FACTOR;
+        float needed = stepped ? stepPx : stepPx * firstStepFactor;
         int direction = along > 0 ? 1 : -1;
         if (Math.abs(along) < needed || !everyFingerMoved(sideways, direction, needed / 2)) {
             return;

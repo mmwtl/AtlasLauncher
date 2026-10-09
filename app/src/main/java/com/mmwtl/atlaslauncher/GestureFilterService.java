@@ -96,6 +96,7 @@ public final class GestureFilterService extends Service {
     private static final long GIB_REFRESH_MS = 60_000;
     private static final String CHANNEL = "gestures";
     static final String EXTRA_PRIORITY = "priority";
+    static final String EXTRA_TRIGGER = "trigger";
     private static final long HOLD_MAX_MS = 500;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -174,11 +175,15 @@ public final class GestureFilterService extends Service {
     @Override
     @SuppressWarnings("deprecation")
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // HOME passes the current value; a restart after the process died rereads the file it writes.
+        // HOME passes the current values; a restart after the process died rereads the file it writes.
         priority = intent != null && intent.hasExtra(EXTRA_PRIORITY)
                 ? intent.getBooleanExtra(EXTRA_PRIORITY, false)
                 : getSharedPreferences(HomeActivity.PREFS, MODE_MULTI_PROCESS)
                         .getBoolean(HomeActivity.GESTURES_PRIORITY, false);
+        gestures.setTrigger(intent != null && intent.hasExtra(EXTRA_TRIGGER)
+                ? intent.getIntExtra(EXTRA_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL)
+                : getSharedPreferences(HomeActivity.PREFS, MODE_MULTI_PROCESS)
+                        .getInt(HomeActivity.GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL));
         return START_STICKY;
     }
 

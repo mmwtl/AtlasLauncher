@@ -83,6 +83,26 @@ public class MultiFingerGesturesTest {
     }
 
     @Test
+    public void earlyTriggerActsAfterOneStep() {
+        gestures.setTrigger(MultiFingerGestures.TRIGGER_EARLY);
+        twoFingersDown(600, 800, 1000);
+        send(MOVE, 0, 600, 945, 800, 945);
+        assertTrue(events.isEmpty());
+        send(MOVE, 0, 600, 940, 800, 940);
+        assertEquals(List.of("VOLUME:1"), events);
+    }
+
+    @Test
+    public void lateTriggerNeedsOneAndAHalfSteps() {
+        gestures.setTrigger(MultiFingerGestures.TRIGGER_LATE);
+        twoFingersDown(600, 800, 1000);
+        send(MOVE, 0, 600, 915, 800, 915);
+        assertTrue(events.isEmpty());
+        send(MOVE, 0, 600, 910, 800, 910);
+        assertEquals(List.of("VOLUME:1"), events);
+    }
+
+    @Test
     public void centreTwoFingersDownLowerVolume() {
         twoFingersDown(600, 800, 1000);
         send(MOVE, 0, 600, 1100, 800, 1100);
@@ -245,6 +265,26 @@ public class MultiFingerGesturesTest {
     }
 
     @Test
+    public void earlyTriggerGoesHomeAfterAShorterPinch() {
+        gestures.setTrigger(MultiFingerGestures.TRIGGER_EARLY);
+        fingersDown(500, 900, 900, 900, 500, 1300, 900, 1300);
+        send(MOVE, 0, 520, 920, 880, 920, 520, 1280, 880, 1280);
+        assertTrue(events.isEmpty());
+        send(MOVE, 0, 545, 945, 855, 945, 545, 1255, 855, 1255);
+        assertEquals(List.of("HOME:1"), events);
+    }
+
+    @Test
+    public void lateTriggerNeedsALongerPinch() {
+        gestures.setTrigger(MultiFingerGestures.TRIGGER_LATE);
+        fingersDown(500, 900, 900, 900, 500, 1300, 900, 1300);
+        send(MOVE, 0, 555, 955, 845, 955, 555, 1245, 845, 1245);
+        assertTrue(events.isEmpty());
+        send(MOVE, 0, 585, 985, 815, 985, 585, 1215, 815, 1215);
+        assertEquals(List.of("HOME:1"), events);
+    }
+
+    @Test
     public void pinchCountsFromTheMomentFourFingersLand() {
         send(DOWN, 0, 500, 900);
         send(POINTER_DOWN, 1, 500, 900, 900, 900);
@@ -278,6 +318,22 @@ public class MultiFingerGesturesTest {
         assertEquals(Decision.UNDECIDED, send(MOVE, 0, 600, 900, 800, 905, 600, 1100, 800, 1100));
         assertEquals(Decision.CLAIMED, send(MOVE, 0, 605, 840, 800, 845, 600, 1040, 795, 1045));
         send(MOVE, 0, 605, 600, 800, 600, 600, 800, 795, 800);
+        assertEquals(List.of("ALL_APPS:1"), events);
+    }
+
+    @Test
+    public void allAppsSwipeLengthFollowsTheTrigger() {
+        gestures.setTrigger(MultiFingerGestures.TRIGGER_EARLY);
+        fingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
+        send(MOVE, 0, 600, 875, 800, 875, 600, 1075, 800, 1075);
+        assertEquals(List.of("ALL_APPS:1"), events);
+        send(UP, 0, 600, 875);
+        events.clear();
+        gestures.setTrigger(MultiFingerGestures.TRIGGER_LATE);
+        fingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
+        send(MOVE, 0, 600, 840, 800, 840, 600, 1040, 800, 1040);
+        assertTrue(events.isEmpty());
+        send(MOVE, 0, 600, 815, 800, 815, 600, 1015, 800, 1015);
         assertEquals(List.of("ALL_APPS:1"), events);
     }
 

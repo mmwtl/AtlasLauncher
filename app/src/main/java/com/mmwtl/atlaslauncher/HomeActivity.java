@@ -144,6 +144,7 @@ public final class HomeActivity extends Activity {
     private static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
     private static final String GESTURES_ENABLED = "gestures_enabled";
     static final String GESTURES_PRIORITY = "gestures_priority";
+    static final String GESTURES_TRIGGER = "gestures_trigger";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     private static final String DOCK_APPS = "dock_apps";
@@ -1271,11 +1272,18 @@ public final class HomeActivity extends Activity {
                 Toast.makeText(this, "Настройка разрешения недоступна", Toast.LENGTH_SHORT).show();
             }
         });
+        LinearLayout trigger = settingsCard(content, "Срабатывание жестов",
+                "Раньше: жест срабатывает после более короткого движения, но чаще перехватывает прокрутку "
+                        + "и масштаб в приложениях. Позже: нужно движение длиннее.");
+        settingsChoice(trigger, GESTURES_TRIGGER, new String[]{"Раньше", "Средне", "Позже"},
+                MultiFingerGestures.TRIGGER_NORMAL, this::applyGestures);
     }
 
     private void applyGestures() {
         Intent service = new Intent(this, GestureFilterService.class).putExtra(GestureFilterService.EXTRA_PRIORITY,
-                getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_PRIORITY, false));
+                getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_PRIORITY, false))
+                .putExtra(GestureFilterService.EXTRA_TRIGGER, getSharedPreferences(PREFS, MODE_PRIVATE)
+                        .getInt(GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL));
         try {
             if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) startForegroundService(service);
             else stopService(service);
@@ -2268,6 +2276,10 @@ public final class HomeActivity extends Activity {
     }
 
     private void settingsChoice(LinearLayout parent, String key, String[] options, Runnable changed) {
+        settingsChoice(parent, key, options, 0, changed);
+    }
+
+    private void settingsChoice(LinearLayout parent, String key, String[] options, int defaultValue, Runnable changed) {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         android.widget.RadioGroup group = new android.widget.RadioGroup(this);
         for (int i = 0; i < options.length; i++) {
@@ -2279,7 +2291,7 @@ public final class HomeActivity extends Activity {
             option.setButtonTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
                     new int[]{Color.rgb(117, 178, 234), NEUTRAL_MUTED}));
             group.addView(option, new LinearLayout.LayoutParams(-1, dp(52)));
-            if (i == prefs.getInt(key, 0)) group.check(option.getId());
+            if (i == prefs.getInt(key, defaultValue)) group.check(option.getId());
         }
         group.setOnCheckedChangeListener((view, id) -> {
             prefs.edit().putInt(key, group.indexOfChild(group.findViewById(id))).apply();
