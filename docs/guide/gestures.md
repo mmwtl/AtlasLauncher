@@ -12,7 +12,7 @@ AtlasLauncher может распознавать жесты двумя, тре�
 
 ## Где работают жесты
 
-![Зоны жестов](images/gestures/zones.jpg)
+![Зоны жестов](../images/gestures/zones.jpg)
 
 Жест должен начаться между верхней строкой состояния и климатической панелью. Начатое в этих полосах касание остаётся у SystemUI. Внутри области все касания сначала проходят через AtlasLauncher, а не через штатную службу жестов OneOS.
 
@@ -38,11 +38,11 @@ AtlasLauncher может распознавать жесты двумя, тре�
 
 | Водитель | Пассажир | Яркость |
 |---|---|---|
-| ![Температура водителя](images/gestures/card-driver.png) | ![Температура пассажира](images/gestures/card-passenger.png) | ![Яркость](images/gestures/card-brightness.png) |
+| ![Температура водителя](../images/gestures/card-driver.png) | ![Температура пассажира](../images/gestures/card-passenger.png) | ![Яркость](../images/gestures/card-brightness.png) |
 
 | Обдув | Обдув в режиме AUTO |
 |---|---|
-| ![Скорость обдува](images/gestures/card-fan.png) | ![Профиль авто-обдува](images/gestures/card-fan-auto.png) |
+| ![Скорость обдува](../images/gestures/card-fan.png) | ![Профиль авто-обдува](../images/gestures/card-fan-auto.png) |
 
 В климатическом режиме AUTO автомобиль не принимает ручную скорость вентилятора, поэтому жест переключает профиль авто-обдува: Тихо, Мягко, Комфорт, Сильно, Макс — так же, как AtlasClimateWidget.
 
@@ -55,7 +55,7 @@ AtlasLauncher может распознавать жесты двумя, тре�
 
 ## Настройки
 
-![Настройки жестов](images/gestures/settings.png)
+![Настройки жестов](../images/gestures/settings.png)
 
 ### Жесты важнее приложений
 

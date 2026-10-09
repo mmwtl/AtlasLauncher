@@ -57,44 +57,27 @@ Atlas Launcher заменяет домашний экран на Android: раз
 Сборки со старым пакетом `com.mmwtl.atlaslauncher` устанавливаются отдельно: для нового пакета
 потребуется повторно выбрать HOME и разместить виджеты.
 
-## Сборка и проверки
+## Сборка
 
-Требуются JDK 17 и Android SDK 35. Используйте Gradle Wrapper из корня проекта:
+Требуются JDK 17 и Android SDK 35:
 
 ```sh
-ANDROID_USER_HOME="$PWD/.android-user" sh gradlew --offline :app:assembleRelease -x :app:lintVitalRelease
+ANDROID_USER_HOME="$PWD/.android-user" ./gradlew :app:assembleRelease -x :app:lintVitalRelease
 ```
 
-`lintVitalRelease` пропускается из-за `ExpiredTargetSdkVersion` при `targetSdk=30`.
-Это сборка для головного устройства; SDK не повышается ради требований Google Play.
-
-Подпись подключается через игнорируемый `secure.signing.gradle` по образцу
-[app/secure.signing.gradle.example](app/secure.signing.gradle.example).
-APK находится в `app/build/outputs/apk/release/` и называется
-`<effectiveVersionName>[<versionCode>]AtlasLauncher-release.apk`.
-Без ключа получается `-unsigned` APK. Для обновления нужен тот же ключ подписи.
+Подпись, версии, проверки и сборка debug-варианта описаны в [docs/development/building.md](docs/development/building.md).
 
 ## Документация
 
-- [Настройки и интеграция OneOS](docs/launcher-settings.md);
-- [Проверка на ГУ и возврат к штатному HOME](docs/head-unit-test-and-rollback.md);
-- [Жесты несколькими пальцами](docs/gestures.md);
-- [План прототипа](docs/launcher-prototype-plan.md);
-- [Сведения об OEM APK](reference-apks/README.md).
-- [Gesture Probe: отдельный диагностический APK для OEM-службы касаний](gestureprobe/README.md).
+- [Настройка](docs/guide/settings.md) — рабочий стол, виджеты, док, фон, панель климата;
+- [Жесты несколькими пальцами](docs/guide/gestures.md);
+- [Устранение проблем](docs/guide/troubleshooting.md);
+- [вся документация](docs/README.md), включая проверку на ГУ и исследования OneOS.
 
 ## Совместимость
 
 Поведение климатической панели, OEM-виджетов, кнопок SystemUI и запуска DIM зависит от прошивки.
-Лаунчер проверен на ГУ ATLAS ОД; на других прошивках эти сценарии нужно проверять отдельно,
-ограничения и порядок проверки приведены в документации. Штатные Launcher3 и SystemUI должны оставаться установленными.
-Если вы устанавливаете «Настройки» (`com.android.settings`) вручную и выбор Atlas Launcher как HOME
-не сохраняется (Home всегда открывает Launcher3), отключите их заглушки HOME и заново выберите Atlas Launcher:
-
-```sh
-adb shell pm disable com.android.settings/.FallbackHome
-adb shell pm disable com.android.settings/.CryptKeeper
-```
-
-Вернуть можно командой `pm enable` с теми же компонентами; после переустановки «Настроек» команды нужно повторить.
-Причина описана в [документации](docs/launcher-settings.md#home-всегда-открывает-launcher3-после-установки-настроек).
+Лаунчер проверен на ГУ ATLAS ОД; на других прошивках эти сценарии нужно проверять отдельно.
+Штатные Launcher3 и SystemUI должны оставаться установленными.
+Если после ручной установки «Настроек» (`com.android.settings`) кнопка Home всегда открывает Launcher3,
+см. [Устранение проблем](docs/guide/troubleshooting.md#home-всегда-открывает-launcher3-после-установки-настроек).
