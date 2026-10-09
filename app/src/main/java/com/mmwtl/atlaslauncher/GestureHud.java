@@ -93,8 +93,9 @@ final class GestureHud {
                 : kind == MultiFingerGestures.Kind.FAN ? R.drawable.ic_fan : R.drawable.ic_brightness);
         title.setText(titleText);
         value.setText(valueText);
-        // A fan profile name is a word, not a number: smaller, so it stays on one line.
-        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, valueText.length() > 5 ? 72 : 104);
+        // A fan profile name is a word, not a number: smaller, so the longest stays on one line. All
+        // names share one size, or the card would jump while the gesture steps through them.
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, Character.isLetter(valueText.charAt(0)) ? 72 : 104);
         fill.setBackground(temperature ? temperatureFill : brightnessFill);
         animateFill(fraction);
 
