@@ -160,6 +160,7 @@ public final class HomeActivity extends Activity {
     private static final String CLOCK_DATE = "clock_date";
     private static final String VOLUME_MUTE = "volume_mute";
     private static final String VOLUME_ICONS = "volume_icons";
+    private static final String VOLUME_JOINED = "volume_joined";
     // Volume up, volume down for each icon style; mute uses one icon in every style.
     private static final int[][] VOLUME_ICON_STYLES = {
             {R.drawable.ic_volume_up, R.drawable.ic_volume_down},
@@ -2354,8 +2355,12 @@ public final class HomeActivity extends Activity {
         AudioManager audio = getSystemService(AudioManager.class);
         boolean horizontal = placement.width >= placement.height;
         boolean showMute = prefs.getBoolean(VOLUME_MUTE, true);
+        boolean joined = prefs.getBoolean(VOLUME_JOINED, false);
         int[] icons = VOLUME_ICON_STYLES[Math.max(0, Math.min(VOLUME_ICON_STYLES.length - 1, prefs.getInt(VOLUME_ICONS, 0)))];
         panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        // A joined block draws one card behind the buttons; separate buttons have a card each.
+        panel.setBackground(joined ? round(NEUTRAL_SURFACE, Color.TRANSPARENT, 24) : null);
+        panel.setPadding(joined ? dp(4) : 0, joined ? dp(4) : 0, joined ? dp(4) : 0, joined ? dp(4) : 0);
         int buttonLength = (horizontal ? placement.width : placement.height) / (showMute ? 3 : 2);
         int iconSize = Math.max(16, Math.min(64, Math.min(buttonLength, horizontal ? placement.height : placement.width) / 2));
         // Volume down is on the left of a row and at the bottom of a column.
@@ -2367,8 +2372,10 @@ public final class HomeActivity extends Activity {
             if (mute && !showMute) continue;
             boolean muted = mute && audio.isStreamMute(AudioManager.STREAM_MUSIC);
             FrameLayout button = new FrameLayout(this);
+            int radius = joined ? 20 : 24;
             button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                    round(muted ? ACCENT : NEUTRAL_SURFACE, Color.TRANSPARENT, 24), null));
+                    muted ? round(ACCENT, Color.TRANSPARENT, radius) : joined ? null : round(NEUTRAL_SURFACE, Color.TRANSPARENT, radius),
+                    round(Color.WHITE, Color.TRANSPARENT, radius)));
             button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
                     : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
                     : muted ? "Включить звук" : "Выключить звук");
@@ -2383,7 +2390,8 @@ public final class HomeActivity extends Activity {
                     : direction == AudioManager.ADJUST_LOWER ? icons[1] : R.drawable.ic_volume_off);
             button.addView(image, new FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
-            params.setMargins(dp(3), dp(3), dp(3), dp(3));
+            int margin = joined ? 0 : dp(3);
+            params.setMargins(margin, margin, margin, margin);
             panel.addView(button, params);
         }
     }
@@ -2410,6 +2418,7 @@ public final class HomeActivity extends Activity {
             updateDesktopVolume();
         };
         settingsToggle(preview, "Кнопка отключения звука", VOLUME_MUTE, true, changed);
+        settingsToggle(preview, "Одним блоком", VOLUME_JOINED, false, changed);
         LinearLayout icons = settingsCard(content, "Значки", null);
         settingsChoice(icons, VOLUME_ICONS, new String[]{"Динамик", "Плюс и минус", "Стрелки"}, changed);
     }
