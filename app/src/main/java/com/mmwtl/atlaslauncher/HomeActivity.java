@@ -1141,8 +1141,9 @@ public final class HomeActivity extends Activity {
         }));
 
         LinearLayout redirect = settingsCard(content, "Панель климата",
-                "«Домой» и «Все приложения» на панели всегда открывают штатный Launcher3. AtlasLauncher может сразу "
-                        + "возвращать на себя, Launcher3 при этом на мгновение мелькнёт. Когда функции выключены, служба не получает событий.");
+                "«Домой» и «Все приложения» на панели всегда открывают штатный Launcher3. AtlasLauncher может перехватывать "
+                        + "их сразу по нажатию: «Домой» откроет рабочий стол Atlas, «Все приложения» — то же, что кнопка в доке, "
+                        + "а при обеих включённых функциях — поверх текущего приложения. Когда функции выключены, служба не получает событий.");
         settingsToggle(redirect, "Скрывать панель на главном экране", CLIMATE_PANEL_HIDDEN, false, this::applyClimatePanel);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         settingsSwitch(redirect, "«Домой»: возвращать на AtlasLauncher", prefs.getBoolean(StockHomeRedirectService.ENABLED, false), checked -> {
