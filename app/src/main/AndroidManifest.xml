@@ -41,6 +41,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Opens over the current app in its own task and closes once it leaves the screen. -->
+        <activity
+            android:name=".AllAppsActivity"
+            android:autoRemoveFromRecents="true"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.geely.atlaslauncher.allapps"
+            android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
         <service
             android:name=".StockHomeRedirectService"
             android:exported="true"

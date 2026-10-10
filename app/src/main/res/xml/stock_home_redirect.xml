@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Event types are set at runtime from AtlasLauncher settings; none are requested while both features are off.
      Only Launcher3 and climate panel (SystemUI plugin) events can reach the service. It reads window content
-     only to check whether a clicked panel item is the All apps button. -->
+     only to check whether a clicked panel item is the All apps button and which display shows Launcher3. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagReportViewIds"

@@ -46,9 +46,7 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.net.Uri;
-import android.text.Editable;
 import android.text.TextUtils;
-import android.text.TextWatcher;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -102,10 +100,10 @@ public final class HomeActivity extends Activity {
     private static final int ATLAS_ACTIVE = Color.rgb(120, 147, 160);
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
-    private static final int NEUTRAL_SURFACE = Color.rgb(35, 37, 40);
-    private static final int NEUTRAL_RAISED = Color.rgb(64, 67, 71);
-    private static final int NEUTRAL_TEXT = Color.rgb(241, 242, 244);
-    private static final int NEUTRAL_MUTED = Color.rgb(196, 199, 202);
+    static final int NEUTRAL_SURFACE = Color.rgb(35, 37, 40);
+    static final int NEUTRAL_RAISED = Color.rgb(64, 67, 71);
+    static final int NEUTRAL_TEXT = Color.rgb(241, 242, 244);
+    static final int NEUTRAL_MUTED = Color.rgb(196, 199, 202);
     private static final int HOST_ID = 240925;
     private static final int BIND_WIDGET = 1;
     private static final int CONFIGURE_WIDGET = 2;
@@ -121,7 +119,6 @@ public final class HomeActivity extends Activity {
     private static final int CLIMATE_PANEL_PX = 150;
     private static final int HIDDEN_CLIMATE_PANEL_PX = 24;
     private static final int MAX_ICON_DP = 160;
-    private static final int CATALOG_ICON_DP = 96;
     private static final int WIDGET_PREVIEW_DP = 150;
     static final String PREFS = "home";
     private static final String FAVORITES = "favorites";
@@ -190,6 +187,8 @@ public final class HomeActivity extends Activity {
     // Android display 1 (800×480) is not shown anywhere on the G636; Launcher3 opened there stays out of sight.
     private static final int HIDDEN_DISPLAY_ID = 1;
     private final List<AppEntry> apps = new ArrayList<>();
+    // The catalog activity shows the list HOME last loaded instead of loading it again.
+    static List<AppEntry> loadedApps;
     private final List<String> favorites = new ArrayList<>();
     private final List<WidgetPlacement> widgets = new ArrayList<>();
     private final Map<ComponentName, Point> fixedLayouts = new HashMap<>();
@@ -208,14 +207,12 @@ public final class HomeActivity extends Activity {
     private boolean homeVisible;
     private boolean multiTouch;
     private Dialog settingsDialog;
-    private Dialog appDrawer;
     private PopupWindow sourceListPopup;
     private int settingsPage;
     private ImageView settingsWallpaperPreview;
     private LinearLayout settingsWallpaperPresets;
     private LinearLayout settingsRedirectState;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
-    private Runnable appDrawerFilter;
     // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
     private final ExecutorService wallpaperLoader = Executors.newSingleThreadExecutor();
@@ -317,7 +314,7 @@ public final class HomeActivity extends Activity {
         if (state != null && state.getBoolean("settingsOpen"))
             widgetRow.post(() -> showSettings(state.getInt("settingsPage", 0)));
         else if (state == null && getIntent().getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false))
-            openAllApps();
+            AllAppsActivity.open(this);
     }
 
     // Only stock Launcher3 starts the DIM service; without it the cluster gets no media/phone info after boot.
@@ -403,10 +400,9 @@ public final class HomeActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         // Home returns to a clean desktop, like the stock launcher.
-        if (appDrawer != null) appDrawer.dismiss();
         if (settingsDialog != null) settingsDialog.dismiss();
         if (editingWidgets) setEditingWidgets(false);
-        if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false)) openAllApps();
+        if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false)) AllAppsActivity.open(this);
     }
 
     @Override public void onStop() {
@@ -426,7 +422,6 @@ public final class HomeActivity extends Activity {
         unregisterReceiver(packageReceiver);
         unregisterReceiver(volumeReceiver);
         if (settingsDialog != null) settingsDialog.dismiss();
-        if (appDrawer != null) appDrawer.dismiss();
         super.onDestroy();
     }
 
@@ -518,7 +513,7 @@ public final class HomeActivity extends Activity {
         ImageView appsIcon = (ImageView) appsTile.getChildAt(0);
         appsIcon.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 34));
         appsIcon.setPadding(dp(18), dp(18), dp(18), dp(18));
-        appsTile.setOnClickListener(v -> openAllApps());
+        appsTile.setOnClickListener(v -> AllAppsActivity.open(this));
         appsTile.setOnLongClickListener(v -> startEditingByLongPress());
         updateDock();
         showFavorites();
@@ -556,25 +551,30 @@ public final class HomeActivity extends Activity {
 
     private void loadApps() {
         appLoader.execute(() -> {
-            PackageManager pm = getPackageManager();
-            Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-            List<AppEntry> loaded = new ArrayList<>();
-            for (ResolveInfo info : pm.queryIntentActivities(intent, 0)) {
-                if (info.activityInfo == null || !info.activityInfo.exported) continue;
-                ComponentName component = new ComponentName(info.activityInfo.packageName, info.activityInfo.name);
-                if (component.getPackageName().equals(getPackageName())) continue;
-                loaded.add(new AppEntry(component, info.loadLabel(pm).toString(), info.loadIcon(pm)));
-            }
-            Collator collator = Collator.getInstance(Locale.getDefault());
-            Collections.sort(loaded, (a, b) -> collator.compare(a.label, b.label));
+            List<AppEntry> loaded = queryApps(this);
             runOnUiThread(() -> {
                 if (isDestroyed()) return;
                 apps.clear();
                 apps.addAll(loaded);
+                loadedApps = loaded;
                 showFavorites();
-                if (appDrawerFilter != null) appDrawerFilter.run();
             });
         });
+    }
+
+    static List<AppEntry> queryApps(Context context) {
+        PackageManager pm = context.getPackageManager();
+        Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        List<AppEntry> loaded = new ArrayList<>();
+        for (ResolveInfo info : pm.queryIntentActivities(intent, 0)) {
+            if (info.activityInfo == null || !info.activityInfo.exported) continue;
+            ComponentName component = new ComponentName(info.activityInfo.packageName, info.activityInfo.name);
+            if (component.getPackageName().equals(context.getPackageName())) continue;
+            loaded.add(new AppEntry(component, info.loadLabel(pm).toString(), info.loadIcon(pm)));
+        }
+        Collator collator = Collator.getInstance(Locale.getDefault());
+        Collections.sort(loaded, (a, b) -> collator.compare(a.label, b.label));
+        return Collections.unmodifiableList(loaded);
     }
 
     private AppEntry findApp(String flattened) {
@@ -598,7 +598,7 @@ public final class HomeActivity extends Activity {
         for (String name : favorites) {
             AppEntry app = findApp(name);
             if (app == null) continue;
-            View item = appTile(app, false);
+            View item = dockTile(app.icon, app.label);
             item.setOnClickListener(v -> launch(app));
             item.setOnLongClickListener(v -> startEditingByLongPress());
             favoriteRow.addView(item, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
@@ -644,114 +644,6 @@ public final class HomeActivity extends Activity {
         return tile;
     }
 
-    private View appTile(AppEntry app, boolean card) {
-        if (!card) return dockTile(app.icon, app.label);
-        LinearLayout tile = new LinearLayout(this);
-        tile.setOrientation(LinearLayout.VERTICAL);
-        tile.setGravity(Gravity.CENTER);
-        tile.setPadding(dp(6), dp(6), dp(6), dp(6));
-        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                null, round(Color.WHITE, Color.TRANSPARENT, 20)));
-        int iconSize = CATALOG_ICON_DP;
-        ImageView icon = new ImageView(this);
-        icon.setImageDrawable(app.icon);
-        tile.addView(icon, new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
-        TextView label = label(app.label, 14, NEUTRAL_TEXT, false);
-        label.setGravity(Gravity.CENTER);
-        label.setMaxLines(2);
-        label.setEllipsize(TextUtils.TruncateAt.END);
-        tile.setContentDescription(app.label);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-1, dp(40));
-        labelParams.setMargins(0, dp(8), 0, 0);
-        tile.addView(label, labelParams);
-        return tile;
-    }
-
-    private void showAppDrawer() {
-        if (appDrawer != null) return;
-        int iconSize = CATALOG_ICON_DP;
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(22), dp(20), dp(22), dp(20));
-        content.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 32));
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        content.addView(titleRow, new LinearLayout.LayoutParams(-1, dp(76)));
-        LinearLayout titleText = new LinearLayout(this);
-        titleText.setOrientation(LinearLayout.VERTICAL);
-        titleText.addView(label("Все приложения", 24, NEUTRAL_TEXT, true));
-        titleRow.addView(titleText, new LinearLayout.LayoutParams(0, -2, 1));
-        Dialog dialog = new Dialog(this);
-        appDrawer = dialog;
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setOnDismissListener(d -> {
-            appDrawer = null;
-            appDrawerFilter = null;
-        });
-        Button close = neutralButton("×");
-        close.setContentDescription("Закрыть список приложений");
-        close.setTextSize(22);
-        close.setOnClickListener(v -> dialog.dismiss());
-        titleRow.addView(close, new LinearLayout.LayoutParams(dp(64), dp(64)));
-        EditText search = new EditText(this);
-        search.setSingleLine(true);
-        search.setHint("Поиск приложений");
-        search.setTextColor(NEUTRAL_TEXT);
-        search.setHintTextColor(NEUTRAL_MUTED);
-        search.setTextSize(16);
-        search.setPadding(dp(18), 0, dp(18), 0);
-        search.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 20));
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, dp(76));
-        searchParams.setMargins(0, dp(8), 0, dp(18));
-        content.addView(search, searchParams);
-        GridView grid = new GridView(this);
-        grid.setNumColumns(GridView.AUTO_FIT);
-        grid.setColumnWidth(dp(iconSize + 64));
-        grid.setHorizontalSpacing(dp(10));
-        grid.setVerticalSpacing(dp(10));
-        grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        grid.setVerticalScrollBarEnabled(false);
-        content.addView(grid, new LinearLayout.LayoutParams(-1, 0, 1));
-        List<AppEntry> visible = new ArrayList<>(apps);
-        BaseAdapter adapter = new BaseAdapter() {
-            @Override public int getCount() { return visible.size(); }
-            @Override public Object getItem(int position) { return visible.get(position); }
-            @Override public long getItemId(int position) { return position; }
-            @Override public View getView(int position, View old, ViewGroup parent) {
-                View tile = appTile(visible.get(position), true);
-                tile.setLayoutParams(new android.widget.AbsListView.LayoutParams(-1, dp(iconSize + 64)));
-                return tile;
-            }
-        };
-        grid.setAdapter(adapter);
-        grid.setOnItemClickListener((parent, view, position, id) -> {
-            AppEntry app = visible.get(position);
-            dialog.dismiss();
-            launch(app);
-        });
-        // Also reruns when the app list reloads, e.g. if the catalog opened before it finished loading.
-        Runnable filter = () -> {
-            String query = search.getText().toString().toLowerCase(Locale.getDefault());
-            visible.clear();
-            for (AppEntry app : apps) if (app.label.toLowerCase(Locale.getDefault()).contains(query)) visible.add(app);
-            adapter.notifyDataSetChanged();
-        };
-        appDrawerFilter = filter;
-        search.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { filter.run(); }
-            @Override public void afterTextChanged(Editable s) { }
-        });
-        dialog.setContentView(content);
-        dialog.show();
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawableResource(android.R.color.transparent);
-            window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels - dp(32), dp(1200)),
-                    Math.min(getResources().getDisplayMetrics().heightPixels - dp(64), dp(1400)));
-        }
-    }
-
     private Button neutralButton(String title) {
         Button button = button(title);
         button.setTextColor(NEUTRAL_TEXT);
@@ -759,23 +651,6 @@ public final class HomeActivity extends Activity {
         button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
                 round(NEUTRAL_RAISED, Color.TRANSPARENT, 20), null));
         return button;
-    }
-
-    private void openAllApps() {
-        String target = getSharedPreferences(PREFS, MODE_PRIVATE).getString(DRAWER_ACTIVITY, "");
-        if (target.isEmpty()) {
-            showAppDrawer();
-            return;
-        }
-        ComponentName component = ComponentName.unflattenFromString(target);
-        try {
-            if (component == null) throw new ActivityNotFoundException();
-            startActivity(new Intent(Intent.ACTION_MAIN).setComponent(component)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
-        } catch (ActivityNotFoundException | SecurityException e) {
-            Toast.makeText(this, "Выбранная Activity недоступна. Открыт встроенный каталог.", Toast.LENGTH_LONG).show();
-            showAppDrawer();
-        }
     }
 
     private void chooseDrawerAction(Runnable onChanged) {
@@ -2883,7 +2758,7 @@ public final class HomeActivity extends Activity {
         }
     }
 
-    private static final class AppEntry {
+    static final class AppEntry {
         final ComponentName component;
         final String label;
         final Drawable icon;
