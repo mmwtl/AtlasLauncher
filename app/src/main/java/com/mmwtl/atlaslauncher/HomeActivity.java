@@ -2,6 +2,7 @@ package com.mmwtl.atlaslauncher;
 
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
+import android.app.ActivityOptions;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.appwidget.AppWidgetHost;
@@ -48,6 +49,7 @@ import android.net.Uri;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -183,6 +185,10 @@ public final class HomeActivity extends Activity {
     // The logo stays over HOME while widgets and the dock fill in; the OEM climate panel usually appears 4-10 s
     // after the first frame of HOME.
     private static final long BOOT_LOGO_HOLD_MS = 5_000;
+    // Launcher3 takes about 4 s to start after boot; it starts under the logo, after HOME has drawn.
+    private static final long LAUNCHER3_PRELOAD_DELAY_MS = 2_000;
+    // Android display 1 (800×480) is not shown anywhere on the G636; Launcher3 opened there stays out of sight.
+    private static final int HIDDEN_DISPLAY_ID = 1;
     private final List<AppEntry> apps = new ArrayList<>();
     private final List<String> favorites = new ArrayList<>();
     private final List<WidgetPlacement> widgets = new ArrayList<>();
@@ -215,11 +221,15 @@ public final class HomeActivity extends Activity {
     private final ExecutorService wallpaperLoader = Executors.newSingleThreadExecutor();
     private boolean dimKeyBound;
     private long bootReportedAt;
+    private boolean launcher3Preloaded;
     // The service reports boot complete by itself only when com.android.launcher3 starts, otherwise 10 s after
     // its own start; GIB force-stops it after boot, which restarts that wait. So HOME asks once it is drawn.
     private final ServiceConnection dimKeyConnection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
             if (bootReportedAt != 0 || SystemClock.elapsedRealtime() > BOOT_LOGO_WINDOW_MS) return;
+            // A service started by this binding sees the preloaded Launcher3 and reports by itself; a report from
+            // HOME as well would be repeated every second once QNX acknowledged the first one.
+            if (launcher3Preloaded) return;
             Parcel data = Parcel.obtain();
             Parcel reply = Parcel.obtain();
             try {
@@ -346,29 +356,30 @@ public final class HomeActivity extends Activity {
         // other OEM services, night mode) only on this broadcast from the first resume of HOME.
         if (startupPending) {
             sendBroadcast(new Intent("com.android.launcher3.startup"));
-            // Posted before the window is attached, the delay counts from the first frame.
-            getWindow().getDecorView().postDelayed(this::endBootLogo, BOOT_LOGO_HOLD_MS);
+            // Posted before the window is attached, the delays count from the first frame.
+            getWindow().getDecorView().postDelayed(this::preloadLauncher3, LAUNCHER3_PRELOAD_DELAY_MS);
+            getWindow().getDecorView().postDelayed(this::bindDimKeyService, BOOT_LOGO_HOLD_MS);
         }
         startupPending = false;
     }
 
-    private void endBootLogo() {
+    private void preloadLauncher3() {
         if (isDestroyed() || SystemClock.elapsedRealtime() > BOOT_LOGO_WINDOW_MS) return;
         // The climate panel Home click starts Launcher3; a Launcher3 activity created for the first time shows on
-        // screen before AtlasLauncher returns. So, while the logo is up, Launcher3 is opened once and the redirect
-        // service brings AtlasLauncher back when its window appears. The DIM key service then reports boot complete
-        // by itself 1.3 s after Launcher3 starts; a second report from HOME would come after QNX acknowledged it.
-        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(StockHomeRedirectService.ENABLED, false)
-                && isStockHomeRedirectActive()) {
-            try {
-                startActivity(new Intent(Intent.ACTION_MAIN).setClassName("com.android.launcher3", "com.android.launcher3.Launcher")
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                return;
-            } catch (ActivityNotFoundException | SecurityException e) {
-                Log.w("AtlasLauncher", "Cannot open Launcher3 under the boot logo", e);
-            }
+        // screen before AtlasLauncher returns. So Launcher3 is opened once on a display nobody sees: later clicks
+        // bring its task to front there, and the redirect service returns AtlasLauncher when its window appears.
+        // The DIM key service does not see Launcher3 start there, only once the service itself starts; if GIB stopped
+        // it, binding from HOME restarts it, otherwise its own fallback timer reports.
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(StockHomeRedirectService.ENABLED, false)
+                || !isStockHomeRedirectActive()) return;
+        try {
+            startActivity(new Intent(Intent.ACTION_MAIN).setClassName("com.android.launcher3", "com.android.launcher3.Launcher")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    ActivityOptions.makeBasic().setLaunchDisplayId(HIDDEN_DISPLAY_ID).toBundle());
+            launcher3Preloaded = true;
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Log.w("AtlasLauncher", "Cannot open Launcher3 under the boot logo", e);
         }
-        bindDimKeyService();
     }
 
     private void bindDimKeyService() {
@@ -1241,7 +1252,8 @@ public final class HomeActivity extends Activity {
             Intent intent = new Intent(Intent.ACTION_MAIN).setClassName("com.android.launcher3", "com.android.launcher3.Launcher")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             StockHomeRedirectService.allowStockLauncherUntil = SystemClock.elapsedRealtime() + 5000;
-            try { startActivity(intent); }
+            // After boot Launcher3 waits on the hidden display; this brings it to the main screen.
+            try { startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle()); }
             catch (ActivityNotFoundException | SecurityException e) { Toast.makeText(this, "Штатный Launcher3 недоступен", Toast.LENGTH_SHORT).show(); }
         });
         settingsAction(system, "Настройки устройства  ↗", () -> {
