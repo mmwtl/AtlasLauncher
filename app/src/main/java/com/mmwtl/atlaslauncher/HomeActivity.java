@@ -36,6 +36,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.IBinder;
@@ -110,6 +111,7 @@ public final class HomeActivity extends Activity {
     private static final int PICK_SLIDESHOW = 6;
     private static final int CLOCK_WIDGET_ID = -2;
     private static final int DOCK_WIDGET_ID = -3;
+    private static final int VOLUME_WIDGET_ID = -4;
     private static final int WIDGET_CELL_DP = 96;
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
     private static final int CLIMATE_PANEL_PX = 150;
@@ -156,6 +158,14 @@ public final class HomeActivity extends Activity {
     private static final String CLOCK_WEIGHT = "clock_weight";
     private static final String CLOCK_FONT = "clock_font";
     private static final String CLOCK_DATE = "clock_date";
+    private static final String VOLUME_MUTE = "volume_mute";
+    private static final String VOLUME_ICONS = "volume_icons";
+    // Volume up, volume down for each icon style; mute uses one icon in every style.
+    private static final int[][] VOLUME_ICON_STYLES = {
+            {R.drawable.ic_volume_up, R.drawable.ic_volume_down},
+            {R.drawable.ic_plus, R.drawable.ic_minus},
+            {R.drawable.ic_chevron_up, R.drawable.ic_chevron_down}
+    };
     // The OneOS media widget asks Launcher3 to show its source list; Atlas hosts that list itself.
     private static final String MEDIA_WIDGET_PACKAGE = "com.geely.mediawidget";
     private static final ComponentName SOURCE_LIST_PROVIDER = new ComponentName(MEDIA_WIDGET_PACKAGE,
@@ -249,6 +259,13 @@ public final class HomeActivity extends Activity {
         }
     };
 
+    // Keeps the mute button in sync when hardware keys or the system change the volume.
+    private final BroadcastReceiver volumeReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            updateDesktopVolume();
+        }
+    };
+
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         startDimService();
@@ -278,6 +295,9 @@ public final class HomeActivity extends Activity {
         packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
         packages.addDataScheme("package");
         registerReceiver(packageReceiver, packages);
+        IntentFilter volume = new IntentFilter("android.media.VOLUME_CHANGED_ACTION");
+        volume.addAction("android.media.STREAM_MUTE_CHANGED_ACTION");
+        registerReceiver(volumeReceiver, volume);
         // HOME is not drawn yet, so a due slideshow change here is never seen.
         if (slideshowDelay() == 0) saveSlide(nextSlides().get(0));
         buildHome();
@@ -390,6 +410,7 @@ public final class HomeActivity extends Activity {
         wallpaperLoader.shutdownNow();
         if (dimKeyBound) unbindService(dimKeyConnection);
         unregisterReceiver(packageReceiver);
+        unregisterReceiver(volumeReceiver);
         if (settingsDialog != null) settingsDialog.dismiss();
         if (appDrawer != null) appDrawer.dismiss();
         super.onDestroy();
@@ -864,7 +885,7 @@ public final class HomeActivity extends Activity {
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         TextView heading = label(page == 1 ? "Док приложений" : page == 2 ? "Настройки часов"
-                        : page == 3 ? "Сменяемый фон" : "Настройки",
+                        : page == 3 ? "Сменяемый фон" : page == 4 ? "Громкость" : "Настройки",
                 28, NEUTRAL_TEXT, true);
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
         Button close = neutralButton("×");
@@ -882,10 +903,11 @@ public final class HomeActivity extends Activity {
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollParams.topMargin = dp(24);
         panel.addView(scroll, scrollParams);
-        // Dock and clock are widgets: their pages open only from the widget's own settings button.
+        // Dock, clock and volume are widgets: their pages open only from the widget's own settings button.
         if (page == 1) buildDockSettings(content);
         else if (page == 2) buildClockSettings(content);
         else if (page == 3) buildSlideshowSettings(content);
+        else if (page == 4) buildVolumeSettings(content);
         else {
             buildDesktopSettings(content, dialog);
             buildWidgetAreaSettings(content);
@@ -1610,16 +1632,17 @@ public final class HomeActivity extends Activity {
         WidgetGrid cells = widgetGrid();
         Bitmap[] previews = new Bitmap[providers.size()];
         BaseAdapter adapter = new BaseAdapter() {
-            @Override public int getCount() { return providers.size() + 2; }
+            @Override public int getCount() { return providers.size() + 3; }
             @Override public Object getItem(int position) { return position; }
             @Override public long getItemId(int position) { return position; }
             @Override public View getView(int position, View old, ViewGroup parent) {
                 if (position == 0) return widgetPreviewTile(clockPreview(), "Часы", "AtlasLauncher");
                 if (position == 1) return widgetPreviewTile(dockPreview(), "Док приложений", "AtlasLauncher");
-                AppWidgetProviderInfo provider = providers.get(position - 2);
+                if (position == 2) return widgetPreviewTile(volumePreview(), "Громкость", "AtlasLauncher");
+                AppWidgetProviderInfo provider = providers.get(position - 3);
                 ImageView image = new ImageView(HomeActivity.this);
                 image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                image.setImageBitmap(previews[position - 2]);
+                image.setImageBitmap(previews[position - 3]);
                 String details = provider.provider.getPackageName();
                 try {
                     CharSequence appLabel = pm.getApplicationLabel(pm.getApplicationInfo(details, 0));
@@ -1641,7 +1664,8 @@ public final class HomeActivity extends Activity {
             dialog.dismiss();
             if (position == 0) addClockWidget();
             else if (position == 1) addDockWidget();
-            else addProviderWidget(providers.get(position - 2));
+            else if (position == 2) addVolumeWidget();
+            else addProviderWidget(providers.get(position - 3));
         });
         // Preview images can be large bitmaps, so decode and downscale them off the UI thread.
         ExecutorService loader = Executors.newSingleThreadExecutor();
@@ -1750,6 +1774,18 @@ public final class HomeActivity extends Activity {
         }
         FrameLayout frame = new FrameLayout(this);
         frame.addView(panel, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        return frame;
+    }
+
+    private View volumePreview() {
+        LinearLayout panel = (LinearLayout) createVolumeWidget(new WidgetPlacement(VOLUME_WIDGET_ID, 0, 0, 240, 80));
+        // The tile itself picks the widget.
+        for (int i = 0; i < panel.getChildCount(); i++) {
+            panel.getChildAt(i).setClickable(false);
+            panel.getChildAt(i).setLongClickable(false);
+        }
+        FrameLayout frame = new FrameLayout(this);
+        frame.addView(panel, new FrameLayout.LayoutParams(-1, dp(80), Gravity.CENTER));
         return frame;
     }
 
@@ -1894,6 +1930,28 @@ public final class HomeActivity extends Activity {
         showWidgets();
     }
 
+    private void addVolumeWidget() {
+        for (WidgetPlacement placement : widgets) {
+            if (placement.id == VOLUME_WIDGET_ID) {
+                Toast.makeText(this, "Громкость уже добавлена", Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+        WidgetGrid grid = widgetGrid();
+        if (grid == null) return;
+        int columns = Math.min(3, grid.columns);
+        Point slot = findGridSlot(grid, 0, 0, columns, 1, widgets);
+        if (slot == null) {
+            Toast.makeText(this, "Недостаточно места для громкости", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        WidgetPlacement placement = new WidgetPlacement(VOLUME_WIDGET_ID, 0, 0, 0, 0);
+        setGridPlacement(placement, grid, slot, columns, 1);
+        widgets.add(placement);
+        saveWidgets();
+        showWidgets();
+    }
+
     private void finishAddingWidget() {
         if (pendingWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
         AppWidgetProviderInfo info = fitFixedWidget(widgetManager.getAppWidgetInfo(pendingWidgetId));
@@ -1956,8 +2014,10 @@ public final class HomeActivity extends Activity {
             WidgetPlacement placement = iterator.next();
             boolean clockWidget = placement.id == CLOCK_WIDGET_ID;
             boolean dockWidget = placement.id == DOCK_WIDGET_ID;
-            AppWidgetProviderInfo info = clockWidget || dockWidget ? null : fitFixedWidget(widgetManager.getAppWidgetInfo(placement.id));
-            if (!clockWidget && !dockWidget && info == null) {
+            boolean volumeWidget = placement.id == VOLUME_WIDGET_ID;
+            boolean builtIn = clockWidget || dockWidget || volumeWidget;
+            AppWidgetProviderInfo info = builtIn ? null : fitFixedWidget(widgetManager.getAppWidgetInfo(placement.id));
+            if (!builtIn && info == null) {
                 widgetHost.deleteAppWidgetId(placement.id);
                 iterator.remove();
                 changed = true;
@@ -1969,9 +2029,11 @@ public final class HomeActivity extends Activity {
             int oldX = placement.x, oldY = placement.y;
             int oldWidth = placement.width, oldHeight = placement.height;
             if (placement.width == 0 || placement.height == 0) {
-                placement.width = Math.min(availableWidth, clockWidget ? 4 * WIDGET_CELL_DP : dockWidget ? 3 * WIDGET_CELL_DP
+                placement.width = Math.min(availableWidth, clockWidget ? 4 * WIDGET_CELL_DP
+                        : dockWidget || volumeWidget ? 3 * WIDGET_CELL_DP
                         : pxToDp(Math.max(info.minWidth, info.minResizeWidth)) + padding.x);
                 placement.height = Math.min(availableHeight, clockWidget ? 2 * WIDGET_CELL_DP
+                        : volumeWidget ? WIDGET_CELL_DP
                         : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows) * grid.cellHeight
                         : pxToDp(Math.max(info.minHeight, info.minResizeHeight)) + padding.y);
                 changed = true;
@@ -1987,9 +2049,9 @@ public final class HomeActivity extends Activity {
             int fallbackX = placement.x, fallbackY = placement.y;
             int fallbackWidth = placement.width, fallbackHeight = placement.height;
             Point minSize = info == null ? null : minWidgetSizeDp(info);
-            int minColumns = clockWidget ? 1 : dockWidget ? Math.min(2, grid.columns)
+            int minColumns = clockWidget || volumeWidget ? 1 : dockWidget ? Math.min(2, grid.columns)
                     : grid.span(minSize.x, grid.cellWidth, grid.columns);
-            int minRows = clockWidget ? 1 : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows)
+            int minRows = clockWidget || volumeWidget ? 1 : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows)
                     : grid.span(minSize.y, grid.cellHeight, grid.rows);
             int columns = Math.max(minColumns, grid.span(placement.width, grid.cellWidth, grid.columns));
             int rows = Math.max(minRows, grid.span(placement.height, grid.cellHeight, grid.rows));
@@ -2016,6 +2078,9 @@ public final class HomeActivity extends Activity {
                 hostView.setTag(CLOCK_WIDGET_ID);
             } else if (dockWidget) {
                 hostView = createDockWidget();
+            } else if (volumeWidget) {
+                hostView = createVolumeWidget(placement);
+                hostView.setTag(VOLUME_WIDGET_ID);
             } else {
                 AppWidgetHostView widgetView = widgetHost.createView(this, placement.id, info);
                 widgetView.setAppWidget(placement.id, info);
@@ -2028,8 +2093,8 @@ public final class HomeActivity extends Activity {
                     : new FrameLayout(this);
             hostView.setOnLongClickListener(v -> startEditingByLongPress());
             FrameLayout.LayoutParams hostParams = new FrameLayout.LayoutParams(-1, -1);
-            if (dockWidget) {
-                // Inset the dock like AppWidgetHostView insets regular widgets.
+            if (dockWidget || volumeWidget) {
+                // Inset the dock and volume buttons like AppWidgetHostView insets regular widgets.
                 Rect inset = dockInset();
                 hostParams.setMargins(inset.left, inset.top, inset.right, inset.bottom);
             }
@@ -2275,6 +2340,80 @@ public final class HomeActivity extends Activity {
         settingsChoice(font, CLOCK_FONT, new String[]{"Без засечек", "С засечками", "Моноширинный"}, changed);
     }
 
+    private View createVolumeWidget(WidgetPlacement placement) {
+        LinearLayout panel = new LinearLayout(this);
+        updateVolumeWidget(panel, placement);
+        return panel;
+    }
+
+    /** Rebuilds the buttons: in a row for a wide widget, in a column for a tall one. */
+    private void updateVolumeWidget(View hostView, WidgetPlacement placement) {
+        LinearLayout panel = (LinearLayout) hostView;
+        panel.removeAllViews();
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        AudioManager audio = getSystemService(AudioManager.class);
+        boolean horizontal = placement.width >= placement.height;
+        boolean showMute = prefs.getBoolean(VOLUME_MUTE, true);
+        int[] icons = VOLUME_ICON_STYLES[Math.max(0, Math.min(VOLUME_ICON_STYLES.length - 1, prefs.getInt(VOLUME_ICONS, 0)))];
+        panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        int buttonLength = (horizontal ? placement.width : placement.height) / (showMute ? 3 : 2);
+        int iconSize = Math.max(16, Math.min(64, Math.min(buttonLength, horizontal ? placement.height : placement.width) / 2));
+        // Volume down is on the left of a row and at the bottom of a column.
+        int[] directions = horizontal
+                ? new int[]{AudioManager.ADJUST_LOWER, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.ADJUST_RAISE}
+                : new int[]{AudioManager.ADJUST_RAISE, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.ADJUST_LOWER};
+        for (int direction : directions) {
+            boolean mute = direction == AudioManager.ADJUST_TOGGLE_MUTE;
+            if (mute && !showMute) continue;
+            boolean muted = mute && audio.isStreamMute(AudioManager.STREAM_MUSIC);
+            FrameLayout button = new FrameLayout(this);
+            button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+                    round(muted ? ACCENT : NEUTRAL_SURFACE, Color.TRANSPARENT, 24), null));
+            button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
+                    : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
+                    : muted ? "Включить звук" : "Выключить звук");
+            button.setOnClickListener(v -> {
+                // FLAG_SHOW_UI shows the system volume panel, as hardware keys do.
+                audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI);
+                panel.post(() -> updateVolumeWidget(panel, placement));
+            });
+            button.setOnLongClickListener(v -> startEditingByLongPress());
+            ImageView image = new ImageView(this);
+            image.setImageResource(direction == AudioManager.ADJUST_RAISE ? icons[0]
+                    : direction == AudioManager.ADJUST_LOWER ? icons[1] : R.drawable.ic_volume_off);
+            button.addView(image, new FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
+            params.setMargins(dp(3), dp(3), dp(3), dp(3));
+            panel.addView(button, params);
+        }
+    }
+
+    private void updateDesktopVolume() {
+        View desktopVolume = widgetRow.findViewWithTag(VOLUME_WIDGET_ID);
+        if (desktopVolume == null) return;
+        for (WidgetPlacement placement : widgets) {
+            if (placement.id == VOLUME_WIDGET_ID) {
+                updateVolumeWidget(desktopVolume, placement);
+                return;
+            }
+        }
+    }
+
+    private void buildVolumeSettings(LinearLayout content) {
+        LinearLayout preview = settingsCard(content, "Громкость",
+                "Кнопки встают в ряд у широкого виджета и в столбик у высокого.");
+        WidgetPlacement previewPlacement = new WidgetPlacement(VOLUME_WIDGET_ID, 0, 0, 288, 96);
+        View volume = createVolumeWidget(previewPlacement);
+        preview.addView(volume, new LinearLayout.LayoutParams(-1, dp(96)));
+        Runnable changed = () -> {
+            updateVolumeWidget(volume, previewPlacement);
+            updateDesktopVolume();
+        };
+        settingsToggle(preview, "Кнопка отключения звука", VOLUME_MUTE, true, changed);
+        LinearLayout icons = settingsCard(content, "Значки", null);
+        settingsChoice(icons, VOLUME_ICONS, new String[]{"Динамик", "Плюс и минус", "Стрелки"}, changed);
+    }
+
     private void settingsChoice(LinearLayout parent, String key, String[] options, Runnable changed) {
         settingsChoice(parent, key, options, 0, changed);
     }
@@ -2382,7 +2521,8 @@ public final class HomeActivity extends Activity {
         container.setForeground(round(Color.TRANSPARENT, ACCENT, 12));
         View dragSurface = new View(this);
         String title = placement.id == CLOCK_WIDGET_ID ? "часы" : placement.id == DOCK_WIDGET_ID
-                ? "док приложений" : String.valueOf(info.loadLabel(getPackageManager()));
+                ? "док приложений" : placement.id == VOLUME_WIDGET_ID ? "громкость"
+                : String.valueOf(info.loadLabel(getPackageManager()));
         dragSurface.setContentDescription("Перетащить " + title);
         dragSurface.setOnTouchListener(widgetTouch(container, hostView, placement, info, false));
         container.addView(dragSurface, new FrameLayout.LayoutParams(-1, -1));
@@ -2392,6 +2532,7 @@ public final class HomeActivity extends Activity {
             settings.setOnClickListener(v -> {
                 if (placement.id == CLOCK_WIDGET_ID) showSettings(2);
                 else if (placement.id == DOCK_WIDGET_ID) showSettings(1);
+                else if (placement.id == VOLUME_WIDGET_ID) showSettings(4);
                 else reconfigureWidget(placement);
             });
             container.addView(settings, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.LEFT));
@@ -2460,6 +2601,7 @@ public final class HomeActivity extends Activity {
                         placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
                         updateClockWidget(hostView, placement);
                     }
+                    if (resizing && placement.id == VOLUME_WIDGET_ID) updateVolumeWidget(hostView, placement);
                     WidgetGrid grid = widgetGrid();
                     WidgetPlacement target = grid == null ? null : snappedPlacement(grid);
                     boolean fits = target != null;
@@ -2504,6 +2646,7 @@ public final class HomeActivity extends Activity {
                     if (resizing) {
                         if (hostView instanceof AppWidgetHostView) updateWidgetSize((AppWidgetHostView) hostView, placement);
                         else if (placement.id == CLOCK_WIDGET_ID) updateClockWidget(hostView, placement);
+                        else if (placement.id == VOLUME_WIDGET_ID) updateVolumeWidget(hostView, placement);
                     }
                     return true;
                 }
