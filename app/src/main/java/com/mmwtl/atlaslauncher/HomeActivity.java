@@ -96,6 +96,8 @@ public final class HomeActivity extends Activity {
     private static final int SURFACE = Color.argb(220, 9, 26, 47);
     private static final int SURFACE_RAISED = Color.argb(224, 27, 47, 73);
     private static final int ACCENT = Color.rgb(46, 150, 246);
+    // Active tiles of the Atlas widgets (AtlasClimateWidget palette "Atlas").
+    private static final int ATLAS_ACTIVE = Color.rgb(120, 147, 160);
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
     private static final int NEUTRAL_SURFACE = Color.rgb(35, 37, 40);
@@ -2374,7 +2376,7 @@ public final class HomeActivity extends Activity {
             FrameLayout button = new FrameLayout(this);
             int radius = joined ? 20 : 24;
             button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                    muted ? round(ACCENT, Color.TRANSPARENT, radius) : joined ? null : round(NEUTRAL_SURFACE, Color.TRANSPARENT, radius),
+                    muted ? round(ATLAS_ACTIVE, Color.TRANSPARENT, radius) : joined ? null : round(NEUTRAL_SURFACE, Color.TRANSPARENT, radius),
                     round(Color.WHITE, Color.TRANSPARENT, radius)));
             button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
                     : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
