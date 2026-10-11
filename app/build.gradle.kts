@@ -2,8 +2,8 @@ plugins {
     id("com.android.application")
 }
 
-val appVersionCode = 56
-val appVersionName = "1.3.1"
+val appVersionCode = 57
+val appVersionName = "1.3.2"
 val branchName = providers.exec {
     commandLine("git", "branch", "--show-current")
 }.standardOutput.asText.get().trim()
