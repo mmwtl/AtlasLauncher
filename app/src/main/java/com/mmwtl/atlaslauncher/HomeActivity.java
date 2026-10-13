@@ -778,6 +778,16 @@ public final class HomeActivity extends Activity {
                         : page == 3 ? "Сменяемый фон" : page == 4 ? "Громкость" : "Настройки",
                 28, NEUTRAL_TEXT, true);
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        ImageView donate = new ImageView(this);
+        donate.setImageResource(R.drawable.ic_heart);
+        donate.setColorFilter(ATLAS_ACTIVE);
+        donate.setPadding(dp(8), dp(8), dp(8), dp(8));
+        donate.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 12));
+        donate.setContentDescription(getString(R.string.donate_title));
+        donate.setOnClickListener(v -> DonateDialog.show(this));
+        LinearLayout.LayoutParams donateParams = new LinearLayout.LayoutParams(dp(40), dp(40));
+        donateParams.setMargins(dp(12), 0, dp(12), 0);
+        header.addView(donate, donateParams);
         Button close = neutralButton("×");
         close.setTextSize(26);
         close.setContentDescription("Закрыть настройки");
@@ -803,6 +813,8 @@ public final class HomeActivity extends Activity {
             buildWidgetAreaSettings(content);
             buildAllAppsSettings(content);
             buildSystemSettings(content);
+            LinearLayout support = settingsCard(content, getString(R.string.donate_title), getString(R.string.donate_hint));
+            settingsAction(support, getString(R.string.donate_button), () -> DonateDialog.show(this));
         }
 
         LinearLayout footer = new LinearLayout(this);
