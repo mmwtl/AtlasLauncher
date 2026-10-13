@@ -3,6 +3,11 @@
     <string name="stock_home_redirect_label">AtlasLauncher: кнопки панели климата</string>
     <string name="stock_home_redirect_description">Когда кнопки «Домой» и «Все приложения» панели климата открывают штатный Launcher3, возвращает на AtlasLauncher. Получает только события Launcher3 и панели климата; содержимое экрана читает лишь для того, чтобы узнать нажатую кнопку панели и на каком дисплее открыт Launcher3. Пока функции выключены в настройках AtlasLauncher, служба не получает никаких событий.</string>
 
+    <string name="gstore_url" translatable="false">https://disk.yandex.ru/d/bJoMhjqGw8rMtg</string>
+    <string name="gstore_title">Обновления через GStore</string>
+    <string name="gstore_hint">Для автоматического обновления Atlas Launcher рекомендую магазин приложений GStore.</string>
+    <string name="gstore_button">Скачать GStore</string>
+    <string name="gstore_message">Установите GStore на головное устройство — он будет сам обновлять Atlas Launcher.</string>
     <string name="donate_url" translatable="false">https://pay.cloudtips.ru/p/5c3a9385</string>
     <string name="donate_title">Поддержать проект</string>
     <string name="donate_hint">Приложение бесплатное и останется таким. Если оно вам пригодилось, можно добровольно поддержать его развитие.</string>

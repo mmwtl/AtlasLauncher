@@ -48,7 +48,10 @@ Atlas Launcher заменяет домашний экран на Android: раз
 
 ## Установка и запуск
 
-1. Установите подписанный APK из [Releases](https://github.com/mmwtl/AtlasLauncher/releases).
+Для установки и автоматического обновления рекомендую магазин приложений **GStore**:
+[скачать GStore](https://disk.yandex.ru/d/bJoMhjqGw8rMtg).
+
+1. Установите Atlas Launcher из GStore или подписанный APK из [Releases](https://github.com/mmwtl/AtlasLauncher/releases).
 2. Выберите **Atlas Launcher** в системном выборе домашнего приложения.
 3. Долгим нажатием на рабочий стол откройте редактирование и добавьте виджеты, часы и док.
 4. Настройте фон и поведение через кнопку **⚙**.

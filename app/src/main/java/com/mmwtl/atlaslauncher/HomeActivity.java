@@ -813,6 +813,8 @@ public final class HomeActivity extends Activity {
             buildWidgetAreaSettings(content);
             buildAllAppsSettings(content);
             buildSystemSettings(content);
+            LinearLayout gstore = settingsCard(content, getString(R.string.gstore_title), getString(R.string.gstore_hint));
+            settingsAction(gstore, getString(R.string.gstore_button), () -> GStoreDialog.show(this));
             LinearLayout support = settingsCard(content, getString(R.string.donate_title), getString(R.string.donate_hint));
             settingsAction(support, getString(R.string.donate_button), () -> DonateDialog.show(this));
         }
