@@ -38,6 +38,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.media.AudioManager;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.IBinder;
@@ -145,6 +146,7 @@ public final class HomeActivity extends Activity {
             "Седан", "Красный карбон", "Синий поток", "Бирюза", "Горная дорога",
             "Ночной город", "Тёмный мрамор", "Горный закат"};
     private static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
+    private static final String CLUSTER_BRIGHTNESS = "cluster_brightness_follows_screen";
     private static final String GESTURES_ENABLED = "gestures_enabled";
     static final String GESTURES_PRIORITY = "gestures_priority";
     static final String GESTURES_TRIGGER = "gestures_trigger";
@@ -258,6 +260,55 @@ public final class HomeActivity extends Activity {
             }
         }
     };
+    // The OneOS power service (com.autolink.adapterbinder.IPower) reports every screen brightness level 0-15 to
+    // registered callbacks and takes the cluster level on the same scale, like the two sliders in the shade.
+    private static final String POWER_PACKAGE = "com.autolink.powerservice";
+    private static final String POWER = "com.autolink.adapterbinder.IPower";
+    private static final String POWER_CALLBACK = "com.autolink.adapterbinder.IPowerCallback";
+    private static final int POWER_REGISTER = 1;
+    private static final int POWER_UNREGISTER = 2;
+    private static final int POWER_GET_SCREEN = 4;
+    private static final int POWER_SET_CLUSTER = 5;
+    private IBinder powerService;
+    private boolean powerBound;
+    private final Binder powerCallback = new Binder() {
+        { attachInterface(null, POWER_CALLBACK); }
+
+        @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
+            // Call 1 reports the screen level; calls 2-6 report day/night, the cluster and the passenger display.
+            if (code < FIRST_CALL_TRANSACTION || code > 6) return super.onTransact(code, data, reply, flags);
+            data.enforceInterface(POWER_CALLBACK);
+            if (code == 1) {
+                int level = data.readInt();
+                runOnUiThread(() -> setClusterBrightness(level));
+            }
+            reply.writeNoException();
+            return true;
+        }
+    };
+    private final ServiceConnection powerConnection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder service) {
+            powerService = service;
+            try {
+                callPower(POWER_REGISTER, powerCallback);
+                setClusterBrightness(callPower(POWER_GET_SCREEN, null));
+            } catch (RemoteException | RuntimeException e) {
+                Log.w("AtlasLauncher", "Cannot follow the screen brightness", e);
+            }
+        }
+
+        @Override public void onServiceDisconnected(ComponentName name) {
+            // The system reconnects when the service restarts; the new instance needs the callback again.
+            powerService = null;
+        }
+
+        @Override public void onBindingDied(ComponentName name) {
+            unbindService(this);
+            powerBound = false;
+            powerService = null;
+            applyClusterBrightness();
+        }
+    };
     private final Runnable renderWidgets = this::showWidgets;
     private final Runnable slideshowStep = this::advanceSlideshow;
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
@@ -281,6 +332,7 @@ public final class HomeActivity extends Activity {
         super.onCreate(state);
         startDimService();
         applyGestures();
+        applyClusterBrightness();
         startupPending = true;
         widgetManager = AppWidgetManager.getInstance(this);
         widgetHost = new AppWidgetHost(this, HOST_ID) {
@@ -420,6 +472,7 @@ public final class HomeActivity extends Activity {
         appLoader.shutdownNow();
         wallpaperLoader.shutdownNow();
         if (dimKeyBound) unbindService(dimKeyConnection);
+        if (powerBound) releasePowerService();
         unregisterReceiver(packageReceiver);
         unregisterReceiver(volumeReceiver);
         if (settingsDialog != null) settingsDialog.dismiss();
@@ -1151,6 +1204,11 @@ public final class HomeActivity extends Activity {
             catch (ActivityNotFoundException e) { Toast.makeText(this, "Настройки недоступны", Toast.LENGTH_SHORT).show(); }
         });
 
+        LinearLayout cluster = settingsCard(content, "Приборная панель",
+                "Яркость приборки меняется вместе с яркостью экрана: ползунки в шторке встают на одно деление. "
+                        + "Ползунок приборки по-прежнему работает, но до следующего изменения яркости экрана.");
+        settingsToggle(cluster, "Яркость как у экрана", CLUSTER_BRIGHTNESS, false, this::applyClusterBrightness);
+
         LinearLayout redirect = settingsCard(content, "Панель климата",
                 "«Домой» и «Все приложения» на панели всегда открывают штатный Launcher3. AtlasLauncher может перехватывать "
                         + "их сразу по нажатию: «Домой» откроет рабочий стол Atlas, «Все приложения» — то же, что кнопка в доке, "
@@ -1213,6 +1271,54 @@ public final class HomeActivity extends Activity {
             else stopService(service);
         } catch (IllegalStateException | SecurityException e) {
             Log.w("AtlasLauncher", "Cannot change the gesture service", e);
+        }
+    }
+
+    private void applyClusterBrightness() {
+        boolean enabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(CLUSTER_BRIGHTNESS, false);
+        if (enabled && !powerBound) {
+            try {
+                powerBound = bindService(new Intent(POWER_PACKAGE + ".PowerService").setPackage(POWER_PACKAGE),
+                        powerConnection, BIND_AUTO_CREATE);
+            } catch (SecurityException e) {
+                Log.w("AtlasLauncher", "Cannot bind the power service", e);
+            }
+        } else if (!enabled && powerBound) {
+            releasePowerService();
+        }
+    }
+
+    private void releasePowerService() {
+        if (powerService != null) {
+            try { callPower(POWER_UNREGISTER, powerCallback); }
+            catch (RemoteException | RuntimeException e) { Log.w("AtlasLauncher", "Cannot stop following the screen brightness", e); }
+        }
+        unbindService(powerConnection);
+        powerBound = false;
+        powerService = null;
+    }
+
+    private void setClusterBrightness(int level) {
+        // The service indexes its level table without a bounds check; an unknown screen level comes as -1.
+        if (powerService == null || level < 0 || level > 15) return;
+        try { callPower(POWER_SET_CLUSTER, level); }
+        catch (RemoteException | RuntimeException e) { Log.w("AtlasLauncher", "Cannot set the cluster brightness", e); }
+    }
+
+    // IPower calls take a callback, a level or nothing and return a level or nothing.
+    private int callPower(int code, Object arg) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        try {
+            data.writeInterfaceToken(POWER);
+            if (arg instanceof IBinder) data.writeStrongBinder((IBinder) arg);
+            else if (arg instanceof Integer) data.writeInt((Integer) arg);
+            powerService.transact(code, data, reply, 0);
+            reply.readException();
+            return reply.dataAvail() >= 4 ? reply.readInt() : 0;
+        } finally {
+            data.recycle();
+            reply.recycle();
         }
     }
 

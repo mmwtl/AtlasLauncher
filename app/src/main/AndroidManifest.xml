@@ -9,6 +9,8 @@
         <package android:name="com.geely.mediacenterservice" />
         <!-- DIM key service: reports boot complete so QNX hides the boot logo. -->
         <package android:name="com.autolink.diminteraction" />
+        <!-- Power service: screen and cluster brightness levels. -->
+        <package android:name="com.autolink.powerservice" />
         <!-- Widget layouts and view IDs: fixed-size OEM widgets, the media widget's source switch. -->
         <intent>
             <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
