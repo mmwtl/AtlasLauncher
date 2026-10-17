@@ -214,6 +214,11 @@ public final class SettingsActivity extends ScaledActivity {
         choice(edit, HomeActivity.EDIT_DELAY, new String[]{"Стандартно", "1 секунда", "2 секунды", "3 секунды"}, 0,
                 () -> { });
 
+        LinearLayout hide = card(page, "Скрытие виджетов",
+                "Двойное касание свободного места рабочего стола прячет все виджеты, остаётся только фон. "
+                        + "Повторное двойное касание или вход в редактирование возвращают их.");
+        toggle(hide, "Скрывать двойным касанием", HomeActivity.HIDE_BY_DOUBLE_TAP, false, () -> { });
+
         LinearLayout margin = card(page, "Отступ виджетов по бокам",
                 "Сужает сетку с обеих сторон. Виджеты, которые больше не помещаются, переносятся.");
         choice(margin, HomeActivity.WIDGET_SIDE_MARGIN, new String[]{"Нет", "½ ячейки", "1 ячейка"}, 0, () -> { });

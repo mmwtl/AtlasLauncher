@@ -50,6 +50,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.VelocityTracker;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.widget.BaseAdapter;
@@ -77,9 +78,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.io.InputStream;
 import java.io.IOException;
 
@@ -146,6 +149,13 @@ public final class HomeActivity extends Activity {
     static final String EDIT_DELAY = "edit_long_press_delay";
     // Hold time before editing starts; index 0 is the system long press timeout.
     private static final long[] EDIT_DELAYS_MS = {0, 1000, 2000, 3000};
+    static final String HIDE_BY_DOUBLE_TAP = "hide_widgets_double_tap";
+    private static final String WIDGETS_HIDDEN = "widgets_hidden";
+    private static final long PAGE_SNAP_MS = 250;
+    // A widget dragged this close to the side of the grid moves to the next page after a pause.
+    private static final int PAGE_EDGE_DP = 56;
+    private static final long PAGE_EDGE_DELAY_MS = 500;
+    private static final long PAGE_EDGE_REPEAT_MS = 1000;
     // The OneOS media widget asks Launcher3 to show its source list; Atlas hosts that list itself.
     private static final String MEDIA_WIDGET_PACKAGE = "com.geely.mediawidget";
     private static final ComponentName SOURCE_LIST_PROVIDER = new ComponentName(MEDIA_WIDGET_PACKAGE,
@@ -187,6 +197,17 @@ public final class HomeActivity extends Activity {
     private float pressX;
     private float pressY;
     private boolean pressStartedEditing;
+    // Desktop pages lie side by side in pageLayer with the current one in view; each holds its widgets at grid
+    // coordinates. Hiding the widgets hides the whole layer.
+    private final List<FrameLayout> pages = new ArrayList<>();
+    private FrameLayout pageLayer;
+    private int currentPage;
+    private LinearLayout pageIndicator;
+    private boolean widgetsHidden;
+    private long lastEmptyTap;
+    // Home pressed while HOME is already in front returns to the first page, as in Launcher3.
+    private boolean stoppedSinceResume;
+    private final Runnable hideIndicator = () -> { if (!editingWidgets) pageIndicator.setVisibility(View.GONE); };
     private PopupWindow sourceListPopup;
     // The saved wallpaper on screen, so a change made in settings loads only a new image.
     private String shownWallpaper;
@@ -297,6 +318,7 @@ public final class HomeActivity extends Activity {
             case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
             case CLIMATE_PANEL_HIDDEN: applyClimatePanel(); break;
             case CLUSTER_BRIGHTNESS: applyClusterBrightness(); break;
+            case HIDE_BY_DOUBLE_TAP: if (widgetsHidden && !prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false)) setWidgetsHidden(false); break;
             case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: applyGestures(); break;
             case FAVORITES: loadFavorites(prefs); showFavorites(); break;
             case DOCK_LABELS: case DOCK_APPS: case DRAWER_ICON_SIZE: scheduleShowWidgets(); break;
@@ -338,8 +360,11 @@ public final class HomeActivity extends Activity {
         if (state != null) {
             editingWidgets = state.getBoolean("editingWidgets");
             pendingWidgetId = state.getInt("pendingWidgetId", AppWidgetManager.INVALID_APPWIDGET_ID);
+            currentPage = state.getInt("page");
         }
         loadSavedState();
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        widgetsHidden = prefs.getBoolean(WIDGETS_HIDDEN, false) && prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false);
         int sourceListId = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt(SOURCE_LIST_WIDGET, AppWidgetManager.INVALID_APPWIDGET_ID);
         // Power loss during binding or configuration leaves bound IDs that no placement owns.
@@ -379,6 +404,7 @@ public final class HomeActivity extends Activity {
         state.putBoolean("editingWidgets", editingWidgets);
         // Only a newly allocated widget belongs to the add/cancel lifecycle.
         state.putInt("pendingWidgetId", pendingWidgetId);
+        state.putInt("page", currentPage);
     }
 
     @Override public void onStart() {
@@ -390,6 +416,7 @@ public final class HomeActivity extends Activity {
 
     @Override public void onResume() {
         super.onResume();
+        stoppedSinceResume = false;
         // The system 12/24-hour setting may have changed while HOME was in the background.
         updateDesktopClock();
         // Like Launcher3: OneOS LifeControlService starts its last boot stage (hvac, settings, gesture and
@@ -445,12 +472,14 @@ public final class HomeActivity extends Activity {
         // Home returns to a clean desktop, like the stock launcher; the settings above HOME close with its task.
         if (editingWidgets) setEditingWidgets(false);
         if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false)) AllAppsActivity.open(this);
+        else if (!stoppedSinceResume) snapToPage(0);
     }
 
     @Override public void onStop() {
         if (sourceListPopup != null) sourceListPopup.dismiss();
         widgetHost.stopListening();
         homeVisible = false;
+        stoppedSinceResume = true;
         // The slideshow changes the wallpaper only while another app covers HOME.
         long delay = slideshowDelay();
         if (delay >= 0) wallpaperView.postDelayed(slideshowStep, delay);
@@ -495,12 +524,12 @@ public final class HomeActivity extends Activity {
         FrameLayout content = new FrameLayout(this);
         content.setFitsSystemWindows(true);
         backdrop.addView(content, new FrameLayout.LayoutParams(-1, -1));
-        widgetRow = new FrameLayout(this);
+        widgetRow = new PagedRow(this);
         content.addView(widgetRow, new FrameLayout.LayoutParams(-1, -1));
         applyClimatePanel();
         applyWidgetSideMargin();
         widgetRow.setClickable(true);
-        widgetRow.setOnClickListener(v -> { if (editingWidgets) setEditingWidgets(false); });
+        widgetRow.setOnClickListener(v -> onEmptyTap());
         widgetRow.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
                 scheduleShowWidgets();
@@ -515,6 +544,16 @@ public final class HomeActivity extends Activity {
         FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(dp(76), dp(76), Gravity.TOP | Gravity.RIGHT);
         settingsParams.setMargins(0, dp(16), dp(20), 0);
         content.addView(settingsButton, settingsParams);
+
+        // Between the edit controls at the top, so it covers no widget controls.
+        pageIndicator = new LinearLayout(this);
+        pageIndicator.setGravity(Gravity.CENTER);
+        pageIndicator.setPadding(dp(10), 0, dp(10), 0);
+        pageIndicator.setBackground(round(SURFACE, Color.TRANSPARENT, 18));
+        pageIndicator.setVisibility(View.GONE);
+        FrameLayout.LayoutParams indicatorParams = new FrameLayout.LayoutParams(-2, dp(36), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        indicatorParams.topMargin = dp(36);
+        content.addView(pageIndicator, indicatorParams);
 
         widgetControls = new LinearLayout(this);
         widgetControls.setGravity(Gravity.CENTER_VERTICAL);
@@ -894,6 +933,7 @@ public final class HomeActivity extends Activity {
 
     private void setEditingWidgets(boolean editing) {
         editingWidgets = editing;
+        if (editing && widgetsHidden) setWidgetsHidden(false);
         widgetControls.setVisibility(editing ? View.VISIBLE : View.GONE);
         settingsButton.setVisibility(editing ? View.VISIBLE : View.GONE);
         showWidgets();
@@ -1250,12 +1290,13 @@ public final class HomeActivity extends Activity {
                 columns * grid.cellWidth, rows * grid.cellHeight);
         compactClockWidget(placement, grid);
         columns = grid.span(placement.width, grid.cellWidth, grid.columns);
-        Point slot = findGridSlot(grid, 0, 0, columns, rows, widgets);
+        Point slot = findGridSlot(grid, 0, 0, columns, rows, onPage(widgets, currentPage));
         if (slot == null) {
             Toast.makeText(this, "Недостаточно места для часов", Toast.LENGTH_SHORT).show();
             return;
         }
         setGridPlacement(placement, grid, slot, columns, rows);
+        placement.page = currentPage;
         widgets.add(placement);
         saveWidgets();
         showWidgets();
@@ -1270,10 +1311,11 @@ public final class HomeActivity extends Activity {
         int rows = grid.span(dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)), grid.cellHeight, grid.rows);
         int x = (grid.columns - columns) * grid.cellWidth / 2;
         int y = Math.max(0, grid.rows - rows - 1) * grid.cellHeight;
-        Point slot = findGridSlot(grid, x, y, columns, rows, widgets);
+        Point slot = findGridSlot(grid, x, y, columns, rows, onPage(widgets, currentPage));
         if (slot == null) return null;
         WidgetPlacement placement = new WidgetPlacement(DOCK_WIDGET_ID, 0, 0, 0, 0);
         setGridPlacement(placement, grid, slot, columns, rows);
+        placement.page = currentPage;
         return placement;
     }
 
@@ -1306,13 +1348,14 @@ public final class HomeActivity extends Activity {
         WidgetGrid grid = widgetGrid();
         if (grid == null) return;
         int columns = Math.min(3, grid.columns);
-        Point slot = findGridSlot(grid, 0, 0, columns, 1, widgets);
+        Point slot = findGridSlot(grid, 0, 0, columns, 1, onPage(widgets, currentPage));
         if (slot == null) {
             Toast.makeText(this, "Недостаточно места для громкости", Toast.LENGTH_SHORT).show();
             return;
         }
         WidgetPlacement placement = new WidgetPlacement(VOLUME_WIDGET_ID, 0, 0, 0, 0);
         setGridPlacement(placement, grid, slot, columns, 1);
+        placement.page = currentPage;
         widgets.add(placement);
         saveWidgets();
         showWidgets();
@@ -1330,13 +1373,14 @@ public final class HomeActivity extends Activity {
         WidgetPlacement placement = new WidgetPlacement(pendingWidgetId, 0, 0, widgetWidth, widgetHeight);
         int columns = grid.span(widgetWidth, grid.cellWidth, grid.columns);
         int rows = grid.span(widgetHeight, grid.cellHeight, grid.rows);
-        Point slot = findGridSlot(grid, 0, 0, columns, rows, widgets);
+        Point slot = findGridSlot(grid, 0, 0, columns, rows, onPage(widgets, currentPage));
         if (slot == null) {
             cancelPendingWidget();
             Toast.makeText(this, "Недостаточно места для виджета", Toast.LENGTH_SHORT).show();
             return;
         }
         setGridPlacement(placement, grid, slot, columns, rows);
+        placement.page = currentPage;
         widgets.add(placement);
         pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
         saveWidgets();
@@ -1359,7 +1403,18 @@ public final class HomeActivity extends Activity {
         dropTarget = new View(this);
         dropTarget.setVisibility(View.GONE);
         widgetRow.addView(dropTarget);
-        boolean changed = false;
+        // Empty pages are dropped once editing ends.
+        boolean changed = !editingWidgets && compactPages();
+        pages.clear();
+        pageLayer = new FrameLayout(this);
+        // A dragged widget stays in view while its page slides away.
+        pageLayer.setClipChildren(false);
+        pageLayer.setAlpha(widgetsHidden ? 0 : 1);
+        pageLayer.setVisibility(widgetsHidden ? View.INVISIBLE : View.VISIBLE);
+        widgetRow.addView(pageLayer, new FrameLayout.LayoutParams(-1, -1));
+        int pageCount = pageCount();
+        currentPage = Math.min(currentPage, pageCount - 1);
+        for (int i = 0; i < pageCount; i++) addPage();
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (!prefs.getBoolean(DOCK_WIDGET_MIGRATED, false)) {
             if (prefs.getBoolean(DOCK_VISIBLE, true)) {
@@ -1424,7 +1479,7 @@ public final class HomeActivity extends Activity {
             Point slot = null;
             for (int rowSpan = rows; rowSpan >= minRows && slot == null; rowSpan--) {
                 for (int columnSpan = columns; columnSpan >= minColumns && slot == null; columnSpan--) {
-                    slot = findGridSlot(grid, placement.x, placement.y, columnSpan, rowSpan, occupied);
+                    slot = findGridSlot(grid, placement.x, placement.y, columnSpan, rowSpan, onPage(occupied, placement.page));
                     if (slot != null) setGridPlacement(placement, grid, slot, columnSpan, rowSpan);
                 }
             }
@@ -1468,17 +1523,124 @@ public final class HomeActivity extends Activity {
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(placement.width), dp(placement.height));
             params.leftMargin = dp(placement.x);
             params.topMargin = dp(placement.y);
-            widgetRow.addView(container, params);
+            pages.get(placement.page).addView(container, params);
             if (hostView instanceof AppWidgetHostView) updateWidgetSize((AppWidgetHostView) hostView, placement);
         }
         if (changed) saveWidgets();
-        if (widgets.isEmpty() && editingWidgets) {
+        if (editingWidgets) for (int i = 0; i < pages.size(); i++) {
+            int page = i;
+            if (widgets.stream().anyMatch(placement -> placement.page == page)) continue;
             TextView empty = label("＋  Добавить виджет", 16, MUTED, false);
             empty.setGravity(Gravity.CENTER);
             empty.setBackground(round(SURFACE, Color.TRANSPARENT, 18));
             empty.setOnClickListener(v -> chooseWidget());
-            widgetRow.addView(empty, new FrameLayout.LayoutParams(dp(220), dp(64), Gravity.CENTER));
+            pages.get(i).addView(empty, new FrameLayout.LayoutParams(dp(220), dp(64), Gravity.CENTER));
         }
+        updateIndicator(false);
+    }
+
+    private int pageCount() {
+        int count = 1;
+        for (WidgetPlacement placement : widgets) count = Math.max(count, placement.page + 1);
+        // Editing offers an empty page after the last one, to add or move widgets there.
+        return editingWidgets ? Math.max(count + 1, currentPage + 1) : count;
+    }
+
+    private void addPage() {
+        FrameLayout page = new FrameLayout(this);
+        page.setTranslationX((pages.size() - currentPage) * widgetRow.getWidth());
+        pages.add(page);
+        pageLayer.addView(page, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    /** Numbers the pages that hold widgets without gaps; returns whether a widget changed its page. */
+    private boolean compactPages() {
+        List<Integer> used = new ArrayList<>(new TreeSet<>(widgets.stream().map(placement -> placement.page)
+                .collect(Collectors.toList())));
+        boolean changed = false;
+        for (WidgetPlacement placement : widgets) {
+            int page = used.indexOf(placement.page);
+            changed |= page != placement.page;
+            placement.page = page;
+        }
+        // An empty page in view gives way to the page before it.
+        int kept = 0;
+        for (int i = 0; i < used.size(); i++) if (used.get(i) <= currentPage) kept = i;
+        currentPage = kept;
+        return changed;
+    }
+
+    private static List<WidgetPlacement> onPage(List<WidgetPlacement> placements, int page) {
+        List<WidgetPlacement> result = new ArrayList<>();
+        for (WidgetPlacement placement : placements) if (placement.page == page) result.add(placement);
+        return result;
+    }
+
+    private void layoutPages(float offset) {
+        for (int i = 0; i < pages.size(); i++) pages.get(i).setTranslationX((i - currentPage) * widgetRow.getWidth() + offset);
+    }
+
+    private void snapToPage(int page) {
+        currentPage = Math.max(0, Math.min(pages.size() - 1, page));
+        for (int i = 0; i < pages.size(); i++)
+            pages.get(i).animate().translationX((i - currentPage) * widgetRow.getWidth()).setDuration(PAGE_SNAP_MS).start();
+        updateIndicator(true);
+    }
+
+    /** Moves a dragged widget to another page: the pages slide, the widget stays under the finger. */
+    private void moveWhileDragging(View container, WidgetPlacement placement, int page) {
+        if (page < 0 || page >= pages.size()) return;
+        // The page the widget leaves slides away with it inside; the widget slides back by as much.
+        container.animate().translationX(container.getTranslationX() + (page - currentPage) * widgetRow.getWidth())
+                .setDuration(PAGE_SNAP_MS).start();
+        placement.page = page;
+        if (page == pages.size() - 1) addPage();
+        snapToPage(page);
+    }
+
+    /** Page dots: shown while editing and for a moment after the page changes. */
+    private void updateIndicator(boolean flash) {
+        pageIndicator.removeCallbacks(hideIndicator);
+        pageIndicator.removeAllViews();
+        for (int i = 0; i < pages.size(); i++) {
+            View dot = new View(this);
+            dot.setBackground(round(i == currentPage ? TEXT : Color.argb(100, 255, 255, 255), Color.TRANSPARENT, 4));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(8), dp(8));
+            params.setMargins(dp(5), 0, dp(5), 0);
+            pageIndicator.addView(dot, params);
+        }
+        boolean show = pages.size() > 1 && !widgetsHidden && (editingWidgets || flash);
+        pageIndicator.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show && !editingWidgets) pageIndicator.postDelayed(hideIndicator, 1500);
+    }
+
+    private void onEmptyTap() {
+        if (editingWidgets) {
+            setEditingWidgets(false);
+            return;
+        }
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(HIDE_BY_DOUBLE_TAP, false)) return;
+        long now = SystemClock.uptimeMillis();
+        // Clicks come on release, so the press of the second tap counts too.
+        if (now - lastEmptyTap > ViewConfiguration.getDoubleTapTimeout() + ViewConfiguration.getTapTimeout()) {
+            lastEmptyTap = now;
+            return;
+        }
+        lastEmptyTap = 0;
+        setWidgetsHidden(!widgetsHidden);
+    }
+
+    private void setWidgetsHidden(boolean hidden) {
+        widgetsHidden = hidden;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(WIDGETS_HIDDEN, hidden).apply();
+        FrameLayout layer = pageLayer;
+        if (layer != null) {
+            layer.animate().cancel();
+            layer.setVisibility(View.VISIBLE);
+            layer.animate().alpha(hidden ? 0 : 1).setDuration(200)
+                    .withEndAction(() -> layer.setVisibility(hidden ? View.INVISIBLE : View.VISIBLE)).start();
+        }
+        updateIndicator(false);
     }
 
     private static boolean isMediaWidget(AppWidgetProviderInfo info) {
@@ -1736,6 +1898,16 @@ public final class HomeActivity extends Activity {
             int originalWidth;
             int originalHeight;
             int originalClockSize;
+            int originalPage;
+            int edgeDirection;
+            boolean movedPage;
+            final Runnable edgeMove = new Runnable() {
+                @Override public void run() {
+                    movedPage |= currentPage + edgeDirection >= 0;
+                    moveWhileDragging(container, placement, currentPage + edgeDirection);
+                    widgetRow.postDelayed(this, PAGE_EDGE_REPEAT_MS);
+                }
+            };
 
             @Override public boolean onTouch(View view, MotionEvent event) {
                 if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
@@ -1746,6 +1918,12 @@ public final class HomeActivity extends Activity {
                     originalWidth = placement.width;
                     originalHeight = placement.height;
                     originalClockSize = placement.clockSize;
+                    originalPage = placement.page;
+                    edgeDirection = 0;
+                    movedPage = false;
+                    // Page swipes must not take the drag; the widget is drawn above the page it may move to.
+                    view.getParent().requestDisallowInterceptTouchEvent(true);
+                    ((View) container.getParent()).setTranslationZ(1);
                     return true;
                 }
                 if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
@@ -1771,6 +1949,17 @@ public final class HomeActivity extends Activity {
                         BuiltInWidgets.updateClock(HomeActivity.this, hostView, placement);
                     }
                     if (resizing && placement.id == VOLUME_WIDGET_ID) BuiltInWidgets.updateVolume(HomeActivity.this, hostView, placement);
+                    if (!resizing) {
+                        int[] row = new int[2];
+                        widgetRow.getLocationOnScreen(row);
+                        float x = event.getRawX() - row[0];
+                        int direction = x < dp(PAGE_EDGE_DP) ? -1 : x > widgetRow.getWidth() - dp(PAGE_EDGE_DP) ? 1 : 0;
+                        if (direction != edgeDirection) {
+                            edgeDirection = direction;
+                            widgetRow.removeCallbacks(edgeMove);
+                            if (direction != 0) widgetRow.postDelayed(edgeMove, PAGE_EDGE_DELAY_MS);
+                        }
+                    }
                     WidgetGrid grid = widgetGrid();
                     WidgetPlacement target = grid == null ? null : snappedPlacement(grid);
                     boolean fits = target != null;
@@ -1786,6 +1975,7 @@ public final class HomeActivity extends Activity {
                 }
                 if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                     dropTarget.setVisibility(View.GONE);
+                    widgetRow.removeCallbacks(edgeMove);
                     WidgetGrid grid = widgetGrid();
                     WidgetPlacement target = event.getActionMasked() == MotionEvent.ACTION_CANCEL || grid == null
                             ? null : snappedPlacement(grid);
@@ -1794,6 +1984,8 @@ public final class HomeActivity extends Activity {
                         placement.y = originalY;
                         placement.width = originalWidth;
                         placement.height = originalHeight;
+                        placement.page = originalPage;
+                        currentPage = originalPage;
                     } else {
                         placement.x = target.x;
                         placement.y = target.y;
@@ -1817,6 +2009,9 @@ public final class HomeActivity extends Activity {
                         else if (placement.id == CLOCK_WIDGET_ID) BuiltInWidgets.updateClock(HomeActivity.this, hostView, placement);
                         else if (placement.id == VOLUME_WIDGET_ID) BuiltInWidgets.updateVolume(HomeActivity.this, hostView, placement);
                     }
+                    ((View) container.getParent()).setTranslationZ(0);
+                    // The widget belongs to the page it was dropped on; views are rebuilt once this touch is over.
+                    if (movedPage) widgetRow.post(HomeActivity.this::showWidgets);
                     return true;
                 }
                 return true;
@@ -1824,7 +2019,7 @@ public final class HomeActivity extends Activity {
 
             // The grid position the widget takes on release, or null when it returns to its original place.
             private WidgetPlacement snappedPlacement(WidgetGrid grid) {
-                List<WidgetPlacement> occupied = new ArrayList<>(widgets);
+                List<WidgetPlacement> occupied = onPage(widgets, placement.page);
                 occupied.remove(placement);
                 int columns = resizing ? grid.nearestSpan(placement.width, grid.cellWidth, grid.columns)
                         : grid.span(placement.width, grid.cellWidth, grid.columns);
@@ -1862,6 +2057,7 @@ public final class HomeActivity extends Activity {
                     WidgetPlacement placement = new WidgetPlacement(item.getInt("id"), item.getInt("x"), item.getInt("y"),
                             item.getInt("width"), item.getInt("height"));
                     placement.clockSize = item.optInt("clockSize", 0);
+                    placement.page = item.optInt("page", 0);
                     widgets.add(placement);
                 } else {
                     int id = savedWidgets.getInt(i);
@@ -1905,6 +2101,7 @@ public final class HomeActivity extends Activity {
                 item.put("y", widget.y);
                 item.put("width", widget.width);
                 item.put("height", widget.height);
+                item.put("page", widget.page);
                 if (widget.id == CLOCK_WIDGET_ID) item.put("clockSize", widget.clockSize);
                 saved.put(item);
             } catch (JSONException e) { throw new IllegalStateException(e); }
@@ -1917,6 +2114,97 @@ public final class HomeActivity extends Activity {
 
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + 0.5f); }
     private int pxToDp(float value) { return Math.round(value / getResources().getDisplayMetrics().density); }
+
+    /** The widget area: a horizontal swipe that nothing under the finger scrolls itself moves between pages. */
+    private final class PagedRow extends FrameLayout {
+        private final int touchSlop = ViewConfiguration.get(HomeActivity.this).getScaledTouchSlop();
+        private final int minFling = ViewConfiguration.get(HomeActivity.this).getScaledMinimumFlingVelocity() * 4;
+        private final VelocityTracker velocity = VelocityTracker.obtain();
+        private float downX;
+        private float downY;
+        private boolean paging;
+        private boolean blocked;
+
+        PagedRow(Context context) {
+            super(context);
+        }
+
+        @Override public boolean onInterceptTouchEvent(MotionEvent event) {
+            return trackPaging(event);
+        }
+
+        @Override public boolean performClick() {
+            return super.performClick();
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            boolean wasPaging = paging;
+            if (!trackPaging(event)) return super.onTouchEvent(event);
+            if (!wasPaging) {
+                // A swipe that started on empty space does not click it.
+                MotionEvent cancel = MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.onTouchEvent(cancel);
+                cancel.recycle();
+            }
+            return true;
+        }
+
+        /** Returns true once the gesture is a page swipe; the rest of it then belongs to the pages. */
+        private boolean trackPaging(MotionEvent event) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                velocity.clear();
+                downX = event.getX();
+                downY = event.getY();
+                paging = false;
+                blocked = pages.size() < 2 || widgetsHidden;
+            }
+            velocity.addMovement(event);
+            if (action == MotionEvent.ACTION_POINTER_DOWN) {
+                // Multi-finger gestures are not page swipes.
+                if (paging && !blocked) snapToPage(currentPage);
+                blocked = true;
+            } else if (action == MotionEvent.ACTION_MOVE && !blocked) {
+                float dx = event.getX() - downX;
+                if (!paging) {
+                    if (Math.abs(dx) <= touchSlop || Math.abs(dx) <= Math.abs(event.getY() - downY)) return false;
+                    if (canScroll(this, downX, downY, dx)) {
+                        blocked = true;
+                        return false;
+                    }
+                    paging = true;
+                    downX += Math.signum(dx) * touchSlop;
+                    dx = event.getX() - downX;
+                }
+                // Past the first and the last page the pages follow the finger only a little.
+                if (dx > 0 && currentPage == 0 || dx < 0 && currentPage == pages.size() - 1) dx /= 3;
+                layoutPages(dx);
+            } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && paging && !blocked) {
+                velocity.computeCurrentVelocity(1000);
+                float dx = event.getX() - downX;
+                int page = currentPage;
+                if (action == MotionEvent.ACTION_UP && (dx < -getWidth() / 4f || velocity.getXVelocity() < -minFling)) page++;
+                else if (action == MotionEvent.ACTION_UP && (dx > getWidth() / 4f || velocity.getXVelocity() > minFling)) page--;
+                snapToPage(page);
+            }
+            return paging;
+        }
+    }
+
+    private static boolean canScroll(View view, float x, float y, float dx) {
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = group.getChildCount() - 1; i >= 0; i--) {
+                View child = group.getChildAt(i);
+                float childX = x + group.getScrollX() - child.getLeft() - child.getTranslationX();
+                float childY = y + group.getScrollY() - child.getTop() - child.getTranslationY();
+                if (child.getVisibility() == View.VISIBLE && childX >= 0 && childY >= 0 && childX < child.getWidth()
+                        && childY < child.getHeight() && canScroll(child, childX, childY, dx)) return true;
+            }
+        }
+        return view.canScrollHorizontally(dx > 0 ? -1 : 1);
+    }
 
     private static final class WidgetGrid {
         final int width;
@@ -2024,6 +2312,7 @@ public final class HomeActivity extends Activity {
         int width;
         int height;
         int clockSize;
+        int page;
 
         WidgetPlacement(int id, int x, int y, int width, int height) {
             this.id = id;
