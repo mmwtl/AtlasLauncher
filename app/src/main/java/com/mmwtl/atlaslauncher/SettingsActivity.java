@@ -61,6 +61,7 @@ public final class SettingsActivity extends ScaledActivity {
     private static final String GIB_LAUNCHER = "com.salat.gbinder/com.salat.gbinder.AppLauncher";
     private static final int PICK_WALLPAPER = 1;
     private static final int PICK_SLIDESHOW = 2;
+    private static final int PICK_VIDEO = 3;
 
     private final List<TextView> tabs = new ArrayList<>();
     private final List<LinearLayout> panels = new ArrayList<>();
@@ -68,6 +69,8 @@ public final class SettingsActivity extends ScaledActivity {
     private SharedPreferences prefs;
     private ScrollView scroll;
     private ImageView wallpaperPreview;
+    private TextView wallpaperKind;
+    private int wallpaperPreviewGeneration;
     private LinearLayout wallpaperPresets;
     private Switch slideshowSwitch;
     private LinearLayout ownSlides;
@@ -164,17 +167,11 @@ public final class SettingsActivity extends ScaledActivity {
     }
 
     private void buildWallpaperTab(LinearLayout page) {
-        LinearLayout source = card(page, "Системные обои",
-                "Показывать текущие обои Android, в том числе живые. Менять их нужно в штатных настройках тем OneOS. "
-                        + "Сменяемый фон Atlas приостановлен, пока включены системные обои.");
-        LinearLayout atlasWallpaper = column();
-        page.addView(atlasWallpaper);
-        Runnable showAtlasWallpaper = () -> atlasWallpaper.setVisibility(
-                prefs.getBoolean(HomeActivity.SYSTEM_WALLPAPER, false) ? View.GONE : View.VISIBLE);
-        toggle(source, "Системные обои", HomeActivity.SYSTEM_WALLPAPER, false, showAtlasWallpaper);
-        showAtlasWallpaper.run();
-
-        LinearLayout wallpaper = card(atlasWallpaper, "Фон рабочего стола", "Выберите изображение для главного экрана.");
+        LinearLayout wallpaper = card(page, "Фон рабочего стола",
+                "Изображение, GIF/WebP-анимация или видео. Видео повторяется без звука. "
+                        + "Анимации воспроизводятся на Android 9 и новее. Фон заполняет экран с обрезкой по краям.");
+        wallpaperKind = label("");
+        wallpaper.addView(wallpaperKind);
         wallpaperPreview = new ImageView(this);
         wallpaperPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
         wallpaperPreview.setBackground(Ui.rounded(Ui.SURFACE_RAISED, dp(8)));
@@ -187,13 +184,19 @@ public final class SettingsActivity extends ScaledActivity {
             thumbnail(wallpaperPresets, uri, HomeActivity.PRESET_NAMES[i]).setOnClickListener(v ->
                     chooseWallpaper(uri));
         }
-        action(wallpaper, "Выбрать изображение", () -> pickImages(PICK_WALLPAPER, false));
+        action(wallpaper, "Выбрать изображение или анимацию", () -> pickMedia(PICK_WALLPAPER, false));
+        action(wallpaper, "Выбрать видео", () -> pickMedia(PICK_VIDEO, false));
         action(wallpaper, "Вернуть стандартный фон", () -> chooseWallpaper(null));
         showWallpaperPreview();
 
-        LinearLayout slideshow = card(atlasWallpaper, "Сменяемый фон",
+        LinearLayout slideshow = card(page, "Сменяемый фон",
                 "Фон меняется, только пока главный экран закрыт другим приложением, и никогда у вас на глазах.");
-        slideshowSwitch = toggle(slideshow, "Менять фон", HomeActivity.SLIDESHOW, false, () -> { });
+        slideshowSwitch = toggle(slideshow, "Менять фон", HomeActivity.SLIDESHOW, false, () -> {
+            if (prefs.getBoolean(HomeActivity.SLIDESHOW, false)) {
+                prefs.edit().remove(HomeActivity.VIDEO_WALLPAPER).apply();
+                showWallpaperPreview();
+            }
+        });
         slideshow.addView(label("Изображения · отметьте фоны, которые будут сменять друг друга"));
         LinearLayout presets = thumbnailRow(slideshow);
         List<String> slides = HomeActivity.slideshowImages(this);
@@ -211,7 +214,7 @@ public final class SettingsActivity extends ScaledActivity {
         ownSlides = column();
         slideshow.addView(ownSlides);
         showOwnSlides();
-        action(slideshow, "Добавить свои изображения", () -> pickImages(PICK_SLIDESHOW, true));
+        action(slideshow, "Добавить свои изображения", () -> pickMedia(PICK_SLIDESHOW, true));
         slideshow.addView(label("Как часто менять"));
         choice(slideshow, HomeActivity.SLIDESHOW_PERIOD,
                 new String[]{"При включении", "15 минут", "Час", "День"}, 0, () -> { });
@@ -415,24 +418,31 @@ public final class SettingsActivity extends ScaledActivity {
     // ---- Фон ----
 
     private void chooseWallpaper(String uri) {
-        SharedPreferences.Editor edit = prefs.edit().putBoolean(HomeActivity.SLIDESHOW, false);
+        SharedPreferences.Editor edit = prefs.edit().putBoolean(HomeActivity.SLIDESHOW, false)
+                .remove(HomeActivity.VIDEO_WALLPAPER);
         (uri == null ? edit.remove(HomeActivity.WALLPAPER) : edit.putString(HomeActivity.WALLPAPER, uri)).apply();
         slideshowSwitch.setChecked(false);
         showWallpaperPreview();
     }
 
     private void showWallpaperPreview() {
+        int generation = ++wallpaperPreviewGeneration;
         String saved = prefs.getString(HomeActivity.WALLPAPER, null);
+        String video = prefs.getString(HomeActivity.VIDEO_WALLPAPER, null);
+        wallpaperKind.setText(video == null ? "Изображение или анимация" : "Видео · повтор без звука");
         for (int i = 0; i < wallpaperPresets.getChildCount(); i++) {
             View thumbnail = wallpaperPresets.getChildAt(i);
-            mark(thumbnail, thumbnail.getTag().equals(saved));
+            mark(thumbnail, video == null && thumbnail.getTag().equals(saved));
         }
         int maxSize = dp(720);
         imageLoader.execute(() -> {
-            Bitmap bitmap = saved == null ? null : HomeActivity.decodeWallpaper(this, Uri.parse(saved), maxSize);
+            Bitmap bitmap = video != null ? VideoWallpaperView.preview(this, Uri.parse(video), maxSize)
+                    : saved == null ? null : HomeActivity.decodeWallpaper(this, Uri.parse(saved), maxSize);
             runOnUiThread(() -> {
+                if (isDestroyed() || generation != wallpaperPreviewGeneration) return;
                 if (bitmap != null) wallpaperPreview.setImageBitmap(bitmap);
                 else wallpaperPreview.setImageResource(R.drawable.coastal_twilight);
+                if (video != null && bitmap == null) wallpaperKind.setText("Видео · предпросмотр недоступен");
             });
         });
     }
@@ -465,26 +475,31 @@ public final class SettingsActivity extends ScaledActivity {
         }
     }
 
-    private void pickImages(int request, boolean multiple) {
+    private void pickMedia(int request, boolean multiple) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("image/*");
+        intent.setType(request == PICK_VIDEO ? "video/*" : "image/*");
         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiple);
         try { startActivityForResult(intent, request); }
-        catch (ActivityNotFoundException e) { Toast.makeText(this, "Выбор изображения недоступен", Toast.LENGTH_SHORT).show(); }
+        catch (ActivityNotFoundException e) { Toast.makeText(this, "Выбор файла недоступен", Toast.LENGTH_SHORT).show(); }
     }
 
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (result != RESULT_OK || data == null) return;
-        if (request == PICK_WALLPAPER && data.getData() != null) {
+        if ((request == PICK_WALLPAPER || request == PICK_VIDEO) && data.getData() != null) {
             Uri uri = data.getData();
             try {
                 getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                chooseWallpaper(uri.toString());
+                if (request == PICK_VIDEO) {
+                    prefs.edit().putString(HomeActivity.VIDEO_WALLPAPER, uri.toString())
+                            .putBoolean(HomeActivity.SLIDESHOW, false).apply();
+                    slideshowSwitch.setChecked(false);
+                    showWallpaperPreview();
+                } else chooseWallpaper(uri.toString());
             } catch (SecurityException e) {
-                Toast.makeText(this, "Нет доступа к изображению", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Нет доступа к файлу", Toast.LENGTH_SHORT).show();
             }
         } else if (request == PICK_SLIDESHOW) {
             ClipData clip = data.getClipData();

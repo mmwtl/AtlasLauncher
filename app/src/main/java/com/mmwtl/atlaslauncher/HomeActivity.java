@@ -26,14 +26,19 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ImageDecoder;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Animatable;
+import android.graphics.drawable.AnimatedImageDrawable;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Parcel;
@@ -53,7 +58,6 @@ import android.view.ViewGroup;
 import android.view.VelocityTracker;
 import android.view.Window;
 import android.view.WindowInsets;
-import android.view.WindowManager;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.GridView;
@@ -118,7 +122,7 @@ public final class HomeActivity extends Activity {
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
     static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
     static final String WALLPAPER = "wallpaper";
-    static final String SYSTEM_WALLPAPER = "system_wallpaper";
+    static final String VIDEO_WALLPAPER = "wallpaper_video";
     static final String SLIDESHOW = "wallpaper_slideshow";
     static final String SLIDESHOW_IMAGES = "wallpaper_slideshow_images";
     static final String SLIDESHOW_PERIOD = "wallpaper_slideshow_period";
@@ -192,6 +196,7 @@ public final class HomeActivity extends Activity {
     private LinearLayout widgetControls;
     private Button settingsButton;
     private ImageView wallpaperView;
+    private VideoWallpaperView videoWallpaper;
     private LinearLayout favoritePanel;
     private LinearLayout appsTile;
     private boolean editingWidgets;
@@ -214,6 +219,8 @@ public final class HomeActivity extends Activity {
     private PopupWindow sourceListPopup;
     // The saved wallpaper on screen, so a change made in settings loads only a new image.
     private String shownWallpaper;
+    private String shownVideo;
+    private int wallpaperGeneration;
     private int slideshowGeneration;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
@@ -316,12 +323,9 @@ public final class HomeActivity extends Activity {
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
         if (key == null) return;
         switch (key) {
-            case SYSTEM_WALLPAPER:
-                showWallpaper();
-                scheduleSlideshow();
-                break;
-            case WALLPAPER:
-                if (!Objects.equals(shownWallpaper, prefs.getString(WALLPAPER, null))) showWallpaper();
+            case VIDEO_WALLPAPER: case WALLPAPER:
+                if (!Objects.equals(shownWallpaper, prefs.getString(WALLPAPER, null))
+                        || !Objects.equals(shownVideo, prefs.getString(VIDEO_WALLPAPER, null))) showWallpaper();
                 scheduleSlideshow();
                 break;
             case SLIDESHOW: case SLIDESHOW_IMAGES: case SLIDESHOW_PERIOD: scheduleSlideshow(); break;
@@ -424,6 +428,7 @@ public final class HomeActivity extends Activity {
     @Override public void onStart() {
         super.onStart();
         homeVisible = true;
+        setWallpaperPlaying(true);
         scheduleSlideshow();
         widgetHost.startListening();
     }
@@ -502,6 +507,7 @@ public final class HomeActivity extends Activity {
         if (sourceListPopup != null) sourceListPopup.dismiss();
         widgetHost.stopListening();
         homeVisible = false;
+        setWallpaperPlaying(false);
         stoppedSinceResume = true;
         // The slideshow changes the wallpaper only while another app covers HOME.
         scheduleSlideshow();
@@ -509,6 +515,8 @@ public final class HomeActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        wallpaperGeneration++;
+        setWallpaperPlaying(false);
         wallpaperView.removeCallbacks(slideshowStep);
         appLoader.shutdownNow();
         wallpaperLoader.shutdownNow();
@@ -535,6 +543,13 @@ public final class HomeActivity extends Activity {
         FrameLayout backdrop = new FrameLayout(this);
         wallpaperView = new ImageView(this);
         wallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        videoWallpaper = new VideoWallpaperView(this, wallpaperLoader, () -> {
+            wallpaperView.setImageDrawable(null);
+        }, () -> {
+            wallpaperView.setImageResource(R.drawable.coastal_twilight);
+            Toast.makeText(this, "Не удалось воспроизвести видео. Выберите другой файл.", Toast.LENGTH_LONG).show();
+        });
+        backdrop.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
         wallpaperView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
                 updateStatusBarIcons();
@@ -801,7 +816,7 @@ public final class HomeActivity extends Activity {
     /** Returns the time until the slideshow is due to change the wallpaper, or -1 if it is not. */
     private long slideshowDelay() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        if (prefs.getBoolean(SYSTEM_WALLPAPER, false)
+        if (prefs.getString(VIDEO_WALLPAPER, null) != null
                 || !prefs.getBoolean(SLIDESHOW, false) || slideshowImages(this).isEmpty()) return -1;
         int period = prefs.getInt(SLIDESHOW_PERIOD, 0);
         if (period == 0) return prefs.getInt(SLIDESHOW_BOOT, -1) != bootCount() ? 0 : -1;
@@ -833,12 +848,13 @@ public final class HomeActivity extends Activity {
         List<String> slides = nextSlides();
         wallpaperLoader.execute(() -> {
             for (String slide : slides) {
-                Bitmap bitmap = decodeWallpaper(this, Uri.parse(slide), 2048);
-                if (bitmap == null) continue;
+                Drawable image = decodeWallpaperDrawable(this, Uri.parse(slide), 2048);
+                if (image == null) continue;
                 runOnUiThread(() -> {
                     // HOME or the settings may have changed while the image loaded.
                     if (isDestroyed() || homeVisible || generation != slideshowGeneration) return;
-                    applyWallpaper(slide, bitmap);
+                    applyWallpaper(image);
+                    shownWallpaper = slide;
                     saveSlide(slide);
                 });
                 return;
@@ -973,33 +989,54 @@ public final class HomeActivity extends Activity {
 
     private void showWallpaper() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        boolean system = prefs.getBoolean(SYSTEM_WALLPAPER, false);
-        getWindow().setBackgroundDrawable(new ColorDrawable(system ? Color.TRANSPARENT : BACKGROUND));
-        if (system) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
-        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
-        // The system wallpaper is a separate surface: keep white status icons legible without sampling it.
-        wallpaperView.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{Color.argb(system ? 160 : 45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
-        if (system) {
-            wallpaperView.setImageDrawable(null);
-            updateStatusBarIcons();
+        int generation = ++wallpaperGeneration;
+        if (wallpaperView.getDrawable() instanceof Animatable) ((Animatable) wallpaperView.getDrawable()).stop();
+        shownWallpaper = prefs.getString(WALLPAPER, null);
+        shownVideo = prefs.getString(VIDEO_WALLPAPER, null);
+        videoWallpaper.setVideo(shownVideo);
+        if (shownVideo != null) {
+            wallpaperView.setImageResource(R.drawable.coastal_twilight);
+            updateWallpaperStyle();
             return;
         }
-        String saved = prefs.getString(WALLPAPER, null);
+        String saved = shownWallpaper;
         Uri uri = saved == null ? null : Uri.parse(saved);
         if (uri != null && !ContentResolver.SCHEME_ANDROID_RESOURCE.equals(uri.getScheme())) {
+            if (wallpaperView.getDrawable() == null) wallpaperView.setImageResource(R.drawable.coastal_twilight);
             // A picked image comes from its document provider, which may take seconds to start right after boot.
             wallpaperLoader.execute(() -> {
-                Bitmap bitmap = decodeWallpaper(this, uri, 2048);
+                Drawable image = decodeWallpaperDrawable(this, uri, 2048);
                 runOnUiThread(() -> {
                     // A newer choice may have replaced this one while it loaded.
-                    if (!isDestroyed() && saved.equals(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null)))
-                        applyWallpaper(saved, bitmap);
+                    if (!isDestroyed() && generation == wallpaperGeneration) {
+                        applyWallpaper(image);
+                        if (image == null) Toast.makeText(this, "Не удалось загрузить фон", Toast.LENGTH_SHORT).show();
+                    }
                 });
             });
             return;
         }
-        applyWallpaper(saved, uri == null ? null : decodeWallpaper(this, uri, 2048));
+        applyWallpaper(uri == null ? null : decodeWallpaperDrawable(this, uri, 2048));
+    }
+
+    /** Android 9+ decodes GIF and animated WebP without a separate animation library. */
+    private static Drawable decodeWallpaperDrawable(Context context, Uri uri, int maxSize) {
+        if (Build.VERSION.SDK_INT >= 28 && !isPresetUri(uri.toString())) {
+            try {
+                return ImageDecoder.decodeDrawable(ImageDecoder.createSource(context.getContentResolver(), uri),
+                        (decoder, info, source) -> {
+                            int longest = Math.max(info.getSize().getWidth(), info.getSize().getHeight());
+                            if (longest > maxSize) decoder.setTargetSize(
+                                    Math.max(1, info.getSize().getWidth() * maxSize / longest),
+                                    Math.max(1, info.getSize().getHeight() * maxSize / longest));
+                            decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
+                        });
+            } catch (IOException | SecurityException e) {
+                return null;
+            }
+        }
+        Bitmap bitmap = decodeWallpaper(context, uri, maxSize);
+        return bitmap == null ? null : new BitmapDrawable(context.getResources(), bitmap);
     }
 
     /** Returns null if the image cannot be read. */
@@ -1022,20 +1059,38 @@ public final class HomeActivity extends Activity {
         }
     }
 
-    private void applyWallpaper(String saved, Bitmap bitmap) {
-        // A document provider may finish loading an image after switching to the system wallpaper.
-        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(SYSTEM_WALLPAPER, false)) return;
-        if (bitmap != null) wallpaperView.setImageBitmap(bitmap);
-        else {
-            wallpaperView.setImageResource(R.drawable.coastal_twilight);
-            if (saved != null) Toast.makeText(this, "Не удалось загрузить фон", Toast.LENGTH_SHORT).show();
+    private void applyWallpaper(Drawable image) {
+        if (wallpaperView.getDrawable() instanceof Animatable) ((Animatable) wallpaperView.getDrawable()).stop();
+        if (image != null) wallpaperView.setImageDrawable(image);
+        else wallpaperView.setImageResource(R.drawable.coastal_twilight);
+        if (Build.VERSION.SDK_INT >= 28 && image instanceof AnimatedImageDrawable)
+            ((AnimatedImageDrawable) image).setRepeatCount(AnimatedImageDrawable.REPEAT_INFINITE);
+        setWallpaperPlaying(homeVisible);
+        updateWallpaperStyle();
+    }
+
+    private void setWallpaperPlaying(boolean playing) {
+        videoWallpaper.setActive(playing);
+        Drawable image = wallpaperView.getDrawable();
+        if (image instanceof Animatable) {
+            if (playing) ((Animatable) image).start();
+            else ((Animatable) image).stop();
         }
-        shownWallpaper = saved;
+    }
+
+    private boolean animatedWallpaper() {
+        return shownVideo != null || wallpaperView.getDrawable() instanceof Animatable;
+    }
+
+    private void updateWallpaperStyle() {
+        // Animation frames can change brightness: keep white status icons against a stronger top scrim.
+        wallpaperView.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{Color.argb(animatedWallpaper() ? 160 : 45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
         updateStatusBarIcons();
     }
 
     private void updateStatusBarIcons() {
-        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(SYSTEM_WALLPAPER, false)) {
+        if (animatedWallpaper()) {
             View decor = getWindow().getDecorView();
             decor.setSystemUiVisibility(decor.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
             return;
