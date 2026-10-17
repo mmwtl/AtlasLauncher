@@ -211,6 +211,7 @@ public final class HomeActivity extends Activity {
     private PopupWindow sourceListPopup;
     // The saved wallpaper on screen, so a change made in settings loads only a new image.
     private String shownWallpaper;
+    private int slideshowGeneration;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
@@ -314,7 +315,9 @@ public final class HomeActivity extends Activity {
         switch (key) {
             case WALLPAPER:
                 if (!Objects.equals(shownWallpaper, prefs.getString(WALLPAPER, null))) showWallpaper();
+                scheduleSlideshow();
                 break;
+            case SLIDESHOW: case SLIDESHOW_IMAGES: case SLIDESHOW_PERIOD: scheduleSlideshow(); break;
             case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
             case CLIMATE_PANEL_HIDDEN: applyClimatePanel(); break;
             case CLUSTER_BRIGHTNESS: applyClusterBrightness(); break;
@@ -410,7 +413,7 @@ public final class HomeActivity extends Activity {
     @Override public void onStart() {
         super.onStart();
         homeVisible = true;
-        wallpaperView.removeCallbacks(slideshowStep);
+        scheduleSlideshow();
         widgetHost.startListening();
     }
 
@@ -481,12 +484,12 @@ public final class HomeActivity extends Activity {
         homeVisible = false;
         stoppedSinceResume = true;
         // The slideshow changes the wallpaper only while another app covers HOME.
-        long delay = slideshowDelay();
-        if (delay >= 0) wallpaperView.postDelayed(slideshowStep, delay);
+        scheduleSlideshow();
         super.onStop();
     }
 
     @Override protected void onDestroy() {
+        wallpaperView.removeCallbacks(slideshowStep);
         appLoader.shutdownNow();
         wallpaperLoader.shutdownNow();
         if (dimKeyBound) unbindService(dimKeyConnection);
@@ -768,6 +771,15 @@ public final class HomeActivity extends Activity {
         context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(SLIDESHOW_IMAGES, new JSONArray(images).toString()).apply();
     }
 
+    /** Replaces the timer and invalidates any image still loading with the previous settings. */
+    private void scheduleSlideshow() {
+        slideshowGeneration++;
+        wallpaperView.removeCallbacks(slideshowStep);
+        if (homeVisible) return;
+        long delay = slideshowDelay();
+        if (delay >= 0) wallpaperView.postDelayed(slideshowStep, delay);
+    }
+
     /** Returns the time until the slideshow is due to change the wallpaper, or -1 if it is not. */
     private long slideshowDelay() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
@@ -797,15 +809,16 @@ public final class HomeActivity extends Activity {
 
     /** Shows the next readable slideshow image; runs only while HOME is hidden. */
     private void advanceSlideshow() {
-        if (isDestroyed()) return;
+        if (isDestroyed() || homeVisible || slideshowDelay() != 0) return;
+        int generation = slideshowGeneration;
         List<String> slides = nextSlides();
         wallpaperLoader.execute(() -> {
             for (String slide : slides) {
                 Bitmap bitmap = decodeWallpaper(this, Uri.parse(slide), 2048);
                 if (bitmap == null) continue;
                 runOnUiThread(() -> {
-                    // HOME came back while the image loaded; the change waits until it is hidden again.
-                    if (isDestroyed() || homeVisible) return;
+                    // HOME or the settings may have changed while the image loaded.
+                    if (isDestroyed() || homeVisible || generation != slideshowGeneration) return;
                     applyWallpaper(slide, bitmap);
                     saveSlide(slide);
                 });
