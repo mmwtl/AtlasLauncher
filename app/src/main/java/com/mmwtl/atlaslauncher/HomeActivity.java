@@ -1,16 +1,13 @@
 package com.mmwtl.atlaslauncher;
 
-import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
 import android.app.ActivityOptions;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.appwidget.AppWidgetHost;
 import android.appwidget.AppWidgetHostView;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProviderInfo;
 import android.content.ActivityNotFoundException;
-import android.content.ClipData;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -24,7 +21,6 @@ import android.content.res.Configuration;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.util.Log;
-import android.content.pm.ActivityInfo;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -37,10 +33,8 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
-import android.media.AudioManager;
 import android.os.Binder;
 import android.os.Bundle;
-import android.os.Build;
 import android.os.IBinder;
 import android.os.Parcel;
 import android.os.RemoteException;
@@ -50,6 +44,7 @@ import android.net.Uri;
 import android.text.TextUtils;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
@@ -57,10 +52,8 @@ import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
-import android.view.accessibility.AccessibilityManager;
 import android.widget.BaseAdapter;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.GridView;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -70,9 +63,6 @@ import android.widget.PopupWindow;
 import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.SeekBar;
-import android.widget.ScrollView;
-import android.widget.Switch;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -86,6 +76,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -97,8 +88,6 @@ public final class HomeActivity extends Activity {
     private static final int SURFACE = Color.argb(220, 9, 26, 47);
     private static final int SURFACE_RAISED = Color.argb(224, 27, 47, 73);
     private static final int ACCENT = Color.rgb(46, 150, 246);
-    // Active tiles of the Atlas widgets (AtlasClimateWidget palette "Atlas").
-    private static final int ATLAS_ACTIVE = Color.rgb(120, 147, 160);
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
     static final int NEUTRAL_SURFACE = Color.rgb(35, 37, 40);
@@ -108,33 +97,31 @@ public final class HomeActivity extends Activity {
     private static final int HOST_ID = 240925;
     private static final int BIND_WIDGET = 1;
     private static final int CONFIGURE_WIDGET = 2;
-    private static final int PICK_WALLPAPER = 3;
     private static final int RECONFIGURE_WIDGET = 4;
     private static final int BIND_SOURCE_LIST = 5;
-    private static final int PICK_SLIDESHOW = 6;
     private static final int CLOCK_WIDGET_ID = -2;
     private static final int DOCK_WIDGET_ID = -3;
     private static final int VOLUME_WIDGET_ID = -4;
-    private static final int WIDGET_CELL_DP = 96;
+    static final int WIDGET_CELL_DP = 96;
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
-    private static final int CLIMATE_PANEL_PX = 150;
+    static final int CLIMATE_PANEL_PX = 150;
     private static final int HIDDEN_CLIMATE_PANEL_PX = 24;
-    private static final int MAX_ICON_DP = 160;
+    static final int MAX_ICON_DP = 160;
     private static final int WIDGET_PREVIEW_DP = 150;
     static final String PREFS = "home";
-    private static final String FAVORITES = "favorites";
+    static final String FAVORITES = "favorites";
     private static final String WIDGETS = "widgets";
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
-    private static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
-    private static final String WALLPAPER = "wallpaper";
-    private static final String SLIDESHOW = "wallpaper_slideshow";
-    private static final String SLIDESHOW_IMAGES = "wallpaper_slideshow_images";
-    private static final String SLIDESHOW_PERIOD = "wallpaper_slideshow_period";
+    static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
+    static final String WALLPAPER = "wallpaper";
+    static final String SLIDESHOW = "wallpaper_slideshow";
+    static final String SLIDESHOW_IMAGES = "wallpaper_slideshow_images";
+    static final String SLIDESHOW_PERIOD = "wallpaper_slideshow_period";
     private static final String SLIDESHOW_CHANGED_AT = "wallpaper_slideshow_changed_at";
     private static final String SLIDESHOW_BOOT = "wallpaper_slideshow_boot";
     // Index 0 changes the wallpaper once per boot.
     private static final long[] SLIDESHOW_PERIODS_MS = {0, 15 * 60_000, 60 * 60_000, 24 * 60 * 60_000};
-    private static final int[] PRESET_WALLPAPERS = {
+    static final int[] PRESET_WALLPAPERS = {
             R.drawable.wallpaper_car_suv, R.drawable.wallpaper_orange_trails,
             R.drawable.wallpaper_graphite, R.drawable.wallpaper_purple_sky,
             R.drawable.wallpaper_car_sedan, R.drawable.wallpaper_red_carbon,
@@ -142,34 +129,23 @@ public final class HomeActivity extends Activity {
             R.drawable.wallpaper_mountain_road, R.drawable.wallpaper_night_city,
             R.drawable.wallpaper_dark_marble, R.drawable.wallpaper_mountain_sunset
     };
-    private static final String[] PRESET_NAMES = {"Внедорожник", "Огни дороги", "Графит", "Звёздная ночь",
+    static final String[] PRESET_NAMES = {"Внедорожник", "Огни дороги", "Графит", "Звёздная ночь",
             "Седан", "Красный карбон", "Синий поток", "Бирюза", "Горная дорога",
             "Ночной город", "Тёмный мрамор", "Горный закат"};
-    private static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
-    private static final String CLUSTER_BRIGHTNESS = "cluster_brightness_follows_screen";
-    private static final String GESTURES_ENABLED = "gestures_enabled";
+    static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
+    static final String CLUSTER_BRIGHTNESS = "cluster_brightness_follows_screen";
+    static final String GESTURES_ENABLED = "gestures_enabled";
     static final String GESTURES_PRIORITY = "gestures_priority";
     static final String GESTURES_TRIGGER = "gestures_trigger";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
-    private static final String DOCK_APPS = "dock_apps";
-    private static final String DRAWER_ICON_SIZE = "drawer_icon_size";
-    private static final String DOCK_LABELS = "drawer_labels";
+    static final String DOCK_APPS = "dock_apps";
+    static final String DRAWER_ICON_SIZE = "drawer_icon_size";
+    static final String DOCK_LABELS = "drawer_labels";
     static final String DRAWER_ACTIVITY = "drawer_activity";
-    private static final String GIB_LAUNCHER = "com.salat.gbinder/com.salat.gbinder.AppLauncher";
-    private static final String CLOCK_FORMAT = "clock_format";
-    private static final String CLOCK_WEIGHT = "clock_weight";
-    private static final String CLOCK_FONT = "clock_font";
-    private static final String CLOCK_DATE = "clock_date";
-    private static final String VOLUME_MUTE = "volume_mute";
-    private static final String VOLUME_ICONS = "volume_icons";
-    private static final String VOLUME_JOINED = "volume_joined";
-    // Volume up, volume down for each icon style; mute uses one icon in every style.
-    private static final int[][] VOLUME_ICON_STYLES = {
-            {R.drawable.ic_volume_up, R.drawable.ic_volume_down},
-            {R.drawable.ic_plus, R.drawable.ic_minus},
-            {R.drawable.ic_chevron_up, R.drawable.ic_chevron_down}
-    };
+    static final String EDIT_DELAY = "edit_long_press_delay";
+    // Hold time before editing starts; index 0 is the system long press timeout.
+    private static final long[] EDIT_DELAYS_MS = {0, 1000, 2000, 3000};
     // The OneOS media widget asks Launcher3 to show its source list; Atlas hosts that list itself.
     private static final String MEDIA_WIDGET_PACKAGE = "com.geely.mediawidget";
     private static final ComponentName SOURCE_LIST_PROVIDER = new ComponentName(MEDIA_WIDGET_PACKAGE,
@@ -208,13 +184,12 @@ public final class HomeActivity extends Activity {
     private boolean editingWidgets;
     private boolean startupPending;
     private boolean homeVisible;
-    private boolean multiTouch;
-    private Dialog settingsDialog;
+    private float pressX;
+    private float pressY;
+    private boolean pressStartedEditing;
     private PopupWindow sourceListPopup;
-    private int settingsPage;
-    private ImageView settingsWallpaperPreview;
-    private LinearLayout settingsWallpaperPresets;
-    private LinearLayout settingsRedirectState;
+    // The saved wallpaper on screen, so a change made in settings loads only a new image.
+    private String shownWallpaper;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
@@ -311,6 +286,26 @@ public final class HomeActivity extends Activity {
     };
     private final Runnable renderWidgets = this::showWidgets;
     private final Runnable slideshowStep = this::advanceSlideshow;
+    private final Runnable editByPress = this::startEditingByPress;
+    // Settings only write the prefs; HOME applies each change, also while it is hidden under them.
+    private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
+        if (key == null) return;
+        switch (key) {
+            case WALLPAPER:
+                if (!Objects.equals(shownWallpaper, prefs.getString(WALLPAPER, null))) showWallpaper();
+                break;
+            case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
+            case CLIMATE_PANEL_HIDDEN: applyClimatePanel(); break;
+            case CLUSTER_BRIGHTNESS: applyClusterBrightness(); break;
+            case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: applyGestures(); break;
+            case FAVORITES: loadFavorites(prefs); showFavorites(); break;
+            case DOCK_LABELS: case DOCK_APPS: case DRAWER_ICON_SIZE: scheduleShowWidgets(); break;
+            case BuiltInWidgets.CLOCK_FORMAT: case BuiltInWidgets.CLOCK_WEIGHT: case BuiltInWidgets.CLOCK_FONT:
+            case BuiltInWidgets.CLOCK_DATE: updateDesktopClock(); break;
+            case BuiltInWidgets.VOLUME_MUTE: case BuiltInWidgets.VOLUME_ICONS: case BuiltInWidgets.VOLUME_JOINED:
+                updateDesktopVolume(); break;
+        }
+    };
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             fixedLayouts.clear();
@@ -364,9 +359,8 @@ public final class HomeActivity extends Activity {
         // HOME is not drawn yet, so a due slideshow change here is never seen.
         if (slideshowDelay() == 0) saveSlide(nextSlides().get(0));
         buildHome();
-        if (state != null && state.getBoolean("settingsOpen"))
-            widgetRow.post(() -> showSettings(state.getInt("settingsPage", 0)));
-        else if (state == null && getIntent().getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false))
+        getSharedPreferences(PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefsListener);
+        if (state == null && getIntent().getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false))
             AllAppsActivity.open(this);
     }
 
@@ -383,8 +377,6 @@ public final class HomeActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
         state.putBoolean("editingWidgets", editingWidgets);
-        state.putBoolean("settingsOpen", settingsDialog != null && settingsDialog.isShowing());
-        state.putInt("settingsPage", settingsPage);
         // Only a newly allocated widget belongs to the add/cancel lifecycle.
         state.putInt("pendingWidgetId", pendingWidgetId);
     }
@@ -400,8 +392,6 @@ public final class HomeActivity extends Activity {
         super.onResume();
         // The system 12/24-hour setting may have changed while HOME was in the background.
         updateDesktopClock();
-        // The accessibility permission may have been granted in Android settings.
-        updateStockHomeRedirectState();
         // Like Launcher3: OneOS LifeControlService starts its last boot stage (hvac, settings, gesture and
         // other OEM services, night mode) only on this broadcast from the first resume of HOME.
         if (startupPending) {
@@ -421,7 +411,7 @@ public final class HomeActivity extends Activity {
         // The DIM key service does not see Launcher3 start there, only once the service itself starts; if GIB stopped
         // it, binding from HOME restarts it, otherwise its own fallback timer reports.
         if (!getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(StockHomeRedirectService.ENABLED, false)
-                || !isStockHomeRedirectActive()) return;
+                || !StockHomeRedirectService.isActive(this)) return;
         try {
             startActivity(new Intent(Intent.ACTION_MAIN).setClassName("com.android.launcher3", "com.android.launcher3.Launcher")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -452,8 +442,7 @@ public final class HomeActivity extends Activity {
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        // Home returns to a clean desktop, like the stock launcher.
-        if (settingsDialog != null) settingsDialog.dismiss();
+        // Home returns to a clean desktop, like the stock launcher; the settings above HOME close with its task.
         if (editingWidgets) setEditingWidgets(false);
         if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false)) AllAppsActivity.open(this);
     }
@@ -475,7 +464,7 @@ public final class HomeActivity extends Activity {
         if (powerBound) releasePowerService();
         unregisterReceiver(packageReceiver);
         unregisterReceiver(volumeReceiver);
-        if (settingsDialog != null) settingsDialog.dismiss();
+        getSharedPreferences(PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefsListener);
         super.onDestroy();
     }
 
@@ -511,7 +500,6 @@ public final class HomeActivity extends Activity {
         applyClimatePanel();
         applyWidgetSideMargin();
         widgetRow.setClickable(true);
-        widgetRow.setOnLongClickListener(v -> startEditingByLongPress());
         widgetRow.setOnClickListener(v -> { if (editingWidgets) setEditingWidgets(false); });
         widgetRow.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
@@ -523,7 +511,7 @@ public final class HomeActivity extends Activity {
         settingsButton.setTextSize(28);
         settingsButton.setBackground(round(SURFACE, Color.TRANSPARENT, 38));
         settingsButton.setVisibility(editingWidgets ? View.VISIBLE : View.GONE);
-        settingsButton.setOnClickListener(v -> showSettings());
+        settingsButton.setOnClickListener(v -> SettingsActivity.open(this, SettingsActivity.PAGE_MAIN));
         FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(dp(76), dp(76), Gravity.TOP | Gravity.RIGHT);
         settingsParams.setMargins(0, dp(16), dp(20), 0);
         content.addView(settingsButton, settingsParams);
@@ -568,7 +556,6 @@ public final class HomeActivity extends Activity {
         appsIcon.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 34));
         appsIcon.setPadding(dp(18), dp(18), dp(18), dp(18));
         appsTile.setOnClickListener(v -> AllAppsActivity.open(this));
-        appsTile.setOnLongClickListener(v -> startEditingByLongPress());
         updateDock();
         showFavorites();
         return favoritePanel;
@@ -654,7 +641,6 @@ public final class HomeActivity extends Activity {
             if (app == null) continue;
             View item = dockTile(app.icon, app.label);
             item.setOnClickListener(v -> launch(app));
-            item.setOnLongClickListener(v -> startEditingByLongPress());
             favoriteRow.addView(item, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
         }
         int shownApps = favoriteRow.getChildCount();
@@ -707,88 +693,6 @@ public final class HomeActivity extends Activity {
         return button;
     }
 
-    private void chooseDrawerAction(Runnable onChanged) {
-        String[] choices = {"Встроенный каталог", "GLauncher (GIB)", "Activity установленного приложения", "Указать Activity вручную"};
-        new AlertDialog.Builder(this).setTitle("Открывать по кнопке «Все приложения»")
-                .setItems(choices, (dialog, which) -> {
-                    if (which == 0) {
-                        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(DRAWER_ACTIVITY).apply();
-                        onChanged.run();
-                    } else if (which == 1) {
-                        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(DRAWER_ACTIVITY, GIB_LAUNCHER).apply();
-                        onChanged.run();
-                    } else if (which == 2) {
-                        chooseActivityPackage(onChanged);
-                    } else {
-                        enterDrawerActivity(onChanged);
-                    }
-                }).show();
-    }
-
-    private void chooseActivityPackage(Runnable onChanged) {
-        List<String> packages = new ArrayList<>();
-        List<String> titles = new ArrayList<>();
-        for (AppEntry app : apps) {
-            String name = app.component.getPackageName();
-            if (packages.contains(name)) continue;
-            packages.add(name);
-            titles.add(app.label + "\n" + name);
-        }
-        new AlertDialog.Builder(this).setTitle("Выберите приложение")
-                .setItems(titles.toArray(new String[0]), (dialog, which) -> choosePackageActivity(packages.get(which), onChanged)).show();
-    }
-
-    @SuppressWarnings("deprecation")
-    private void choosePackageActivity(String packageName, Runnable onChanged) {
-        List<ComponentName> components = new ArrayList<>();
-        List<String> titles = new ArrayList<>();
-        try {
-            ActivityInfo[] activities = getPackageManager().getPackageInfo(packageName, PackageManager.GET_ACTIVITIES).activities;
-            if (activities != null) for (ActivityInfo activity : activities) {
-                if (!activity.exported || !activity.enabled || !activity.applicationInfo.enabled) continue;
-                if (activity.permission != null && checkSelfPermission(activity.permission) != PackageManager.PERMISSION_GRANTED) continue;
-                ComponentName component = new ComponentName(packageName, activity.name);
-                components.add(component);
-                titles.add(activity.loadLabel(getPackageManager()) + "\n" + activity.name);
-            }
-        } catch (PackageManager.NameNotFoundException e) {
-            Toast.makeText(this, "Приложение больше не установлено", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (components.isEmpty()) {
-            Toast.makeText(this, "Нет доступных для внешнего запуска Activity", Toast.LENGTH_LONG).show();
-            return;
-        }
-        new AlertDialog.Builder(this).setTitle("Activity для запуска")
-                .setItems(titles.toArray(new String[0]), (dialog, which) -> {
-                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                            .putString(DRAWER_ACTIVITY, components.get(which).flattenToString()).apply();
-                    onChanged.run();
-                }).show();
-    }
-
-    private void enterDrawerActivity(Runnable onChanged) {
-        EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setHint("package.name/.ActivityName");
-        input.setText(getSharedPreferences(PREFS, MODE_PRIVATE).getString(DRAWER_ACTIVITY, ""));
-        input.setPadding(dp(24), dp(16), dp(24), dp(16));
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Activity для запуска")
-                .setMessage("Укажите пакет и класс Activity через /. Приложение должно разрешать её внешний запуск.")
-                .setView(input).setNegativeButton("Отмена", null).setPositiveButton("Сохранить", null).create();
-        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            ComponentName component = ComponentName.unflattenFromString(input.getText().toString().trim());
-            if (component == null || component.getPackageName().isEmpty() || component.getClassName().isEmpty()) {
-                input.setError("Формат: package.name/.ActivityName");
-                return;
-            }
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(DRAWER_ACTIVITY, component.flattenToString()).apply();
-            onChanged.run();
-            dialog.dismiss();
-        }));
-        dialog.show();
-    }
-
     private void launch(AppEntry app) {
         try {
             Intent intent = new Intent(Intent.ACTION_MAIN);
@@ -802,298 +706,18 @@ public final class HomeActivity extends Activity {
         }
     }
 
-    private void showSettings() {
-        showSettings(0);
+    static String presetUri(Context context, int resource) {
+        return "android.resource://" + context.getPackageName() + "/drawable/" + context.getResources().getResourceEntryName(resource);
     }
 
-    private void showSettings(int page) {
-        if (settingsDialog != null && settingsDialog.isShowing()) return;
-        settingsPage = page;
-        Dialog dialog = new Dialog(this);
-        settingsDialog = dialog;
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.setOnDismissListener(d -> {
-            // The slideshow page replaces the main page before this posted callback runs.
-            if (settingsDialog == dialog) settingsDialog = null;
-            settingsWallpaperPreview = null;
-            settingsWallpaperPresets = null;
-            settingsRedirectState = null;
-        });
-
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(20), dp(20), dp(16));
-        panel.setBackground(round(NEUTRAL_SURFACE, NEUTRAL_RAISED, 28));
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView heading = label(page == 1 ? "Док приложений" : page == 2 ? "Настройки часов"
-                        : page == 3 ? "Сменяемый фон" : page == 4 ? "Громкость" : "Настройки",
-                28, NEUTRAL_TEXT, true);
-        header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        ImageView donate = new ImageView(this);
-        donate.setImageResource(R.drawable.ic_heart);
-        donate.setColorFilter(ATLAS_ACTIVE);
-        donate.setPadding(dp(8), dp(8), dp(8), dp(8));
-        donate.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 12));
-        donate.setContentDescription(getString(R.string.donate_title));
-        donate.setOnClickListener(v -> DonateDialog.show(this));
-        LinearLayout.LayoutParams donateParams = new LinearLayout.LayoutParams(dp(40), dp(40));
-        donateParams.setMargins(dp(12), 0, dp(12), 0);
-        header.addView(donate, donateParams);
-        Button close = neutralButton("×");
-        close.setTextSize(26);
-        close.setContentDescription("Закрыть настройки");
-        close.setOnClickListener(v -> dialog.dismiss());
-        header.addView(close, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        panel.addView(header, new LinearLayout.LayoutParams(-1, -2));
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(content);
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
-        scrollParams.topMargin = dp(24);
-        panel.addView(scroll, scrollParams);
-        // Dock, clock and volume are widgets: their pages open only from the widget's own settings button.
-        if (page == 1) buildDockSettings(content);
-        else if (page == 2) buildClockSettings(content);
-        else if (page == 3) buildSlideshowSettings(content);
-        else if (page == 4) buildVolumeSettings(content);
-        else {
-            buildDesktopSettings(content, dialog);
-            buildWidgetAreaSettings(content);
-            buildAllAppsSettings(content);
-            buildSystemSettings(content);
-            LinearLayout gstore = settingsCard(content, getString(R.string.gstore_title), getString(R.string.gstore_hint));
-            settingsAction(gstore, getString(R.string.gstore_button), () -> GStoreDialog.show(this));
-            LinearLayout support = settingsCard(content, getString(R.string.donate_title), getString(R.string.donate_hint));
-            settingsAction(support, getString(R.string.donate_button), () -> DonateDialog.show(this));
-        }
-
-        LinearLayout footer = new LinearLayout(this);
-        footer.setGravity(Gravity.CENTER_VERTICAL);
-        TextView hint = label("Изменения сохраняются сразу", 13, NEUTRAL_MUTED, false);
-        footer.addView(hint, new LinearLayout.LayoutParams(0, -2, 1));
-        Button done = neutralButton("Готово");
-        done.setOnClickListener(v -> dialog.dismiss());
-        LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(dp(112), dp(52));
-        doneParams.leftMargin = dp(12);
-        footer.addView(done, doneParams);
-        LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, -2);
-        footerParams.topMargin = dp(16);
-        panel.addView(footer, footerParams);
-        dialog.setContentView(panel);
-        dialog.show();
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawableResource(android.R.color.transparent);
-            Rect available = new Rect();
-            getWindow().getDecorView().getWindowVisibleDisplayFrame(available);
-            window.setLayout(Math.min(available.width() - dp(32), dp(880)),
-                    Math.min(available.height() - dp(48), dp(1040)));
-            window.setDimAmount(0.72f);
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        }
-    }
-
-    private LinearLayout settingsCard(LinearLayout parent, String title, String description) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(18), dp(16), dp(16));
-        card.setBackground(round(Color.rgb(44, 47, 51), Color.TRANSPARENT, 20));
-        TextView heading = label(title, 20, NEUTRAL_TEXT, true);
-        card.addView(heading);
-        if (description != null) {
-            TextView subtitle = label(description, 14, NEUTRAL_MUTED, false);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-            params.setMargins(0, dp(6), 0, dp(12));
-            card.addView(subtitle, params);
-        }
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.bottomMargin = dp(14);
-        parent.addView(card, params);
-        return card;
-    }
-
-    private Button settingsAction(LinearLayout parent, String title, Runnable action) {
-        Button button = neutralButton(title);
-        button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-        button.setPadding(dp(16), dp(12), dp(16), dp(12));
-        button.setMinHeight(dp(56));
-        button.setOnClickListener(v -> action.run());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(8);
-        parent.addView(button, params);
-        return button;
-    }
-
-    private void settingsToggle(LinearLayout parent, String title, String key, boolean defaultValue, Runnable changed) {
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        settingsSwitch(parent, title, prefs.getBoolean(key, defaultValue), checked -> {
-            prefs.edit().putBoolean(key, checked).apply();
-            changed.run();
-        });
-    }
-
-    private void settingsSwitch(LinearLayout parent, String title, boolean checked, Consumer<Boolean> changed) {
-        Switch toggle = new Switch(this);
-        toggle.setText(title);
-        toggle.setTextColor(NEUTRAL_TEXT);
-        toggle.setTextSize(16);
-        toggle.setSwitchPadding(dp(16));
-        toggle.setPadding(0, dp(12), 0, dp(12));
-        toggle.setMinHeight(dp(60));
-        toggle.setThumbTintList(ColorStateList.valueOf(NEUTRAL_TEXT));
-        toggle.setTrackTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-                new int[]{Color.rgb(74, 133, 187), NEUTRAL_RAISED}));
-        toggle.setChecked(checked);
-        toggle.setOnCheckedChangeListener((view, value) -> changed.accept(value));
-        parent.addView(toggle, new LinearLayout.LayoutParams(-1, -2));
-    }
-
-    private void buildDesktopSettings(LinearLayout content, Dialog dialog) {
-        LinearLayout wallpaper = settingsCard(content, "Фон рабочего стола", "Выберите изображение для главного экрана.");
-        ImageView preview = new ImageView(this);
-        settingsWallpaperPreview = preview;
-        // A picked image may still be loading; applyWallpaper fills the preview then.
-        Drawable current = wallpaperView.getDrawable();
-        if (current != null) preview.setImageDrawable(current.getConstantState().newDrawable());
-        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        preview.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 16));
-        preview.setClipToOutline(true);
-        wallpaper.addView(preview, new LinearLayout.LayoutParams(-1, dp(180)));
-        TextView presetsLabel = label("Встроенные фоны · листайте в сторону", 14, NEUTRAL_MUTED, false);
-        presetsLabel.setPadding(0, dp(16), 0, dp(8));
-        wallpaper.addView(presetsLabel);
-        LinearLayout presets = thumbnailRow(wallpaper);
-        settingsWallpaperPresets = presets;
-        for (int i = 0; i < PRESET_WALLPAPERS.length; i++) {
-            String uri = presetUri(PRESET_WALLPAPERS[i]);
-            wallpaperThumbnail(presets, uri, PRESET_NAMES[i]).setOnClickListener(v -> {
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri)
-                        .putBoolean(SLIDESHOW, false).apply();
-                showWallpaper();
-            });
-        }
-        markWallpaperPreset(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null));
-        settingsAction(wallpaper, "Выбрать изображение", () -> {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("image/*");
-            try { startActivityForResult(intent, PICK_WALLPAPER); }
-            catch (ActivityNotFoundException e) { Toast.makeText(this, "Выбор изображения недоступен", Toast.LENGTH_SHORT).show(); }
-        });
-        settingsAction(wallpaper, "Вернуть стандартный фон", () -> {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(WALLPAPER).putBoolean(SLIDESHOW, false).apply();
-            showWallpaper();
-        });
-        settingsAction(wallpaper, "Сменяемый фон", () -> {
-            dialog.dismiss();
-            showSettings(3);
-        });
-    }
-
-    private void buildSlideshowSettings(LinearLayout content) {
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        LinearLayout state = settingsCard(content, "Смена фона",
-                "Фон меняется, только пока главный экран закрыт другим приложением, и никогда у вас на глазах.");
-        settingsToggle(state, "Менять фон", SLIDESHOW, false, () -> { });
-        LinearLayout images = settingsCard(content, "Изображения", "Отметьте фоны, которые будут сменять друг друга.");
-        LinearLayout presets = thumbnailRow(images);
-        List<String> slides = slideshowImages();
-        for (int i = 0; i < PRESET_WALLPAPERS.length; i++) {
-            String uri = presetUri(PRESET_WALLPAPERS[i]);
-            ImageView thumbnail = wallpaperThumbnail(presets, uri, PRESET_NAMES[i]);
-            markThumbnail(thumbnail, slides.contains(uri));
-            thumbnail.setOnClickListener(v -> {
-                List<String> current = slideshowImages();
-                if (!current.remove(uri)) current.add(uri);
-                saveSlideshowImages(current);
-                markThumbnail(thumbnail, current.contains(uri));
-            });
-        }
-        if (slides.stream().anyMatch(uri -> !isPresetUri(uri))) {
-            TextView ownLabel = label("Свои изображения · нажмите, чтобы убрать", 14, NEUTRAL_MUTED, false);
-            ownLabel.setPadding(0, dp(16), 0, dp(8));
-            images.addView(ownLabel);
-            LinearLayout own = thumbnailRow(images);
-            for (String uri : slides) {
-                if (isPresetUri(uri)) continue;
-                ImageView thumbnail = wallpaperThumbnail(own, uri, "Своё изображение");
-                markThumbnail(thumbnail, true);
-                thumbnail.setOnClickListener(v -> {
-                    List<String> current = slideshowImages();
-                    current.remove(uri);
-                    saveSlideshowImages(current);
-                    own.removeView(thumbnail);
-                    // The wallpaper on screen still reads the image until the slideshow replaces it.
-                    if (!uri.equals(prefs.getString(WALLPAPER, null))) {
-                        try {
-                            getContentResolver().releasePersistableUriPermission(Uri.parse(uri),
-                                    Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        } catch (SecurityException ignored) {
-                            // The permission is already gone.
-                        }
-                    }
-                });
-            }
-        }
-        settingsAction(images, "Добавить свои изображения", () -> {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("image/*");
-            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-            try { startActivityForResult(intent, PICK_SLIDESHOW); }
-            catch (ActivityNotFoundException e) { Toast.makeText(this, "Выбор изображения недоступен", Toast.LENGTH_SHORT).show(); }
-        });
-        LinearLayout period = settingsCard(content, "Как часто менять", null);
-        settingsChoice(period, SLIDESHOW_PERIOD,
-                new String[]{"При каждом включении", "Раз в 15 минут", "Раз в час", "Раз в день"}, () -> { });
-    }
-
-    private LinearLayout thumbnailRow(LinearLayout parent) {
-        HorizontalScrollView scroll = new HorizontalScrollView(this);
-        LinearLayout row = new LinearLayout(this);
-        scroll.addView(row);
-        parent.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
-        return row;
-    }
-
-    private ImageView wallpaperThumbnail(LinearLayout row, String uri, String name) {
-        ImageView thumbnail = new ImageView(this);
-        // Twice the thumbnail height at most: power-of-two sampling keeps it at least as large as the tile.
-        int maxSize = dp(288);
-        Uri image = Uri.parse(uri);
-        if (isPresetUri(uri)) thumbnail.setImageBitmap(decodeWallpaper(image, maxSize));
-        else wallpaperLoader.execute(() -> {
-            Bitmap bitmap = decodeWallpaper(image, maxSize);
-            runOnUiThread(() -> thumbnail.setImageBitmap(bitmap));
-        });
-        thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        thumbnail.setContentDescription(name);
-        thumbnail.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 12));
-        thumbnail.setClipToOutline(true);
-        thumbnail.setTag(uri);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(108), dp(144));
-        params.rightMargin = dp(8);
-        row.addView(thumbnail, params);
-        return thumbnail;
-    }
-
-    private String presetUri(int resource) {
-        return "android.resource://" + getPackageName() + "/drawable/" + getResources().getResourceEntryName(resource);
-    }
-
-    private boolean isPresetUri(String uri) {
+    static boolean isPresetUri(String uri) {
         return ContentResolver.SCHEME_ANDROID_RESOURCE.equals(Uri.parse(uri).getScheme());
     }
 
-    private List<String> slideshowImages() {
+    static List<String> slideshowImages(Context context) {
         List<String> images = new ArrayList<>();
         try {
-            JSONArray saved = new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE).getString(SLIDESHOW_IMAGES, "[]"));
+            JSONArray saved = new JSONArray(context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(SLIDESHOW_IMAGES, "[]"));
             for (int i = 0; i < saved.length(); i++) images.add(saved.getString(i));
         } catch (JSONException e) {
             Log.w("AtlasLauncher", "Cannot read slideshow images", e);
@@ -1101,14 +725,14 @@ public final class HomeActivity extends Activity {
         return images;
     }
 
-    private void saveSlideshowImages(List<String> images) {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(SLIDESHOW_IMAGES, new JSONArray(images).toString()).apply();
+    static void saveSlideshowImages(Context context, List<String> images) {
+        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(SLIDESHOW_IMAGES, new JSONArray(images).toString()).apply();
     }
 
     /** Returns the time until the slideshow is due to change the wallpaper, or -1 if it is not. */
     private long slideshowDelay() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        if (!prefs.getBoolean(SLIDESHOW, false) || slideshowImages().isEmpty()) return -1;
+        if (!prefs.getBoolean(SLIDESHOW, false) || slideshowImages(this).isEmpty()) return -1;
         int period = prefs.getInt(SLIDESHOW_PERIOD, 0);
         if (period == 0) return prefs.getInt(SLIDESHOW_BOOT, -1) != bootCount() ? 0 : -1;
         long elapsed = System.currentTimeMillis() - prefs.getLong(SLIDESHOW_CHANGED_AT, 0);
@@ -1122,7 +746,7 @@ public final class HomeActivity extends Activity {
 
     /** Returns the slideshow images in showing order, starting after the current wallpaper. */
     private List<String> nextSlides() {
-        List<String> slides = slideshowImages();
+        List<String> slides = slideshowImages(this);
         Collections.rotate(slides, -(slides.indexOf(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null)) + 1));
         return slides;
     }
@@ -1138,24 +762,17 @@ public final class HomeActivity extends Activity {
         List<String> slides = nextSlides();
         wallpaperLoader.execute(() -> {
             for (String slide : slides) {
-                Bitmap bitmap = decodeWallpaper(Uri.parse(slide), 2048);
+                Bitmap bitmap = decodeWallpaper(this, Uri.parse(slide), 2048);
                 if (bitmap == null) continue;
                 runOnUiThread(() -> {
                     // HOME came back while the image loaded; the change waits until it is hidden again.
                     if (isDestroyed() || homeVisible) return;
-                    saveSlide(slide);
                     applyWallpaper(slide, bitmap);
+                    saveSlide(slide);
                 });
                 return;
             }
         });
-    }
-
-    private void buildWidgetAreaSettings(LinearLayout parent) {
-        LinearLayout content = settingsCard(parent, "Отступ виджетов по бокам",
-                "Сужает сетку с обеих сторон. Виджеты, которые больше не помещаются, переносятся.");
-        settingsChoice(content, WIDGET_SIDE_MARGIN, new String[]{"Нет", "½ ячейки", "1 ячейка"},
-                this::applyWidgetSideMargin);
     }
 
     private void applyWidgetSideMargin() {
@@ -1165,100 +782,6 @@ public final class HomeActivity extends Activity {
         params.leftMargin = margin;
         params.rightMargin = margin;
         widgetRow.setLayoutParams(params);
-    }
-
-    private void markWallpaperPreset(String wallpaper) {
-        if (settingsWallpaperPresets == null) return;
-        for (int i = 0; i < settingsWallpaperPresets.getChildCount(); i++) {
-            View thumbnail = settingsWallpaperPresets.getChildAt(i);
-            markThumbnail(thumbnail, thumbnail.getTag().equals(wallpaper));
-        }
-    }
-
-    private void markThumbnail(View thumbnail, boolean marked) {
-        GradientDrawable frame = null;
-        if (marked) {
-            frame = round(Color.TRANSPARENT, Color.TRANSPARENT, 12);
-            frame.setStroke(dp(3), ACCENT);
-        }
-        thumbnail.setForeground(frame);
-    }
-
-    private void buildSystemSettings(LinearLayout content) {
-        LinearLayout system = settingsCard(content, "Система", "Домашнее приложение и настройки Android.");
-        settingsAction(system, "Настройки HOME в Android  ↗", () -> {
-            try { startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)); }
-            catch (ActivityNotFoundException e) { Toast.makeText(this, "Настройки HOME недоступны", Toast.LENGTH_SHORT).show(); }
-        });
-        settingsAction(system, "Открыть штатный Launcher3  ↗", () -> {
-            // OneOS Launcher3 has several LAUNCHER activities; the package launch intent may pick CarLink.
-            Intent intent = new Intent(Intent.ACTION_MAIN).setClassName("com.android.launcher3", "com.android.launcher3.Launcher")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            StockHomeRedirectService.allowStockLauncherUntil = SystemClock.elapsedRealtime() + 5000;
-            // After boot Launcher3 waits on the hidden display; this brings it to the main screen.
-            try { startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle()); }
-            catch (ActivityNotFoundException | SecurityException e) { Toast.makeText(this, "Штатный Launcher3 недоступен", Toast.LENGTH_SHORT).show(); }
-        });
-        settingsAction(system, "Настройки устройства  ↗", () -> {
-            try { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
-            catch (ActivityNotFoundException e) { Toast.makeText(this, "Настройки недоступны", Toast.LENGTH_SHORT).show(); }
-        });
-
-        LinearLayout cluster = settingsCard(content, "Приборная панель",
-                "Яркость приборки меняется вместе с яркостью экрана: ползунки в шторке встают на одно деление. "
-                        + "Ползунок приборки по-прежнему работает, но до следующего изменения яркости экрана.");
-        settingsToggle(cluster, "Яркость как у экрана", CLUSTER_BRIGHTNESS, false, this::applyClusterBrightness);
-
-        LinearLayout redirect = settingsCard(content, "Панель климата",
-                "«Домой» и «Все приложения» на панели всегда открывают штатный Launcher3. AtlasLauncher может перехватывать "
-                        + "их сразу по нажатию: «Домой» откроет рабочий стол Atlas, «Все приложения» — то же, что кнопка в доке, "
-                        + "а при обеих включённых функциях — поверх текущего приложения. Когда функции выключены, служба не получает событий.");
-        settingsToggle(redirect, "Скрывать панель на главном экране", CLIMATE_PANEL_HIDDEN, false, this::applyClimatePanel);
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        settingsSwitch(redirect, "«Домой»: возвращать на AtlasLauncher", prefs.getBoolean(StockHomeRedirectService.ENABLED, false), checked -> {
-            prefs.edit().putBoolean(StockHomeRedirectService.ENABLED, checked).apply();
-            updateStockHomeRedirectState();
-        });
-        settingsSwitch(redirect, "«Все приложения»: как кнопка в доке", prefs.getBoolean(StockHomeRedirectService.ALL_APPS_ENABLED, false), checked -> {
-            prefs.edit().putBoolean(StockHomeRedirectService.ALL_APPS_ENABLED, checked).apply();
-            updateStockHomeRedirectState();
-        });
-        settingsRedirectState = new LinearLayout(this);
-        settingsRedirectState.setOrientation(LinearLayout.VERTICAL);
-        settingsRedirectState.addView(label("", 14, NEUTRAL_MUTED, false));
-        settingsAction(settingsRedirectState, "Специальные возможности Android  ↗", () -> {
-            try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
-            catch (ActivityNotFoundException e) { Toast.makeText(this, "Специальные возможности недоступны", Toast.LENGTH_SHORT).show(); }
-        });
-        redirect.addView(settingsRedirectState, new LinearLayout.LayoutParams(-1, -2));
-        updateStockHomeRedirectState();
-
-        LinearLayout gestures = settingsCard(content, "Жесты",
-                "Два пальца вверх и вниз: громкость в центре экрана, температура у левого и правого края. "
-                        + "Три пальца вверх и вниз: яркость, влево и вправо: обдув (в AUTO — его профиль). Щипок четырьмя пальцами: главный экран. Четыре пальца вверх: как кнопка «Все приложения». Жест начинается между верхней и климатической панелями. "
-                        + "Температуре и яркости нужен GInputBridge. Касания в этой области проходят через "
-                        + "AtlasLauncher, а не через штатную службу жестов.");
-        settingsToggle(gestures, "Жесты несколькими пальцами", GESTURES_ENABLED, false, this::applyGestures);
-        settingsToggle(gestures, "Жесты важнее приложений", GESTURES_PRIORITY, false, this::applyGestures);
-        gestures.addView(label("Включено: касание несколькими пальцами сначала проверяется как жест, и приложение "
-                + "не сдвигается под ним. Масштаб и поворот в картах начнутся немного позже, до полусекунды. "
-                + "Выключено: приложение получает касание сразу, а при срабатывании жеста оно отменяется.",
-                14, NEUTRAL_MUTED, false));
-        gestures.addView(label("Нужно разрешение «Поверх других приложений»: без него не будет карточек "
-                + "с температурой и яркостью, а жесты четырьмя пальцами не смогут открыть главный экран "
-                + "и приложения поверх другого приложения.", 14, NEUTRAL_MUTED, false));
-        settingsAction(gestures, "Разрешить показ поверх приложений  ↗", () -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
-            } catch (ActivityNotFoundException e) {
-                Toast.makeText(this, "Настройка разрешения недоступна", Toast.LENGTH_SHORT).show();
-            }
-        });
-        LinearLayout trigger = settingsCard(content, "Срабатывание жестов",
-                "Раньше: жест срабатывает после более короткого движения, но чаще перехватывает прокрутку "
-                        + "и масштаб в приложениях. Позже: нужно движение длиннее.");
-        settingsChoice(trigger, GESTURES_TRIGGER, new String[]{"Раньше", "Средне", "Позже"},
-                MultiFingerGestures.TRIGGER_NORMAL, this::applyGestures);
     }
 
     private void applyGestures() {
@@ -1335,40 +858,38 @@ public final class HomeActivity extends Activity {
         widgetRow.setLayoutParams(params);
     }
 
-    private void updateStockHomeRedirectState() {
-        if (settingsRedirectState == null) return;
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        boolean enabled = prefs.getBoolean(StockHomeRedirectService.ENABLED, false)
-                || prefs.getBoolean(StockHomeRedirectService.ALL_APPS_ENABLED, false);
-        settingsRedirectState.setVisibility(enabled ? View.VISIBLE : View.GONE);
-        if (!enabled) return;
-        ((TextView) settingsRedirectState.getChildAt(0)).setText(isStockHomeRedirectActive()
-                ? "Служба работает."
-                : "Служба не работает: включите «" + getString(R.string.stock_home_redirect_label)
-                        + "» в специальных возможностях Android. Если она уже включена, но AtlasLauncher "
-                        + "останавливали принудительно, перезагрузите ГУ.");
-    }
-
-    private boolean isStockHomeRedirectActive() {
-        // Lists only connected services: after a force stop Android 11 keeps the service unbound until reboot.
-        String id = new ComponentName(this, StockHomeRedirectService.class).flattenToShortString();
-        for (AccessibilityServiceInfo info : getSystemService(AccessibilityManager.class)
-                .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK))
-            if (id.equals(info.getId())) return true;
-        return false;
-    }
-
-    // Multi-finger gestures are not editing: a long press that saw a second finger is ignored.
+    // Holding a finger anywhere on HOME starts editing after the delay chosen in settings; a view long press
+    // would always wait the system timeout. Multi-finger gestures are not editing: a second finger cancels it.
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_DOWN) multiTouch = false;
-        else if (action == MotionEvent.ACTION_POINTER_DOWN) multiTouch = true;
-        return super.dispatchTouchEvent(event);
+        if (action == MotionEvent.ACTION_DOWN) {
+            pressStartedEditing = false;
+            if (!editingWidgets) {
+                pressX = event.getRawX();
+                pressY = event.getRawY();
+                widgetRow.postDelayed(editByPress, editDelay());
+            }
+        } else if (action != MotionEvent.ACTION_MOVE || Math.hypot(event.getRawX() - pressX,
+                event.getRawY() - pressY) > ViewConfiguration.get(this).getScaledTouchSlop()) {
+            widgetRow.removeCallbacks(editByPress);
+        }
+        // The rest of the press that started editing must not click what is under the finger.
+        return pressStartedEditing || super.dispatchTouchEvent(event);
     }
 
-    private boolean startEditingByLongPress() {
-        if (!multiTouch) setEditingWidgets(true);
-        return true;
+    private long editDelay() {
+        int index = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(EDIT_DELAY, 0);
+        return index > 0 && index < EDIT_DELAYS_MS.length ? EDIT_DELAYS_MS[index] : ViewConfiguration.getLongPressTimeout();
+    }
+
+    private void startEditingByPress() {
+        pressStartedEditing = true;
+        long now = SystemClock.uptimeMillis();
+        MotionEvent cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, pressX, pressY, 0);
+        super.dispatchTouchEvent(cancel);
+        cancel.recycle();
+        widgetRow.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        setEditingWidgets(true);
     }
 
     private void setEditingWidgets(boolean editing) {
@@ -1384,7 +905,7 @@ public final class HomeActivity extends Activity {
         if (uri != null && !ContentResolver.SCHEME_ANDROID_RESOURCE.equals(uri.getScheme())) {
             // A picked image comes from its document provider, which may take seconds to start right after boot.
             wallpaperLoader.execute(() -> {
-                Bitmap bitmap = decodeWallpaper(uri, 2048);
+                Bitmap bitmap = decodeWallpaper(this, uri, 2048);
                 runOnUiThread(() -> {
                     // A newer choice may have replaced this one while it loaded.
                     if (!isDestroyed() && saved.equals(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null)))
@@ -1393,22 +914,22 @@ public final class HomeActivity extends Activity {
             });
             return;
         }
-        applyWallpaper(saved, uri == null ? null : decodeWallpaper(uri, 2048));
+        applyWallpaper(saved, uri == null ? null : decodeWallpaper(this, uri, 2048));
     }
 
     /** Returns null if the image cannot be read. */
-    private Bitmap decodeWallpaper(Uri uri, int maxSize) {
+    static Bitmap decodeWallpaper(Context context, Uri uri, int maxSize) {
         try {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
-            try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            try (InputStream stream = context.getContentResolver().openInputStream(uri)) {
                 BitmapFactory.decodeStream(stream, null, bounds);
             }
             int sample = 1;
             while (bounds.outWidth / sample > maxSize || bounds.outHeight / sample > maxSize) sample *= 2;
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inSampleSize = sample;
-            try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            try (InputStream stream = context.getContentResolver().openInputStream(uri)) {
                 return BitmapFactory.decodeStream(stream, null, options);
             }
         } catch (IOException | SecurityException e) {
@@ -1422,8 +943,7 @@ public final class HomeActivity extends Activity {
             wallpaperView.setImageResource(R.drawable.coastal_twilight);
             if (saved != null) Toast.makeText(this, "Не удалось загрузить фон", Toast.LENGTH_SHORT).show();
         }
-        if (settingsWallpaperPreview != null) settingsWallpaperPreview.setImageDrawable(wallpaperView.getDrawable().getConstantState().newDrawable());
-        markWallpaperPreset(saved);
+        shownWallpaper = saved;
         updateStatusBarIcons();
     }
 
@@ -1451,138 +971,6 @@ public final class HomeActivity extends Activity {
         View decor = getWindow().getDecorView();
         int flags = decor.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
         decor.setSystemUiVisibility(darkIcons ? flags | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR : flags);
-    }
-
-    private void buildDockSettings(LinearLayout parent) {
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        LinearLayout content = settingsCard(parent, "Внешний вид", "Размер значков и плотность дока на рабочем столе.");
-        settingsToggle(content, "Подписи в доке", DOCK_LABELS, true, this::showWidgets);
-        int size = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
-        LinearLayout.LayoutParams sizeParams = new LinearLayout.LayoutParams(-1, -2);
-        sizeParams.topMargin = dp(12);
-        content.addView(label("Размер значков", 18, NEUTRAL_TEXT, false), sizeParams);
-        SeekBar sizeSlider = new SeekBar(this);
-        sizeSlider.setMax((MAX_ICON_DP - 40) / 8);
-        sizeSlider.setProgress((size - 40) / 8);
-        sizeSlider.setProgressTintList(ColorStateList.valueOf(NEUTRAL_MUTED));
-        sizeSlider.setThumbTintList(ColorStateList.valueOf(NEUTRAL_TEXT));
-        sizeSlider.setContentDescription("Размер значков дока");
-        content.addView(sizeSlider, new LinearLayout.LayoutParams(-1, dp(56)));
-        sizeSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser) {
-                    prefs.edit().putInt(DRAWER_ICON_SIZE, 40 + progress * 8).apply();
-                    showFavorites();
-                }
-            }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) { showWidgets(); }
-        });
-        LinearLayout drawer = settingsCard(parent, "Все приложения",
-                "Что открывает кнопка, выбирается в общих настройках AtlasLauncher.");
-        settingsToggle(drawer, "Показывать кнопку", DOCK_APPS, true, this::showWidgets);
-        LinearLayout pinned = settingsCard(parent, "Закреплённые приложения", "Стрелки меняют порядок, × убирает приложение из дока.");
-        LinearLayout selectedApps = new LinearLayout(this);
-        selectedApps.setOrientation(LinearLayout.VERTICAL);
-        pinned.addView(selectedApps, new LinearLayout.LayoutParams(-1, -2));
-        refreshDockFavoriteSettings(selectedApps);
-        settingsAction(pinned, "＋  Добавить приложение", () -> showDockAppPicker(selectedApps));
-    }
-
-    private void buildAllAppsSettings(LinearLayout parent) {
-        LinearLayout drawer = settingsCard(parent, "Все приложения",
-                "Что открывают кнопка «Все приложения» в доке и такая же кнопка на панели климата.");
-        Button action = settingsAction(drawer, "", () -> { });
-        Runnable refreshAction = () -> action.setText("Открывать: "
-                + drawerActionLabel(getSharedPreferences(PREFS, MODE_PRIVATE).getString(DRAWER_ACTIVITY, "")));
-        refreshAction.run();
-        action.setOnClickListener(v -> chooseDrawerAction(refreshAction));
-    }
-
-    private String drawerActionLabel(String target) {
-        if (target.isEmpty()) return "встроенный каталог";
-        if (target.equals(GIB_LAUNCHER)) return "GLauncher (GIB)";
-        ComponentName component = ComponentName.unflattenFromString(target);
-        if (component == null) return target;
-        PackageManager pm = getPackageManager();
-        try {
-            ActivityInfo activity = pm.getActivityInfo(component, 0);
-            String app = String.valueOf(activity.applicationInfo.loadLabel(pm));
-            String name = String.valueOf(activity.loadLabel(pm));
-            return name.equals(app) ? app : app + " · " + name;
-        } catch (PackageManager.NameNotFoundException e) {
-            return target + " · недоступно";
-        }
-    }
-
-    private void refreshDockFavoriteSettings(LinearLayout selectedApps) {
-        selectedApps.removeAllViews();
-        if (favorites.isEmpty()) {
-            selectedApps.addView(label("Нет закреплённых приложений", 16, NEUTRAL_MUTED, false),
-                    new LinearLayout.LayoutParams(-1, dp(48)));
-            return;
-        }
-        Runnable refresh = () -> {
-            saveFavorites();
-            showFavorites();
-            refreshDockFavoriteSettings(selectedApps);
-        };
-        for (int i = 0; i < favorites.size(); i++) {
-            AppEntry app = findApp(favorites.get(i));
-            String title = app != null ? app.label
-                    : ComponentName.unflattenFromString(favorites.get(i)).getPackageName() + " · недоступно";
-            int index = i;
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            ImageView icon = new ImageView(this);
-            if (app != null) icon.setImageDrawable(app.icon);
-            row.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
-            TextView name = label(title, 18, app != null ? NEUTRAL_TEXT : NEUTRAL_MUTED, false);
-            name.setSingleLine(true);
-            name.setEllipsize(TextUtils.TruncateAt.END);
-            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1);
-            nameParams.leftMargin = dp(8);
-            row.addView(name, nameParams);
-            Button left = neutralButton("←");
-            left.setTextSize(22);
-            left.setContentDescription("Передвинуть " + title + " влево");
-            left.setEnabled(i > 0);
-            left.setOnClickListener(v -> { Collections.swap(favorites, index, index - 1); refresh.run(); });
-            row.addView(left, new LinearLayout.LayoutParams(dp(56), dp(56)));
-            Button right = neutralButton("→");
-            right.setTextSize(22);
-            right.setContentDescription("Передвинуть " + title + " вправо");
-            right.setEnabled(i < favorites.size() - 1);
-            right.setOnClickListener(v -> { Collections.swap(favorites, index, index + 1); refresh.run(); });
-            row.addView(right, new LinearLayout.LayoutParams(dp(56), dp(56)));
-            Button remove = neutralButton("×");
-            remove.setTextSize(22);
-            remove.setContentDescription("Убрать " + title + " из дока");
-            remove.setOnClickListener(v -> { favorites.remove(index); refresh.run(); });
-            row.addView(remove, new LinearLayout.LayoutParams(dp(56), dp(56)));
-            selectedApps.addView(row, new LinearLayout.LayoutParams(-1, dp(64)));
-        }
-    }
-
-    private void showDockAppPicker(LinearLayout selectedApps) {
-        List<AppEntry> available = new ArrayList<>();
-        List<String> names = new ArrayList<>();
-        for (AppEntry app : apps) {
-            if (favorites.contains(app.component.flattenToString())) continue;
-            available.add(app);
-            names.add(app.label + " · " + app.component.getPackageName());
-        }
-        if (available.isEmpty()) {
-            Toast.makeText(this, "Все приложения уже добавлены", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        new AlertDialog.Builder(this).setTitle("Добавить в док")
-                .setItems(names.toArray(new String[0]), (dialog, which) -> {
-                    favorites.add(available.get(which).component.flattenToString());
-                    saveFavorites();
-                    showFavorites();
-                    refreshDockFavoriteSettings(selectedApps);
-                }).show();
     }
 
     private void updateDock() {
@@ -1786,7 +1174,7 @@ public final class HomeActivity extends Activity {
     }
 
     private View volumePreview() {
-        LinearLayout panel = (LinearLayout) createVolumeWidget(new WidgetPlacement(VOLUME_WIDGET_ID, 0, 0, 240, 80));
+        LinearLayout panel = (LinearLayout) BuiltInWidgets.createVolume(this, new WidgetPlacement(VOLUME_WIDGET_ID, 0, 0, 240, 80));
         // The tile itself picks the widget.
         for (int i = 0; i < panel.getChildCount(); i++) {
             panel.getChildAt(i).setClickable(false);
@@ -1844,36 +1232,6 @@ public final class HomeActivity extends Activity {
         } else if (request == CONFIGURE_WIDGET) {
             if (result == RESULT_OK) finishAddingWidget();
             else cancelPendingWidget();
-        } else if (request == PICK_WALLPAPER && result == RESULT_OK && data != null && data.getData() != null) {
-            Uri uri = data.getData();
-            try {
-                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri.toString())
-                        .putBoolean(SLIDESHOW, false).apply();
-                showWallpaper();
-            } catch (SecurityException e) {
-                Toast.makeText(this, "Нет доступа к изображению", Toast.LENGTH_SHORT).show();
-            }
-        } else if (request == PICK_SLIDESHOW && result == RESULT_OK && data != null) {
-            ClipData clip = data.getClipData();
-            int count = clip != null ? clip.getItemCount() : data.getData() != null ? 1 : 0;
-            List<String> slides = slideshowImages();
-            boolean denied = false;
-            for (int i = 0; i < count; i++) {
-                Uri uri = clip != null ? clip.getItemAt(i).getUri() : data.getData();
-                try {
-                    getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    if (!slides.contains(uri.toString())) slides.add(uri.toString());
-                } catch (SecurityException e) {
-                    denied = true;
-                }
-            }
-            saveSlideshowImages(slides);
-            if (denied) Toast.makeText(this, "Нет доступа к части изображений", Toast.LENGTH_SHORT).show();
-            if (settingsDialog != null) {
-                settingsDialog.dismiss();
-                showSettings(3);
-            }
         }
     }
 
@@ -2082,12 +1440,12 @@ public final class HomeActivity extends Activity {
                 changed = true;
             View hostView;
             if (clockWidget) {
-                hostView = createClockWidget(placement);
+                hostView = BuiltInWidgets.createClock(this, placement);
                 hostView.setTag(CLOCK_WIDGET_ID);
             } else if (dockWidget) {
                 hostView = createDockWidget();
             } else if (volumeWidget) {
-                hostView = createVolumeWidget(placement);
+                hostView = BuiltInWidgets.createVolume(this, placement);
                 hostView.setTag(VOLUME_WIDGET_ID);
             } else {
                 AppWidgetHostView widgetView = widgetHost.createView(this, placement.id, info);
@@ -2099,7 +1457,6 @@ public final class HomeActivity extends Activity {
                         if (!editingWidgets && touchesSourceSwitch(hostView, event)) showSourceList(hostView);
                     })
                     : new FrameLayout(this);
-            hostView.setOnLongClickListener(v -> startEditingByLongPress());
             FrameLayout.LayoutParams hostParams = new FrameLayout.LayoutParams(-1, -1);
             if (dockWidget || volumeWidget) {
                 // Inset the dock and volume buttons like AppWidgetHostView insets regular widgets.
@@ -2217,11 +1574,11 @@ public final class HomeActivity extends Activity {
     }
 
     private void compactClockWidget(WidgetPlacement placement, WidgetGrid grid) {
-        LinearLayout clock = (LinearLayout) createClockWidget(placement);
+        LinearLayout clock = (LinearLayout) BuiltInWidgets.createClock(this, placement);
         TextClock time = (TextClock) ((LinearLayout) clock.getChildAt(0)).getChildAt(0);
         TextClock period = (TextClock) ((LinearLayout) clock.getChildAt(0)).getChildAt(1);
         TextClock date = (TextClock) clock.getChildAt(1);
-        float contentWidth = clockTimeWidth(time, period);
+        float contentWidth = BuiltInWidgets.clockTimeWidth(this, time, period);
         if (date.getVisibility() == View.VISIBLE)
             contentWidth = Math.max(contentWidth, date.getPaint().measureText(date.getText().toString()));
         int columns = grid.span((int) Math.ceil(contentWidth / getResources().getDisplayMetrics().density) + 16,
@@ -2229,177 +1586,14 @@ public final class HomeActivity extends Activity {
         placement.width = Math.min(placement.width, columns * grid.cellWidth);
     }
 
-    private View createClockWidget(WidgetPlacement placement) {
-        LinearLayout group = new LinearLayout(this);
-        group.setOrientation(LinearLayout.VERTICAL);
-        group.setGravity(Gravity.CENTER);
-        LinearLayout timeLine = new LinearLayout(this);
-        timeLine.setGravity(Gravity.CENTER);
-        TextClock clock = new TextClock(this);
-        clock.setFormat24Hour("HH:mm");
-        clock.setFormat12Hour("h:mm");
-        clock.setTextColor(TEXT);
-        clock.setGravity(Gravity.CENTER);
-        timeLine.addView(clock);
-        TextClock period = new TextClock(this);
-        period.setFormat24Hour("a");
-        period.setFormat12Hour("a");
-        period.setTextColor(MUTED);
-        LinearLayout.LayoutParams periodParams = new LinearLayout.LayoutParams(-2, -2);
-        periodParams.leftMargin = dp(6);
-        timeLine.addView(period, periodParams);
-        group.addView(timeLine, new LinearLayout.LayoutParams(-1, -2));
-        TextClock date = new TextClock(this);
-        date.setFormat24Hour("EEE, d MMM, yyyy");
-        date.setFormat12Hour("EEE, d MMM, yyyy");
-        date.setTextSize(18);
-        date.setTextColor(MUTED);
-        date.setGravity(Gravity.CENTER);
-        group.addView(date, new LinearLayout.LayoutParams(-1, -2));
-        updateClockWidget(group, placement);
-        return group;
-    }
-
-    private void updateClockWidget(View hostView, WidgetPlacement placement) {
-        LinearLayout group = (LinearLayout) hostView;
-        LinearLayout timeLine = (LinearLayout) group.getChildAt(0);
-        boolean showDate = placement.height >= 2 * WIDGET_CELL_DP;
-        if (placement.clockSize == 0)
-            placement.clockSize = Math.max(28, Math.min(placement.width / 5,
-                    Math.round(placement.height / (showDate ? 2.2f : 1.3f))));
-        int clockSize = Math.min(placement.clockSize,
-                Math.max(28, Math.round(placement.height / (showDate ? 2.2f : 1.3f))));
-        ((TextClock) timeLine.getChildAt(0)).setTextSize(clockSize);
-        if (timeLine.getChildCount() > 1)
-            ((TextClock) timeLine.getChildAt(1)).setTextSize(Math.max(16, clockSize / 4));
-        TextClock date = (TextClock) group.getChildAt(1);
-        date.setTextSize(Math.max(18, clockSize / 5));
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        int format = prefs.getInt(CLOCK_FORMAT, 0);
-        TextClock clock = (TextClock) timeLine.getChildAt(0);
-        clock.setFormat24Hour(format == 2 ? "h:mm" : "HH:mm");
-        clock.setFormat12Hour(format == 1 ? "HH:mm" : "h:mm");
-        if (timeLine.getChildCount() > 1) {
-            boolean periodVisible = format == 2 || (format == 0 && !android.text.format.DateFormat.is24HourFormat(this));
-            timeLine.getChildAt(1).setVisibility(periodVisible ? View.VISIBLE : View.GONE);
-        }
-        String[] fonts = {"sans-serif", "serif", "monospace"};
-        int font = Math.max(0, Math.min(2, prefs.getInt(CLOCK_FONT, 0)));
-        int weight = Math.max(0, Math.min(2, prefs.getInt(CLOCK_WEIGHT, 0)));
-        Typeface face = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                ? Typeface.create(Typeface.create(fonts[font], Typeface.NORMAL), weight == 0 ? 300 : weight == 1 ? 400 : 700, false)
-                : Typeface.create(weight == 0 && font == 0 ? "sans-serif-light" : fonts[font], weight == 2 ? Typeface.BOLD : Typeface.NORMAL);
-        clock.setTypeface(face);
-        ((TextClock) timeLine.getChildAt(1)).setTypeface(face);
-        date.setTypeface(face);
-        date.setVisibility(showDate && prefs.getBoolean(CLOCK_DATE, true) ? View.VISIBLE : View.GONE);
-        TextClock period = (TextClock) timeLine.getChildAt(1);
-        float availableWidth = dp(Math.max(1, placement.width - 16));
-        float timeWidth = clockTimeWidth(clock, period);
-        if (timeWidth > availableWidth) {
-            float scale = availableWidth / timeWidth;
-            clock.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, clock.getTextSize() * scale);
-            period.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, period.getTextSize() * scale);
-        }
-    }
-
     private void updateDesktopClock() {
         View desktopClock = widgetRow.findViewWithTag(CLOCK_WIDGET_ID);
         if (desktopClock == null) return;
         for (WidgetPlacement placement : widgets) {
             if (placement.id == CLOCK_WIDGET_ID) {
-                updateClockWidget(desktopClock, placement);
+                BuiltInWidgets.updateClock(this, desktopClock, placement);
                 return;
             }
-        }
-    }
-
-    private float clockTimeWidth(TextClock clock, TextClock period) {
-        // Reserve the widest digits so the block does not change width every minute.
-        float digitWidth = 0;
-        for (int digit = 0; digit <= 9; digit++)
-            digitWidth = Math.max(digitWidth, clock.getPaint().measureText(Integer.toString(digit)));
-        float width = digitWidth * 4 + clock.getPaint().measureText(":");
-        if (period.getVisibility() == View.VISIBLE) {
-            float periodWidth = 0;
-            for (String label : new java.text.DateFormatSymbols().getAmPmStrings())
-                periodWidth = Math.max(periodWidth, period.getPaint().measureText(label));
-            width += dp(6) + periodWidth;
-        }
-        return width;
-    }
-
-    private void buildClockSettings(LinearLayout content) {
-        LinearLayout preview = settingsCard(content, "Часы", "Предпросмотр · параметры применяются к часам на рабочем столе.");
-        WidgetPlacement previewPlacement = new WidgetPlacement(CLOCK_WIDGET_ID, 0, 0, 280, 192);
-        previewPlacement.clockSize = 64;
-        View clock = createClockWidget(previewPlacement);
-        preview.addView(clock, new LinearLayout.LayoutParams(-1, dp(156)));
-        Runnable changed = () -> {
-            updateClockWidget(clock, previewPlacement);
-            updateDesktopClock();
-        };
-        settingsToggle(preview, "Показывать дату", CLOCK_DATE, true, changed);
-        LinearLayout format = settingsCard(content, "Формат времени", null);
-        settingsChoice(format, CLOCK_FORMAT, new String[]{"Как в системе", "24 часа", "12 часов"}, changed);
-        LinearLayout type = settingsCard(content, "Начертание", null);
-        settingsChoice(type, CLOCK_WEIGHT, new String[]{"Тонкий", "Обычный", "Жирный"}, changed);
-        LinearLayout font = settingsCard(content, "Шрифт", null);
-        settingsChoice(font, CLOCK_FONT, new String[]{"Без засечек", "С засечками", "Моноширинный"}, changed);
-    }
-
-    private View createVolumeWidget(WidgetPlacement placement) {
-        LinearLayout panel = new LinearLayout(this);
-        updateVolumeWidget(panel, placement);
-        return panel;
-    }
-
-    /** Rebuilds the buttons: in a row for a wide widget, in a column for a tall one. */
-    private void updateVolumeWidget(View hostView, WidgetPlacement placement) {
-        LinearLayout panel = (LinearLayout) hostView;
-        panel.removeAllViews();
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        AudioManager audio = getSystemService(AudioManager.class);
-        boolean horizontal = placement.width >= placement.height;
-        boolean showMute = prefs.getBoolean(VOLUME_MUTE, true);
-        boolean joined = prefs.getBoolean(VOLUME_JOINED, false);
-        int[] icons = VOLUME_ICON_STYLES[Math.max(0, Math.min(VOLUME_ICON_STYLES.length - 1, prefs.getInt(VOLUME_ICONS, 0)))];
-        panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        // A joined block draws one card behind the buttons; separate buttons have a card each.
-        panel.setBackground(joined ? round(NEUTRAL_SURFACE, Color.TRANSPARENT, 24) : null);
-        panel.setPadding(joined ? dp(4) : 0, joined ? dp(4) : 0, joined ? dp(4) : 0, joined ? dp(4) : 0);
-        int buttonLength = (horizontal ? placement.width : placement.height) / (showMute ? 3 : 2);
-        int iconSize = Math.max(16, Math.min(64, Math.min(buttonLength, horizontal ? placement.height : placement.width) / 2));
-        // Volume down is on the left of a row and at the bottom of a column.
-        int[] directions = horizontal
-                ? new int[]{AudioManager.ADJUST_LOWER, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.ADJUST_RAISE}
-                : new int[]{AudioManager.ADJUST_RAISE, AudioManager.ADJUST_TOGGLE_MUTE, AudioManager.ADJUST_LOWER};
-        for (int direction : directions) {
-            boolean mute = direction == AudioManager.ADJUST_TOGGLE_MUTE;
-            if (mute && !showMute) continue;
-            boolean muted = mute && audio.isStreamMute(AudioManager.STREAM_MUSIC);
-            FrameLayout button = new FrameLayout(this);
-            int radius = joined ? 20 : 24;
-            button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                    muted ? round(ATLAS_ACTIVE, Color.TRANSPARENT, radius) : joined ? null : round(NEUTRAL_SURFACE, Color.TRANSPARENT, radius),
-                    round(Color.WHITE, Color.TRANSPARENT, radius)));
-            button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
-                    : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
-                    : muted ? "Включить звук" : "Выключить звук");
-            button.setOnClickListener(v -> {
-                // FLAG_SHOW_UI shows the system volume panel, as hardware keys do.
-                audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI);
-                panel.post(() -> updateVolumeWidget(panel, placement));
-            });
-            button.setOnLongClickListener(v -> startEditingByLongPress());
-            ImageView image = new ImageView(this);
-            image.setImageResource(direction == AudioManager.ADJUST_RAISE ? icons[0]
-                    : direction == AudioManager.ADJUST_LOWER ? icons[1] : R.drawable.ic_volume_off);
-            button.addView(image, new FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
-            int margin = joined ? 0 : dp(3);
-            params.setMargins(margin, margin, margin, margin);
-            panel.addView(button, params);
         }
     }
 
@@ -2408,51 +1602,10 @@ public final class HomeActivity extends Activity {
         if (desktopVolume == null) return;
         for (WidgetPlacement placement : widgets) {
             if (placement.id == VOLUME_WIDGET_ID) {
-                updateVolumeWidget(desktopVolume, placement);
+                BuiltInWidgets.updateVolume(this, desktopVolume, placement);
                 return;
             }
         }
-    }
-
-    private void buildVolumeSettings(LinearLayout content) {
-        LinearLayout preview = settingsCard(content, "Громкость",
-                "Кнопки встают в ряд у широкого виджета и в столбик у высокого.");
-        WidgetPlacement previewPlacement = new WidgetPlacement(VOLUME_WIDGET_ID, 0, 0, 288, 96);
-        View volume = createVolumeWidget(previewPlacement);
-        preview.addView(volume, new LinearLayout.LayoutParams(-1, dp(96)));
-        Runnable changed = () -> {
-            updateVolumeWidget(volume, previewPlacement);
-            updateDesktopVolume();
-        };
-        settingsToggle(preview, "Кнопка отключения звука", VOLUME_MUTE, true, changed);
-        settingsToggle(preview, "Одним блоком", VOLUME_JOINED, false, changed);
-        LinearLayout icons = settingsCard(content, "Значки", null);
-        settingsChoice(icons, VOLUME_ICONS, new String[]{"Динамик", "Плюс и минус", "Стрелки"}, changed);
-    }
-
-    private void settingsChoice(LinearLayout parent, String key, String[] options, Runnable changed) {
-        settingsChoice(parent, key, options, 0, changed);
-    }
-
-    private void settingsChoice(LinearLayout parent, String key, String[] options, int defaultValue, Runnable changed) {
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        android.widget.RadioGroup group = new android.widget.RadioGroup(this);
-        for (int i = 0; i < options.length; i++) {
-            android.widget.RadioButton option = new android.widget.RadioButton(this);
-            option.setId(View.generateViewId());
-            option.setText(options[i]);
-            option.setTextSize(16);
-            option.setTextColor(NEUTRAL_TEXT);
-            option.setButtonTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked}, new int[]{}},
-                    new int[]{Color.rgb(117, 178, 234), NEUTRAL_MUTED}));
-            group.addView(option, new LinearLayout.LayoutParams(-1, dp(52)));
-            if (i == prefs.getInt(key, defaultValue)) group.check(option.getId());
-        }
-        group.setOnCheckedChangeListener((view, id) -> {
-            prefs.edit().putInt(key, group.indexOfChild(group.findViewById(id))).apply();
-            changed.run();
-        });
-        parent.addView(group, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private void scheduleShowWidgets() {
@@ -2546,9 +1699,9 @@ public final class HomeActivity extends Activity {
             Button settings = button("⚙");
             settings.setContentDescription("Настроить " + title);
             settings.setOnClickListener(v -> {
-                if (placement.id == CLOCK_WIDGET_ID) showSettings(2);
-                else if (placement.id == DOCK_WIDGET_ID) showSettings(1);
-                else if (placement.id == VOLUME_WIDGET_ID) showSettings(4);
+                if (placement.id == CLOCK_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_CLOCK);
+                else if (placement.id == DOCK_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_DOCK);
+                else if (placement.id == VOLUME_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_VOLUME);
                 else reconfigureWidget(placement);
             });
             container.addView(settings, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.LEFT));
@@ -2615,9 +1768,9 @@ public final class HomeActivity extends Activity {
                     container.setLayoutParams(params);
                     if (resizing && placement.id == CLOCK_WIDGET_ID) {
                         placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
-                        updateClockWidget(hostView, placement);
+                        BuiltInWidgets.updateClock(HomeActivity.this, hostView, placement);
                     }
-                    if (resizing && placement.id == VOLUME_WIDGET_ID) updateVolumeWidget(hostView, placement);
+                    if (resizing && placement.id == VOLUME_WIDGET_ID) BuiltInWidgets.updateVolume(HomeActivity.this, hostView, placement);
                     WidgetGrid grid = widgetGrid();
                     WidgetPlacement target = grid == null ? null : snappedPlacement(grid);
                     boolean fits = target != null;
@@ -2661,8 +1814,8 @@ public final class HomeActivity extends Activity {
                     container.setLayoutParams(params);
                     if (resizing) {
                         if (hostView instanceof AppWidgetHostView) updateWidgetSize((AppWidgetHostView) hostView, placement);
-                        else if (placement.id == CLOCK_WIDGET_ID) updateClockWidget(hostView, placement);
-                        else if (placement.id == VOLUME_WIDGET_ID) updateVolumeWidget(hostView, placement);
+                        else if (placement.id == CLOCK_WIDGET_ID) BuiltInWidgets.updateClock(HomeActivity.this, hostView, placement);
+                        else if (placement.id == VOLUME_WIDGET_ID) BuiltInWidgets.updateVolume(HomeActivity.this, hostView, placement);
                     }
                     return true;
                 }
@@ -2699,9 +1852,8 @@ public final class HomeActivity extends Activity {
 
     private void loadSavedState() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        loadFavorites(prefs);
         try {
-            JSONArray savedFavorites = new JSONArray(prefs.getString(FAVORITES, "[]"));
-            for (int i = 0; i < savedFavorites.length(); i++) favorites.add(savedFavorites.getString(i));
             JSONArray savedWidgets = new JSONArray(prefs.getString(WIDGETS, "[]"));
             for (int i = 0; i < savedWidgets.length(); i++) {
                 Object saved = savedWidgets.get(i);
@@ -2733,8 +1885,14 @@ public final class HomeActivity extends Activity {
         }
     }
 
-    private void saveFavorites() {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(FAVORITES, new JSONArray(favorites).toString()).apply();
+    private void loadFavorites(SharedPreferences prefs) {
+        favorites.clear();
+        try {
+            JSONArray saved = new JSONArray(prefs.getString(FAVORITES, "[]"));
+            for (int i = 0; i < saved.length(); i++) favorites.add(saved.getString(i));
+        } catch (JSONException e) {
+            favorites.clear();
+        }
     }
 
     private void saveWidgets() {
@@ -2859,7 +2017,7 @@ public final class HomeActivity extends Activity {
         }
     }
 
-    private static final class WidgetPlacement {
+    static final class WidgetPlacement {
         final int id;
         int x;
         int y;

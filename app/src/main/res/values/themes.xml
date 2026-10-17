@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings look like the other Atlas apps; HOME keeps the application theme. -->
+    <style name="Theme.AtlasLauncher.Settings" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">@color/atlas_accent</item>
+        <item name="android:windowBackground">@color/atlas_background</item>
+        <item name="android:navigationBarColor">@color/atlas_background</item>
+        <item name="android:statusBarColor">@color/atlas_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -2,6 +2,8 @@ package com.mmwtl.atlaslauncher;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -11,6 +13,7 @@ import android.os.SystemClock;
 import android.util.SparseArray;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
@@ -43,6 +46,15 @@ public final class StockHomeRedirectService extends AccessibilityService {
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
         if (ENABLED.equals(key) || ALL_APPS_ENABLED.equals(key)) applyEnabled(prefs);
     };
+
+    static boolean isActive(Context context) {
+        // Lists only connected services: after a force stop Android 11 keeps the service unbound until reboot.
+        String id = new ComponentName(context, StockHomeRedirectService.class).flattenToShortString();
+        for (AccessibilityServiceInfo info : context.getSystemService(AccessibilityManager.class)
+                .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK))
+            if (id.equals(info.getId())) return true;
+        return false;
+    }
 
     @Override protected void onServiceConnected() {
         SharedPreferences prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);

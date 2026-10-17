@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="icon_background">#171717</color>
+    <!-- Atlas graphite, as in Ui. -->
+    <color name="atlas_background">#171717</color>
+    <color name="atlas_accent">#7893A0</color>
 </resources>

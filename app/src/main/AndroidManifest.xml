@@ -48,6 +48,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AtlasLauncher.Settings" />
         <!-- Opens over the current app in its own task and closes once it leaves the screen. -->
         <activity
             android:name=".AllAppsActivity"
