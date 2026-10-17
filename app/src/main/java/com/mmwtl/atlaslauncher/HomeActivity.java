@@ -157,6 +157,7 @@ public final class HomeActivity extends Activity {
     private static final long[] EDIT_DELAYS_MS = {0, 1000, 2000, 3000};
     static final String HIDE_BY_DOUBLE_TAP = "hide_widgets_double_tap";
     static final String HIDE_BY_PANEL_HOME = "hide_widgets_panel_home";
+    static final String MULTIPLE_PAGES = "multiple_desktop_pages";
     private static final String WIDGETS_HIDDEN = "widgets_hidden";
     private static final long PAGE_SNAP_MS = 250;
     // A widget dragged this close to the side of the grid moves to the next page after a pause.
@@ -330,6 +331,10 @@ public final class HomeActivity extends Activity {
                 break;
             case SLIDESHOW: case SLIDESHOW_IMAGES: case SLIDESHOW_PERIOD: scheduleSlideshow(); break;
             case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
+            case MULTIPLE_PAGES:
+                currentPage = 0;
+                scheduleShowWidgets();
+                break;
             case CLIMATE_PANEL_HIDDEN: applyClimatePanel(); break;
             case CLUSTER_BRIGHTNESS: applyClusterBrightness(); break;
             case HIDE_BY_DOUBLE_TAP: case HIDE_BY_PANEL_HOME:
@@ -380,6 +385,7 @@ public final class HomeActivity extends Activity {
             currentPage = state.getInt("page");
         }
         loadSavedState();
+        multiplePagesEnabled(this);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         widgetsHidden = prefs.getBoolean(WIDGETS_HIDDEN, false)
                 && (prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false) || prefs.getBoolean(HIDE_BY_PANEL_HOME, false));
@@ -1510,8 +1516,9 @@ public final class HomeActivity extends Activity {
         dropTarget = new View(this);
         dropTarget.setVisibility(View.GONE);
         widgetRow.addView(dropTarget);
-        // Empty pages are dropped once editing ends.
-        boolean changed = !editingWidgets && compactPages();
+        boolean multiplePages = multiplePagesEnabled(this);
+        // Disabled pages keep their placements and numbers until the user enables them again.
+        boolean changed = multiplePages && !editingWidgets && compactPages();
         pages.clear();
         pageLayer = new FrameLayout(this);
         // A dragged widget stays in view while its page slides away.
@@ -1540,6 +1547,7 @@ public final class HomeActivity extends Activity {
         Iterator<WidgetPlacement> iterator = widgets.iterator();
         while (iterator.hasNext()) {
             WidgetPlacement placement = iterator.next();
+            if (!multiplePages && placement.page != 0) continue;
             boolean clockWidget = placement.id == CLOCK_WIDGET_ID;
             boolean dockWidget = placement.id == DOCK_WIDGET_ID;
             boolean volumeWidget = placement.id == VOLUME_WIDGET_ID;
@@ -1647,10 +1655,31 @@ public final class HomeActivity extends Activity {
     }
 
     private int pageCount() {
+        if (!multiplePagesEnabled(this)) return 1;
         int count = 1;
         for (WidgetPlacement placement : widgets) count = Math.max(count, placement.page + 1);
         // Editing offers an empty page after the last one, to add or move widgets there.
         return editingWidgets ? Math.max(count + 1, currentPage + 1) : count;
+    }
+
+    /** Keep desktops created before the switch was introduced; new installations start with one desktop. */
+    static boolean multiplePagesEnabled(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (prefs.contains(MULTIPLE_PAGES)) return prefs.getBoolean(MULTIPLE_PAGES, false);
+        boolean enabled = false;
+        try {
+            JSONArray saved = new JSONArray(prefs.getString(WIDGETS, "[]"));
+            for (int i = 0; i < saved.length(); i++) {
+                if (saved.getJSONObject(i).optInt("page", 0) > 0) {
+                    enabled = true;
+                    break;
+                }
+            }
+        } catch (JSONException e) {
+            Log.w("AtlasLauncher", "Cannot read saved desktop pages", e);
+        }
+        prefs.edit().putBoolean(MULTIPLE_PAGES, enabled).apply();
+        return enabled;
     }
 
     private void addPage() {
@@ -2056,7 +2085,7 @@ public final class HomeActivity extends Activity {
                         BuiltInWidgets.updateClock(HomeActivity.this, hostView, placement);
                     }
                     if (resizing && placement.id == VOLUME_WIDGET_ID) BuiltInWidgets.updateVolume(HomeActivity.this, hostView, placement);
-                    if (!resizing) {
+                    if (!resizing && multiplePagesEnabled(HomeActivity.this)) {
                         int[] row = new int[2];
                         widgetRow.getLocationOnScreen(row);
                         float x = event.getRawX() - row[0];

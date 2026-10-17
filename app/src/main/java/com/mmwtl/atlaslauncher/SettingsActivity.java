@@ -221,6 +221,12 @@ public final class SettingsActivity extends ScaledActivity {
     }
 
     private void buildDesktopTab(LinearLayout page) {
+        LinearLayout desktops = card(page, "Рабочие столы",
+                "Листайте столы свайпом и переносите виджеты к краю экрана. При выключении останется только "
+                        + "основной стол. Виджеты на остальных сохранятся и появятся после включения.");
+        toggle(desktops, "Несколько рабочих столов", HomeActivity.MULTIPLE_PAGES,
+                HomeActivity.multiplePagesEnabled(this), () -> { });
+
         LinearLayout edit = card(page, "Вход в редактирование",
                 "Сколько держать палец на рабочем столе, доке или виджете, чтобы начать перемещать и настраивать "
                         + "виджеты. Долгое удержание защищает от случайного входа в редактирование.");
