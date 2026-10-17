@@ -32,6 +32,7 @@ final class VideoWallpaperView extends TextureView implements TextureView.Surfac
     private boolean active;
     private boolean opening;
     private boolean error;
+    private boolean openFailed;
     private int generation;
     private int videoWidth;
     private int videoHeight;
@@ -49,12 +50,19 @@ final class VideoWallpaperView extends TextureView implements TextureView.Surfac
         releasePlayer();
         this.uri = uri;
         error = false;
+        openFailed = false;
         setVisibility(uri == null ? GONE : VISIBLE);
         openVideo();
     }
 
     void setActive(boolean active) {
         this.active = active;
+        // A file that could not be opened, say before its provider started after boot, gets another try.
+        if (active && openFailed) {
+            error = false;
+            openFailed = false;
+            setVisibility(VISIBLE);
+        }
         if (active) openVideo();
         else releasePlayer();
     }
@@ -78,6 +86,7 @@ final class VideoWallpaperView extends TextureView implements TextureView.Surfac
                     if (request != generation) return;
                     opening = false;
                     if (opened == null) {
+                        openFailed = true;
                         videoFailed();
                         return;
                     }

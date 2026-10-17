@@ -1726,6 +1726,9 @@ public final class HomeActivity extends Activity {
     /** Moves a dragged widget to another page: the pages slide, the widget stays under the finger. */
     private void moveWhileDragging(View container, WidgetPlacement placement, int page) {
         if (page < 0 || page >= pages.size()) return;
+        // One empty page is enough to move to: going from one to another would keep adding pages.
+        if (onPage(widgets, currentPage).stream().allMatch(other -> other == placement)
+                && onPage(widgets, page).stream().allMatch(other -> other == placement)) return;
         // The page the widget leaves slides away with it inside; the widget slides back by as much.
         container.animate().translationX(container.getTranslationX() + (page - currentPage) * widgetRow.getWidth())
                 .setDuration(PAGE_SNAP_MS).start();

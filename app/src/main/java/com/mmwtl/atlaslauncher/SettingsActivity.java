@@ -8,6 +8,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.UriPermission;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -22,10 +23,12 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -71,13 +74,16 @@ public final class SettingsActivity extends ScaledActivity {
     private ImageView wallpaperPreview;
     private TextView wallpaperKind;
     private int wallpaperPreviewGeneration;
+    private List<HomeActivity.AppEntry> apps;
     private LinearLayout wallpaperPresets;
     private Switch slideshowSwitch;
     private LinearLayout ownSlides;
     private LinearLayout redirectState;
 
     static void open(Context context, int page) {
-        context.startActivity(new Intent(context, SettingsActivity.class).putExtra(EXTRA_PAGE, page));
+        // A second tap before the settings cover HOME must not open them twice.
+        context.startActivity(new Intent(context, SettingsActivity.class).putExtra(EXTRA_PAGE, page)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
     }
 
     @Override
@@ -194,6 +200,7 @@ public final class SettingsActivity extends ScaledActivity {
         slideshowSwitch = toggle(slideshow, "Менять фон", HomeActivity.SLIDESHOW, false, () -> {
             if (prefs.getBoolean(HomeActivity.SLIDESHOW, false)) {
                 prefs.edit().remove(HomeActivity.VIDEO_WALLPAPER).apply();
+                releaseUnusedFiles();
                 showWallpaperPreview();
             }
         });
@@ -413,7 +420,12 @@ public final class SettingsActivity extends ScaledActivity {
                 "Кнопки встают в ряд у широкого виджета и в столбик у высокого.");
         HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(0, 0, 0, 288, 96);
         View volume = BuiltInWidgets.createVolume(this, previewPlacement);
-        preview.addView(volume, margin(12, dp(96)));
+        // Only shows the style: its buttons would change the car's volume.
+        FrameLayout frame = new FrameLayout(this) {
+            @Override public boolean onInterceptTouchEvent(MotionEvent event) { return true; }
+        };
+        frame.addView(volume, new FrameLayout.LayoutParams(-1, -1));
+        preview.addView(frame, margin(12, dp(96)));
         Runnable changed = () -> BuiltInWidgets.updateVolume(this, volume, previewPlacement);
         toggle(preview, "Кнопка отключения звука", BuiltInWidgets.VOLUME_MUTE, true, changed);
         toggle(preview, "Одним блоком", BuiltInWidgets.VOLUME_JOINED, false, changed);
@@ -428,7 +440,24 @@ public final class SettingsActivity extends ScaledActivity {
                 .remove(HomeActivity.VIDEO_WALLPAPER);
         (uri == null ? edit.remove(HomeActivity.WALLPAPER) : edit.putString(HomeActivity.WALLPAPER, uri)).apply();
         slideshowSwitch.setChecked(false);
+        releaseUnusedFiles();
         showWallpaperPreview();
+    }
+
+    /** Gives up access to picked files no background uses any more; Android keeps only so many grants. */
+    private void releaseUnusedFiles() {
+        List<String> used = HomeActivity.slideshowImages(this);
+        used.add(prefs.getString(HomeActivity.WALLPAPER, null));
+        used.add(prefs.getString(HomeActivity.VIDEO_WALLPAPER, null));
+        for (UriPermission permission : getContentResolver().getPersistedUriPermissions()) {
+            if (used.contains(permission.getUri().toString())) continue;
+            try {
+                getContentResolver().releasePersistableUriPermission(permission.getUri(),
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (SecurityException ignored) {
+                // The permission is already gone.
+            }
+        }
     }
 
     private void showWallpaperPreview() {
@@ -468,15 +497,8 @@ public final class SettingsActivity extends ScaledActivity {
                 current.remove(uri);
                 HomeActivity.saveSlideshowImages(this, current);
                 showOwnSlides();
-                // The wallpaper on screen still reads the image until the slideshow replaces it.
-                if (!uri.equals(prefs.getString(HomeActivity.WALLPAPER, null))) {
-                    try {
-                        getContentResolver().releasePersistableUriPermission(Uri.parse(uri),
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    } catch (SecurityException ignored) {
-                        // The permission is already gone.
-                    }
-                }
+                // The wallpaper on screen keeps its image until the slideshow replaces it.
+                releaseUnusedFiles();
             });
         }
     }
@@ -502,6 +524,7 @@ public final class SettingsActivity extends ScaledActivity {
                     prefs.edit().putString(HomeActivity.VIDEO_WALLPAPER, uri.toString())
                             .putBoolean(HomeActivity.SLIDESHOW, false).apply();
                     slideshowSwitch.setChecked(false);
+                    releaseUnusedFiles();
                     showWallpaperPreview();
                 } else chooseWallpaper(uri.toString());
             } catch (SecurityException e) {
@@ -567,7 +590,9 @@ public final class SettingsActivity extends ScaledActivity {
     // ---- Док и «Все приложения» ----
 
     private List<HomeActivity.AppEntry> apps() {
-        return HomeActivity.loadedApps != null ? HomeActivity.loadedApps : HomeActivity.queryApps(this);
+        // Querying loads every icon; do it at most once if HOME has not loaded the apps yet.
+        if (apps == null) apps = HomeActivity.loadedApps != null ? HomeActivity.loadedApps : HomeActivity.queryApps(this);
+        return apps;
     }
 
     private List<String> favorites() {
