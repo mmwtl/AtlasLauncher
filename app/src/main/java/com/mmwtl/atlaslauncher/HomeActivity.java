@@ -53,6 +53,7 @@ import android.view.ViewGroup;
 import android.view.VelocityTracker;
 import android.view.Window;
 import android.view.WindowInsets;
+import android.view.WindowManager;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.GridView;
@@ -117,6 +118,7 @@ public final class HomeActivity extends Activity {
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
     static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
     static final String WALLPAPER = "wallpaper";
+    static final String SYSTEM_WALLPAPER = "system_wallpaper";
     static final String SLIDESHOW = "wallpaper_slideshow";
     static final String SLIDESHOW_IMAGES = "wallpaper_slideshow_images";
     static final String SLIDESHOW_PERIOD = "wallpaper_slideshow_period";
@@ -314,6 +316,10 @@ public final class HomeActivity extends Activity {
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
         if (key == null) return;
         switch (key) {
+            case SYSTEM_WALLPAPER:
+                showWallpaper();
+                scheduleSlideshow();
+                break;
             case WALLPAPER:
                 if (!Objects.equals(shownWallpaper, prefs.getString(WALLPAPER, null))) showWallpaper();
                 scheduleSlideshow();
@@ -529,8 +535,6 @@ public final class HomeActivity extends Activity {
         FrameLayout backdrop = new FrameLayout(this);
         wallpaperView = new ImageView(this);
         wallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        wallpaperView.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{Color.argb(45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
         wallpaperView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
                 updateStatusBarIcons();
@@ -797,7 +801,8 @@ public final class HomeActivity extends Activity {
     /** Returns the time until the slideshow is due to change the wallpaper, or -1 if it is not. */
     private long slideshowDelay() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        if (!prefs.getBoolean(SLIDESHOW, false) || slideshowImages(this).isEmpty()) return -1;
+        if (prefs.getBoolean(SYSTEM_WALLPAPER, false)
+                || !prefs.getBoolean(SLIDESHOW, false) || slideshowImages(this).isEmpty()) return -1;
         int period = prefs.getInt(SLIDESHOW_PERIOD, 0);
         if (period == 0) return prefs.getInt(SLIDESHOW_BOOT, -1) != bootCount() ? 0 : -1;
         long elapsed = System.currentTimeMillis() - prefs.getLong(SLIDESHOW_CHANGED_AT, 0);
@@ -967,7 +972,20 @@ public final class HomeActivity extends Activity {
     }
 
     private void showWallpaper() {
-        String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null);
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        boolean system = prefs.getBoolean(SYSTEM_WALLPAPER, false);
+        getWindow().setBackgroundDrawable(new ColorDrawable(system ? Color.TRANSPARENT : BACKGROUND));
+        if (system) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+        // The system wallpaper is a separate surface: keep white status icons legible without sampling it.
+        wallpaperView.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{Color.argb(system ? 160 : 45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
+        if (system) {
+            wallpaperView.setImageDrawable(null);
+            updateStatusBarIcons();
+            return;
+        }
+        String saved = prefs.getString(WALLPAPER, null);
         Uri uri = saved == null ? null : Uri.parse(saved);
         if (uri != null && !ContentResolver.SCHEME_ANDROID_RESOURCE.equals(uri.getScheme())) {
             // A picked image comes from its document provider, which may take seconds to start right after boot.
@@ -1005,6 +1023,8 @@ public final class HomeActivity extends Activity {
     }
 
     private void applyWallpaper(String saved, Bitmap bitmap) {
+        // A document provider may finish loading an image after switching to the system wallpaper.
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(SYSTEM_WALLPAPER, false)) return;
         if (bitmap != null) wallpaperView.setImageBitmap(bitmap);
         else {
             wallpaperView.setImageResource(R.drawable.coastal_twilight);
@@ -1015,6 +1035,11 @@ public final class HomeActivity extends Activity {
     }
 
     private void updateStatusBarIcons() {
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(SYSTEM_WALLPAPER, false)) {
+            View decor = getWindow().getDecorView();
+            decor.setSystemUiVisibility(decor.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            return;
+        }
         WindowInsets insets = wallpaperView.getRootWindowInsets();
         int width = wallpaperView.getWidth();
         if (insets == null || width == 0 || insets.getStableInsetTop() == 0) return;

@@ -164,7 +164,17 @@ public final class SettingsActivity extends ScaledActivity {
     }
 
     private void buildWallpaperTab(LinearLayout page) {
-        LinearLayout wallpaper = card(page, "Фон рабочего стола", "Выберите изображение для главного экрана.");
+        LinearLayout source = card(page, "Системные обои",
+                "Показывать текущие обои Android, в том числе живые. Менять их нужно в штатных настройках тем OneOS. "
+                        + "Сменяемый фон Atlas приостановлен, пока включены системные обои.");
+        LinearLayout atlasWallpaper = column();
+        page.addView(atlasWallpaper);
+        Runnable showAtlasWallpaper = () -> atlasWallpaper.setVisibility(
+                prefs.getBoolean(HomeActivity.SYSTEM_WALLPAPER, false) ? View.GONE : View.VISIBLE);
+        toggle(source, "Системные обои", HomeActivity.SYSTEM_WALLPAPER, false, showAtlasWallpaper);
+        showAtlasWallpaper.run();
+
+        LinearLayout wallpaper = card(atlasWallpaper, "Фон рабочего стола", "Выберите изображение для главного экрана.");
         wallpaperPreview = new ImageView(this);
         wallpaperPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
         wallpaperPreview.setBackground(Ui.rounded(Ui.SURFACE_RAISED, dp(8)));
@@ -181,7 +191,7 @@ public final class SettingsActivity extends ScaledActivity {
         action(wallpaper, "Вернуть стандартный фон", () -> chooseWallpaper(null));
         showWallpaperPreview();
 
-        LinearLayout slideshow = card(page, "Сменяемый фон",
+        LinearLayout slideshow = card(atlasWallpaper, "Сменяемый фон",
                 "Фон меняется, только пока главный экран закрыт другим приложением, и никогда у вас на глазах.");
         slideshowSwitch = toggle(slideshow, "Менять фон", HomeActivity.SLIDESHOW, false, () -> { });
         slideshow.addView(label("Изображения · отметьте фоны, которые будут сменять друг друга"));
