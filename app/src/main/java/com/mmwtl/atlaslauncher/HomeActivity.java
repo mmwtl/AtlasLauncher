@@ -150,6 +150,7 @@ public final class HomeActivity extends Activity {
     // Hold time before editing starts; index 0 is the system long press timeout.
     private static final long[] EDIT_DELAYS_MS = {0, 1000, 2000, 3000};
     static final String HIDE_BY_DOUBLE_TAP = "hide_widgets_double_tap";
+    static final String HIDE_BY_PANEL_HOME = "hide_widgets_panel_home";
     private static final String WIDGETS_HIDDEN = "widgets_hidden";
     private static final long PAGE_SNAP_MS = 250;
     // A widget dragged this close to the side of the grid moves to the next page after a pause.
@@ -321,7 +322,10 @@ public final class HomeActivity extends Activity {
             case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
             case CLIMATE_PANEL_HIDDEN: applyClimatePanel(); break;
             case CLUSTER_BRIGHTNESS: applyClusterBrightness(); break;
-            case HIDE_BY_DOUBLE_TAP: if (widgetsHidden && !prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false)) setWidgetsHidden(false); break;
+            case HIDE_BY_DOUBLE_TAP: case HIDE_BY_PANEL_HOME:
+                if (widgetsHidden && !prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false)
+                        && !prefs.getBoolean(HIDE_BY_PANEL_HOME, false)) setWidgetsHidden(false);
+                break;
             case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: applyGestures(); break;
             case FAVORITES: loadFavorites(prefs); showFavorites(); break;
             case DOCK_LABELS: case DOCK_APPS: case DRAWER_ICON_SIZE: scheduleShowWidgets(); break;
@@ -367,7 +371,8 @@ public final class HomeActivity extends Activity {
         }
         loadSavedState();
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        widgetsHidden = prefs.getBoolean(WIDGETS_HIDDEN, false) && prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false);
+        widgetsHidden = prefs.getBoolean(WIDGETS_HIDDEN, false)
+                && (prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false) || prefs.getBoolean(HIDE_BY_PANEL_HOME, false));
         int sourceListId = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getInt(SOURCE_LIST_WIDGET, AppWidgetManager.INVALID_APPWIDGET_ID);
         // Power loss during binding or configuration leaves bound IDs that no placement owns.
@@ -473,9 +478,18 @@ public final class HomeActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         // Home returns to a clean desktop, like the stock launcher; the settings above HOME close with its task.
+        boolean onMainPage = currentPage == 0;
         if (editingWidgets) setEditingWidgets(false);
         if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false)) AllAppsActivity.open(this);
-        else if (!stoppedSinceResume) snapToPage(0);
+        else if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_PANEL_HOME, false)
+                && getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(HIDE_BY_PANEL_HOME, false)) {
+            // As in Launcher3: first return to the main desktop, then toggle its widgets on another press.
+            boolean popup = sourceListPopup != null && sourceListPopup.isShowing();
+            boolean hidden = !stoppedSinceResume && onMainPage && !AllAppsActivity.shown && !widgetsHidden;
+            if (popup) sourceListPopup.dismiss();
+            if (hidden != widgetsHidden) setWidgetsHidden(hidden);
+            snapToPage(0);
+        } else if (!stoppedSinceResume) snapToPage(0);
     }
 
     @Override public void onStop() {

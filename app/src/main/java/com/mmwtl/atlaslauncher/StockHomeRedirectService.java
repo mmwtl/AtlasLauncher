@@ -32,6 +32,7 @@ public final class StockHomeRedirectService extends AccessibilityService {
     static final String ENABLED = "stock_home_redirect";
     static final String ALL_APPS_ENABLED = "stock_all_apps_redirect";
     static final String EXTRA_OPEN_ALL_APPS = "open_all_apps";
+    static final String EXTRA_PANEL_HOME = "panel_home";
     private static final String STOCK_PACKAGE = "com.android.launcher3";
     private static final String STOCK_LAUNCHER = STOCK_PACKAGE + ".Launcher";
     // The plugin pins its All apps item first in this list and does not let the user move it.
@@ -88,9 +89,9 @@ public final class StockHomeRedirectService extends AccessibilityService {
             AccessibilityNodeInfo item = event.getSource();
             if (isFirstItemOf(item, PANEL_SUB_LIST) && prefs.getBoolean(ALL_APPS_ENABLED, false)) {
                 allAppsOpenedAt = now;
-                openAtlasIfHome(true);
+                openAtlasIfHome(true, false);
             } else if (isFirstItemOf(item, PANEL_MAIN_LIST) && prefs.getBoolean(ENABLED, false)) {
-                openAtlasIfHome(false);
+                openAtlasIfHome(false, true);
             }
             return;
         }
@@ -98,10 +99,10 @@ public final class StockHomeRedirectService extends AccessibilityService {
         if (now < allowStockLauncherUntil || !prefs.getBoolean(ENABLED, false)) return;
         // Opening AtlasLauncher again would close the All apps view just opened, or start the chosen activity twice.
         if (now - allAppsOpenedAt < ALL_APPS_CLICK_TIMEOUT_MS) return;
-        openAtlasIfHome(false);
+        openAtlasIfHome(false, false);
     }
 
-    private void openAtlasIfHome(boolean allApps) {
+    private void openAtlasIfHome(boolean allApps, boolean panelHome) {
         // After a rollback to the stock HOME the panel buttons must keep opening it.
         ResolveInfo home = getPackageManager().resolveActivity(
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
@@ -114,7 +115,8 @@ public final class StockHomeRedirectService extends AccessibilityService {
         }
         // Launcher3 now covers an open catalog, which then closes itself; a second press only returns to HOME.
         startActivity(new Intent(this, HomeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(EXTRA_OPEN_ALL_APPS, allApps && !AllAppsActivity.shown));
+                .putExtra(EXTRA_OPEN_ALL_APPS, allApps && !AllAppsActivity.shown)
+                .putExtra(EXTRA_PANEL_HOME, panelHome));
     }
 
     private boolean isStockLauncherHidden() {
