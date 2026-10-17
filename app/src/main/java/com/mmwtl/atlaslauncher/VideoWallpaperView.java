@@ -33,6 +33,7 @@ final class VideoWallpaperView extends TextureView implements TextureView.Surfac
     private boolean opening;
     private boolean error;
     private boolean openFailed;
+    private boolean played;
     private int generation;
     private int videoWidth;
     private int videoHeight;
@@ -51,6 +52,7 @@ final class VideoWallpaperView extends TextureView implements TextureView.Surfac
         this.uri = uri;
         error = false;
         openFailed = false;
+        played = false;
         setVisibility(uri == null ? GONE : VISIBLE);
         openVideo();
     }
@@ -104,14 +106,22 @@ final class VideoWallpaperView extends TextureView implements TextureView.Surfac
                         if (mp == player) fitVideo(width, height);
                     });
                     player.setOnInfoListener((mp, what, extra) -> {
-                        if (mp == player && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) rendered.run();
+                        if (mp == player && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                            played = true;
+                            rendered.run();
+                        }
                         return false;
                     });
                     player.setOnErrorListener((mp, what, extra) -> {
-                        if (mp == player) {
-                            Log.w("AtlasLauncher", "Video wallpaper playback failed: " + what + "/" + extra);
-                            videoFailed();
-                        }
+                        if (mp != player) return true;
+                        Log.w("AtlasLauncher", "Video wallpaper playback failed: " + what + "/" + extra);
+                        if (played) {
+                            // A video that already played broke because the media server restarted, as codec fixes
+                            // do after boot. Open it again once the server is back.
+                            played = false;
+                            releasePlayer();
+                            main.postDelayed(this::openVideo, 3_000);
+                        } else videoFailed();
                         return true;
                     });
                     if (opened.getDeclaredLength() < 0) player.setDataSource(opened.getFileDescriptor());
