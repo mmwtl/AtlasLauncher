@@ -214,8 +214,11 @@ public final class HomeActivity extends Activity {
     private LinearLayout pageIndicator;
     private boolean widgetsHidden;
     private long lastEmptyTap;
-    // Home pressed while HOME is already in front returns to the first page, as in Launcher3.
-    private boolean stoppedSinceResume;
+    // Home pressed while HOME is already in front returns to the first page, as in Launcher3. A translucent
+    // activity above HOME (GLauncher of GInputBridge) only pauses it, so the desktop counts as covered from onPause.
+    // The mark is posted: a new intent to the resumed HOME pauses it for a moment within the same message.
+    private boolean pausedSinceResume;
+    private final Runnable markPaused = () -> pausedSinceResume = true;
     private final Runnable hideIndicator = () -> { if (!editingWidgets) pageIndicator.setVisibility(View.GONE); };
     private PopupWindow sourceListPopup;
     // The saved wallpaper on screen, so a change made in settings loads only a new image.
@@ -441,7 +444,8 @@ public final class HomeActivity extends Activity {
 
     @Override public void onResume() {
         super.onResume();
-        stoppedSinceResume = false;
+        wallpaperView.removeCallbacks(markPaused);
+        pausedSinceResume = false;
         // The system 12/24-hour setting may have changed while HOME was in the background.
         updateDesktopClock();
         // Like Launcher3: OneOS LifeControlService starts its last boot stage (hvac, settings, gesture and
@@ -502,11 +506,16 @@ public final class HomeActivity extends Activity {
                 && getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(HIDE_BY_PANEL_HOME, false)) {
             // As in Launcher3: first return to the main desktop, then toggle its widgets on another press.
             boolean popup = sourceListPopup != null && sourceListPopup.isShowing();
-            boolean hidden = !stoppedSinceResume && onMainPage && !AllAppsActivity.shown && !widgetsHidden;
+            boolean hidden = !pausedSinceResume && onMainPage && !AllAppsActivity.shown && !widgetsHidden;
             if (popup) sourceListPopup.dismiss();
             if (hidden != widgetsHidden) setWidgetsHidden(hidden);
             snapToPage(0);
-        } else if (!stoppedSinceResume) snapToPage(0);
+        } else if (!pausedSinceResume) snapToPage(0);
+    }
+
+    @Override public void onPause() {
+        wallpaperView.post(markPaused);
+        super.onPause();
     }
 
     @Override public void onStop() {
@@ -514,7 +523,6 @@ public final class HomeActivity extends Activity {
         widgetHost.stopListening();
         homeVisible = false;
         setWallpaperPlaying(false);
-        stoppedSinceResume = true;
         // The slideshow changes the wallpaper only while another app covers HOME.
         scheduleSlideshow();
         super.onStop();
