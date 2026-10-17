@@ -197,15 +197,20 @@ public final class SettingsActivity extends ScaledActivity {
 
         LinearLayout slideshow = card(page, "Сменяемый фон",
                 "Фон меняется, только пока главный экран закрыт другим приложением, и никогда у вас на глазах.");
+        LinearLayout options = column();
         slideshowSwitch = toggle(slideshow, "Менять фон", HomeActivity.SLIDESHOW, false, () -> {
-            if (prefs.getBoolean(HomeActivity.SLIDESHOW, false)) {
+            boolean on = prefs.getBoolean(HomeActivity.SLIDESHOW, false);
+            options.setVisibility(on ? View.VISIBLE : View.GONE);
+            if (on) {
                 prefs.edit().remove(HomeActivity.VIDEO_WALLPAPER).apply();
                 releaseUnusedFiles();
                 showWallpaperPreview();
             }
         });
-        slideshow.addView(label("Изображения · отметьте фоны, которые будут сменять друг друга"));
-        LinearLayout presets = thumbnailRow(slideshow);
+        options.setVisibility(slideshowSwitch.isChecked() ? View.VISIBLE : View.GONE);
+        slideshow.addView(options);
+        options.addView(label("Изображения · отметьте фоны, которые будут сменять друг друга"));
+        LinearLayout presets = thumbnailRow(options);
         List<String> slides = HomeActivity.slideshowImages(this);
         for (int i = 0; i < HomeActivity.PRESET_WALLPAPERS.length; i++) {
             String uri = HomeActivity.presetUri(this, HomeActivity.PRESET_WALLPAPERS[i]);
@@ -219,11 +224,11 @@ public final class SettingsActivity extends ScaledActivity {
             });
         }
         ownSlides = column();
-        slideshow.addView(ownSlides);
+        options.addView(ownSlides);
         showOwnSlides();
-        action(slideshow, "Добавить свои изображения", () -> pickMedia(PICK_SLIDESHOW, true));
-        slideshow.addView(label("Как часто менять"));
-        choice(slideshow, HomeActivity.SLIDESHOW_PERIOD,
+        action(options, "Добавить свои изображения", () -> pickMedia(PICK_SLIDESHOW, true));
+        options.addView(label("Как часто менять"));
+        choice(options, HomeActivity.SLIDESHOW_PERIOD,
                 new String[]{"При включении", "15 минут", "Час", "День"}, 0, () -> { });
     }
 
