@@ -180,9 +180,9 @@ public final class HomeActivity extends Activity {
     private static final long BOOT_LOGO_HOLD_MS = 5_000;
     // Launcher3 takes about 4 s to start after boot; it starts under the logo, after HOME has drawn.
     private static final long LAUNCHER3_PRELOAD_DELAY_MS = 2_000;
-    // Android display 4 (1920×532) is not shown anywhere on the G636; Launcher3 opened there stays out of sight.
-    // Display 1 (800×480) is not used: on cars with a HUD it can be shown there.
-    private static final int HIDDEN_DISPLAY_ID = 4;
+    // Android display 2 is the passenger screen (PSD), which the target cars do not have; Launcher3 opened there
+    // stays out of sight. Display 4 shows through transparent parts of the cluster, display 1 on cars with a HUD.
+    private static final int HIDDEN_DISPLAY_ID = 2;
     private final List<AppEntry> apps = new ArrayList<>();
     // The catalog activity shows the list HOME last loaded instead of loading it again.
     static List<AppEntry> loadedApps;
