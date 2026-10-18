@@ -196,7 +196,7 @@ public final class SettingsActivity extends ScaledActivity {
         showWallpaperPreview();
 
         LinearLayout slideshow = card(page, "Сменяемый фон",
-                "Фон меняется, только пока главный экран закрыт другим приложением, и никогда у вас на глазах.");
+                "Новый фон проявляется плавно, поверх прежнего, чтобы не отвлекать в дороге.");
         LinearLayout options = column();
         slideshowSwitch = toggle(slideshow, "Менять фон", HomeActivity.SLIDESHOW, false, () -> {
             boolean on = prefs.getBoolean(HomeActivity.SLIDESHOW, false);

@@ -1,5 +1,8 @@
 package com.mmwtl.atlaslauncher;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.Dialog;
@@ -129,6 +132,8 @@ public final class HomeActivity extends Activity {
     private static final String SLIDESHOW_CHANGED_AT = "wallpaper_slideshow_changed_at";
     private static final String SLIDESHOW_BOOT = "wallpaper_slideshow_boot";
     // Index 0 changes the wallpaper once per boot.
+    // Slow enough that a change on the visible HOME does not draw the driver's eye.
+    private static final long SLIDESHOW_FADE_MS = 3000;
     private static final long[] SLIDESHOW_PERIODS_MS = {0, 15 * 60_000, 60 * 60_000, 24 * 60 * 60_000};
     static final int[] PRESET_WALLPAPERS = {
             R.drawable.wallpaper_car_suv, R.drawable.wallpaper_orange_trails,
@@ -197,6 +202,8 @@ public final class HomeActivity extends Activity {
     private LinearLayout widgetControls;
     private Button settingsButton;
     private ImageView wallpaperView;
+    private ImageView previousWallpaperView;
+    private ValueAnimator wallpaperFade;
     private VideoWallpaperView videoWallpaper;
     private LinearLayout favoritePanel;
     private LinearLayout appsTile;
@@ -523,8 +530,6 @@ public final class HomeActivity extends Activity {
         widgetHost.stopListening();
         homeVisible = false;
         setWallpaperPlaying(false);
-        // The slideshow changes the wallpaper only while another app covers HOME.
-        scheduleSlideshow();
         super.onStop();
     }
 
@@ -564,6 +569,9 @@ public final class HomeActivity extends Activity {
             Toast.makeText(this, "Не удалось воспроизвести видео. Выберите другой файл.", Toast.LENGTH_LONG).show();
         });
         backdrop.addView(videoWallpaper, new FrameLayout.LayoutParams(-1, -1));
+        previousWallpaperView = new ImageView(this);
+        previousWallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        backdrop.addView(previousWallpaperView, new FrameLayout.LayoutParams(-1, -1));
         wallpaperView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
                 updateStatusBarIcons();
@@ -822,7 +830,6 @@ public final class HomeActivity extends Activity {
     private void scheduleSlideshow() {
         slideshowGeneration++;
         wallpaperView.removeCallbacks(slideshowStep);
-        if (homeVisible) return;
         long delay = slideshowDelay();
         if (delay >= 0) wallpaperView.postDelayed(slideshowStep, delay);
     }
@@ -855,9 +862,9 @@ public final class HomeActivity extends Activity {
                 .putLong(SLIDESHOW_CHANGED_AT, System.currentTimeMillis()).putInt(SLIDESHOW_BOOT, bootCount()).apply();
     }
 
-    /** Shows the next readable slideshow image; runs only while HOME is hidden. */
+    /** Fades in the next readable slideshow image. */
     private void advanceSlideshow() {
-        if (isDestroyed() || homeVisible || slideshowDelay() != 0) return;
+        if (isDestroyed() || slideshowDelay() != 0) return;
         int generation = slideshowGeneration;
         List<String> slides = nextSlides();
         wallpaperLoader.execute(() -> {
@@ -866,8 +873,8 @@ public final class HomeActivity extends Activity {
                 if (image == null) continue;
                 runOnUiThread(() -> {
                     // HOME or the settings may have changed while the image loaded.
-                    if (isDestroyed() || homeVisible || generation != slideshowGeneration) return;
-                    applyWallpaper(image);
+                    if (isDestroyed() || generation != slideshowGeneration) return;
+                    crossfadeWallpaper(image);
                     shownWallpaper = slide;
                     saveSlide(slide);
                 });
@@ -1073,7 +1080,26 @@ public final class HomeActivity extends Activity {
         }
     }
 
+    /** Keeps the previous image under the new one; the scrim stays still because only the image fades. */
+    private void crossfadeWallpaper(Drawable image) {
+        Drawable previous = wallpaperView.getDrawable();
+        applyWallpaper(image);
+        previousWallpaperView.setImageDrawable(previous);
+        wallpaperView.setImageAlpha(0);
+        wallpaperFade = ValueAnimator.ofInt(0, 255).setDuration(SLIDESHOW_FADE_MS);
+        wallpaperFade.addUpdateListener(fade -> wallpaperView.setImageAlpha((int) fade.getAnimatedValue()));
+        wallpaperFade.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator animation) {
+                previousWallpaperView.setImageDrawable(null);
+                wallpaperView.setImageAlpha(255);
+            }
+        });
+        wallpaperFade.start();
+    }
+
     private void applyWallpaper(Drawable image) {
+        // Ending a running fade shows its image fully before it is replaced.
+        if (wallpaperFade != null) wallpaperFade.cancel();
         if (wallpaperView.getDrawable() instanceof Animatable) ((Animatable) wallpaperView.getDrawable()).stop();
         if (image != null) wallpaperView.setImageDrawable(image);
         else wallpaperView.setImageResource(R.drawable.coastal_twilight);
