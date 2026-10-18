@@ -128,13 +128,15 @@ public final class HomeActivity extends Activity {
     static final String VIDEO_WALLPAPER = "wallpaper_video";
     static final String SLIDESHOW = "wallpaper_slideshow";
     static final String SLIDESHOW_IMAGES = "wallpaper_slideshow_images";
-    static final String SLIDESHOW_PERIOD = "wallpaper_slideshow_period";
+    // Unit 0 changes the wallpaper once per boot; units 1 and 2 every SLIDESHOW_INTERVAL minutes or hours.
+    static final String SLIDESHOW_UNIT = "wallpaper_slideshow_unit";
+    static final String SLIDESHOW_INTERVAL = "wallpaper_slideshow_interval";
+    static final int[] SLIDESHOW_MAX_INTERVAL = {0, 60, 24};
     private static final String SLIDESHOW_CHANGED_AT = "wallpaper_slideshow_changed_at";
     private static final String SLIDESHOW_BOOT = "wallpaper_slideshow_boot";
     // Index 0 changes the wallpaper once per boot.
     // Slow enough that a change on the visible HOME does not draw the driver's eye.
     private static final long SLIDESHOW_FADE_MS = 3000;
-    private static final long[] SLIDESHOW_PERIODS_MS = {0, 15 * 60_000, 60 * 60_000, 24 * 60 * 60_000};
     static final int[] PRESET_WALLPAPERS = {
             R.drawable.wallpaper_car_suv, R.drawable.wallpaper_orange_trails,
             R.drawable.wallpaper_graphite, R.drawable.wallpaper_purple_sky,
@@ -339,7 +341,7 @@ public final class HomeActivity extends Activity {
                         || !Objects.equals(shownVideo, prefs.getString(VIDEO_WALLPAPER, null))) showWallpaper();
                 scheduleSlideshow();
                 break;
-            case SLIDESHOW: case SLIDESHOW_IMAGES: case SLIDESHOW_PERIOD: scheduleSlideshow(); break;
+            case SLIDESHOW: case SLIDESHOW_IMAGES: case SLIDESHOW_UNIT: case SLIDESHOW_INTERVAL: scheduleSlideshow(); break;
             case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
             case MULTIPLE_PAGES:
                 currentPage = 0;
@@ -839,11 +841,16 @@ public final class HomeActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (prefs.getString(VIDEO_WALLPAPER, null) != null
                 || !prefs.getBoolean(SLIDESHOW, false) || slideshowImages(this).isEmpty()) return -1;
-        int period = prefs.getInt(SLIDESHOW_PERIOD, 0);
-        if (period == 0) return prefs.getInt(SLIDESHOW_BOOT, -1) != bootCount() ? 0 : -1;
+        int unit = prefs.getInt(SLIDESHOW_UNIT, 0);
+        if (unit == 0) return prefs.getInt(SLIDESHOW_BOOT, -1) != bootCount() ? 0 : -1;
         long elapsed = System.currentTimeMillis() - prefs.getLong(SLIDESHOW_CHANGED_AT, 0);
         // A clock set back after the last change makes the change due.
-        return elapsed < 0 ? 0 : Math.max(0, SLIDESHOW_PERIODS_MS[period] - elapsed);
+        return elapsed < 0 ? 0 : Math.max(0, slideshowInterval(prefs, unit) * (unit == 1 ? 60_000L : 3_600_000L) - elapsed);
+    }
+
+    /** The interval stays within the slider range when the unit changes. */
+    static int slideshowInterval(SharedPreferences prefs, int unit) {
+        return Math.max(1, Math.min(SLIDESHOW_MAX_INTERVAL[unit], prefs.getInt(SLIDESHOW_INTERVAL, 15)));
     }
 
     private int bootCount() {

@@ -228,8 +228,34 @@ public final class SettingsActivity extends ScaledActivity {
         showOwnSlides();
         action(options, "Добавить свои изображения", () -> pickMedia(PICK_SLIDESHOW, true));
         options.addView(label("Как часто менять"));
-        choice(options, HomeActivity.SLIDESHOW_PERIOD,
-                new String[]{"При включении", "15 минут", "Час", "День"}, 0, () -> { });
+        TextView interval = Ui.text(this, "", 14, Ui.TEXT);
+        SeekBar intervalSlider = new SeekBar(this);
+        intervalSlider.setContentDescription("Интервал смены фона");
+        Runnable showInterval = () -> {
+            int unit = prefs.getInt(HomeActivity.SLIDESHOW_UNIT, 0);
+            interval.setVisibility(unit == 0 ? View.GONE : View.VISIBLE);
+            intervalSlider.setVisibility(unit == 0 ? View.GONE : View.VISIBLE);
+            if (unit == 0) return;
+            int value = HomeActivity.slideshowInterval(prefs, unit);
+            intervalSlider.setMax(HomeActivity.SLIDESHOW_MAX_INTERVAL[unit] - 1);
+            intervalSlider.setProgress(value - 1);
+            interval.setText(unit == 1 ? every(value, "минуту", "минуты", "минут") : every(value, "час", "часа", "часов"));
+        };
+        intervalSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                if (!user) return;
+                prefs.edit().putInt(HomeActivity.SLIDESHOW_INTERVAL, progress + 1).apply();
+                showInterval.run();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        choice(options, HomeActivity.SLIDESHOW_UNIT, new String[]{"При включении", "Минуты", "Часы"}, 0, showInterval);
+        options.addView(interval, margin(14, -2));
+        options.addView(intervalSlider, margin(4, -2));
+        showInterval.run();
     }
 
     private void buildDesktopTab(LinearLayout page) {
@@ -830,6 +856,14 @@ public final class SettingsActivity extends ScaledActivity {
         if (description != null) card.addView(hint(description));
         parent.addView(card);
         return card;
+    }
+
+    /** "Раз в минуту", "Раз в 2 минуты", "Раз в 21 минуту", "Раз в 5 минут". */
+    private static String every(int count, String one, String few, String many) {
+        if (count == 1) return "Раз в " + one;
+        int tens = count % 100 / 10, last = count % 10;
+        String word = tens != 1 && last == 1 ? one : tens != 1 && last >= 2 && last <= 4 ? few : many;
+        return "Раз в " + count + " " + word;
     }
 
     private TextView label(String text) {
