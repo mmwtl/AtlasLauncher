@@ -2,6 +2,7 @@ package com.mmwtl.atlaslauncher;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -11,9 +12,12 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.RippleDrawable;
 import android.media.AudioManager;
+import android.net.wifi.SupplicantState;
+import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -36,6 +40,12 @@ final class BuiltInWidgets {
     static final String VOLUME_MUTE = "volume_mute";
     static final String VOLUME_ICONS = "volume_icons";
     static final String VOLUME_JOINED = "volume_joined";
+    static final String CONNECTIVITY_WIFI = "connectivity_wifi";
+    static final String CONNECTIVITY_BLUETOOTH = "connectivity_bluetooth";
+    static final String CONNECTIVITY_STYLE = "connectivity_style";
+    static final int STYLE_ICONS = 0;
+    static final int STYLE_STATE = 1;
+    static final int STYLE_NETWORK = 2;
     // Volume up, volume down for each icon style; mute uses one icon in every style.
     private static final int[][] VOLUME_ICON_STYLES = {
             {R.drawable.ic_volume_up, R.drawable.ic_volume_down},
@@ -195,21 +205,29 @@ final class BuiltInWidgets {
         return panel;
     }
 
-    /** Rebuilds the Wi-Fi and Bluetooth tiles: in a row for a wide widget, in a column for a tall one. */
+    /**
+     * Rebuilds the Wi-Fi and Bluetooth tiles: in a row for a wide widget, in a column for a tall one. A wide tile
+     * puts its text beside the icon, a narrow one under it.
+     */
     // BLUETOOTH_CONNECT exists from API 31; with targetSdk 30 the BLUETOOTH and BLUETOOTH_ADMIN grants apply.
     @SuppressLint("MissingPermission")
     static void updateConnectivity(Context context, View hostView, HomeActivity.WidgetPlacement placement) {
         LinearLayout panel = (LinearLayout) hostView;
         panel.removeAllViews();
+        SharedPreferences prefs = context.getSharedPreferences(HomeActivity.PREFS, Context.MODE_PRIVATE);
+        WifiManager wifi = prefs.getBoolean(CONNECTIVITY_WIFI, true)
+                ? context.getApplicationContext().getSystemService(WifiManager.class) : null;
+        BluetoothAdapter bluetooth = prefs.getBoolean(CONNECTIVITY_BLUETOOTH, true) ? BluetoothAdapter.getDefaultAdapter() : null;
+        int style = prefs.getInt(CONNECTIVITY_STYLE, STYLE_STATE);
+        int tiles = (wifi == null ? 0 : 1) + (bluetooth == null ? 0 : 1);
+        if (tiles == 0) return;
         boolean horizontal = placement.width >= placement.height;
         panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        int tileWidth = horizontal ? placement.width / 2 : placement.width;
-        int tileHeight = horizontal ? placement.height : placement.height / 2;
-        // A wide tile puts the name and state beside the icon, a narrow one shows only the icon.
-        boolean showText = tileWidth >= tileHeight * 2;
-        int iconSize = Math.max(16, Math.min(48, Math.min(tileWidth, tileHeight) * 2 / 5));
-        WifiManager wifi = context.getApplicationContext().getSystemService(WifiManager.class);
-        BluetoothAdapter bluetooth = BluetoothAdapter.getDefaultAdapter();
+        int tileWidth = horizontal ? placement.width / tiles : placement.width;
+        int tileHeight = horizontal ? placement.height : placement.height / tiles;
+        boolean beside = style != STYLE_ICONS && tileWidth >= tileHeight * 2;
+        boolean below = style != STYLE_ICONS && !beside;
+        int iconSize = Math.max(16, Math.min(48, Math.min(tileWidth, tileHeight) * (below ? 1 : 2) / (below ? 3 : 5)));
         for (int i = 0; i < 2; i++) {
             boolean isWifi = i == 0;
             if (isWifi ? wifi == null : bluetooth == null) continue;
@@ -217,11 +235,15 @@ final class BuiltInWidgets {
             boolean on = isWifi ? state == WifiManager.WIFI_STATE_ENABLED : state == BluetoothAdapter.STATE_ON;
             boolean off = isWifi ? state == WifiManager.WIFI_STATE_DISABLED : state == BluetoothAdapter.STATE_OFF;
             String name = isWifi ? "Wi-Fi" : "Bluetooth";
-            String status = on ? "Вкл" : off ? "Выкл"
-                    : isWifi ? (state == WifiManager.WIFI_STATE_ENABLING ? "Включается…" : "Выключается…")
-                    : (state == BluetoothAdapter.STATE_TURNING_ON ? "Включается…" : "Выключается…");
+            String status = off ? "Выкл"
+                    : !on ? (isWifi ? state == WifiManager.WIFI_STATE_ENABLING : state == BluetoothAdapter.STATE_TURNING_ON)
+                            ? "Включается…" : "Выключается…"
+                    : style != STYLE_NETWORK ? "Вкл"
+                    : isWifi ? wifiNetwork(wifi) : bluetoothDevice(bluetooth);
             LinearLayout button = new LinearLayout(context);
+            button.setOrientation(below ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
             button.setGravity(Gravity.CENTER);
+            button.setPadding(Ui.dp(context, 10), 0, Ui.dp(context, 10), 0);
             int radius = Ui.dp(context, 24);
             button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
                     Ui.rounded(on ? ATLAS_ACTIVE : HomeActivity.NEUTRAL_SURFACE, radius), Ui.rounded(Color.WHITE, radius)));
@@ -236,30 +258,59 @@ final class BuiltInWidgets {
             image.setImageResource(isWifi ? R.drawable.ic_wifi : R.drawable.ic_bluetooth);
             image.setAlpha(on || off ? 1f : 0.5f);
             button.addView(image, new LinearLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize)));
-            if (showText) {
+            if (beside) {
                 LinearLayout texts = new LinearLayout(context);
                 texts.setOrientation(LinearLayout.VERTICAL);
-                TextView title = new TextView(context);
-                title.setText(name);
-                title.setTextSize(18);
-                title.setTextColor(TEXT);
-                title.setSingleLine(true);
-                texts.addView(title);
-                TextView value = new TextView(context);
-                value.setText(status);
-                value.setTextSize(14);
-                value.setTextColor(on ? TEXT : MUTED);
-                value.setSingleLine(true);
-                texts.addView(value);
+                texts.addView(tileText(context, name, 18, TEXT));
+                texts.addView(tileText(context, status, 14, on ? TEXT : MUTED));
                 LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
                 textParams.leftMargin = Ui.dp(context, 12);
                 button.addView(texts, textParams);
+            } else if (below) {
+                // The icon already names the tile; only its state goes under it.
+                LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
+                textParams.topMargin = Ui.dp(context, 4);
+                button.addView(tileText(context, status, 14, on ? TEXT : MUTED), textParams);
             }
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
             int margin = Ui.dp(context, 3);
             params.setMargins(margin, margin, margin, margin);
             panel.addView(button, params);
         }
+    }
+
+    private static TextView tileText(Context context, String value, float sizeSp, int color) {
+        TextView view = new TextView(context);
+        view.setText(value);
+        view.setTextSize(sizeSp);
+        view.setTextColor(color);
+        view.setSingleLine(true);
+        view.setEllipsize(TextUtils.TruncateAt.END);
+        return view;
+    }
+
+    /** The connected network; Android hides its name without location access or with location off. */
+    private static String wifiNetwork(WifiManager wifi) {
+        WifiInfo info = wifi.getConnectionInfo();
+        if (info == null || info.getSupplicantState() != SupplicantState.COMPLETED) return "Не подключено";
+        String ssid = info.getSSID();
+        if (ssid == null || "<unknown ssid>".equals(ssid)) return "Подключено";
+        return ssid.length() > 1 && ssid.startsWith("\"") && ssid.endsWith("\"") ? ssid.substring(1, ssid.length() - 1) : ssid;
+    }
+
+    @SuppressLint("MissingPermission")
+    private static String bluetoothDevice(BluetoothAdapter bluetooth) {
+        for (BluetoothDevice device : bluetooth.getBondedDevices()) {
+            try {
+                // isConnected is hidden on API 30 but open to apps; the public API reports only per profile.
+                if ((boolean) BluetoothDevice.class.getMethod("isConnected").invoke(device)) {
+                    return device.getName() != null ? device.getName() : device.getAddress();
+                }
+            } catch (ReflectiveOperationException e) {
+                return "Вкл";
+            }
+        }
+        return "Не подключено";
     }
 
     @SuppressWarnings("deprecation")

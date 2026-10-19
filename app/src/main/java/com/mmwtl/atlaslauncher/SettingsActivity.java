@@ -1,5 +1,6 @@
 package com.mmwtl.atlaslauncher;
 
+import android.Manifest;
 import android.app.ActivityOptions;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -57,6 +58,7 @@ public final class SettingsActivity extends ScaledActivity {
     static final int PAGE_DOCK = 1;
     static final int PAGE_CLOCK = 2;
     static final int PAGE_VOLUME = 3;
+    static final int PAGE_CONNECTIVITY = 4;
     private static final String EXTRA_PAGE = "page";
     private static final String TAB = "settings_tab";
     private static final int[] TAB_LABELS = {R.string.settings_tab_wallpaper, R.string.settings_tab_desktop,
@@ -65,6 +67,7 @@ public final class SettingsActivity extends ScaledActivity {
     private static final int PICK_WALLPAPER = 1;
     private static final int PICK_SLIDESHOW = 2;
     private static final int PICK_VIDEO = 3;
+    private static final int LOCATION_PERMISSION = 4;
 
     private final List<TextView> tabs = new ArrayList<>();
     private final List<LinearLayout> panels = new ArrayList<>();
@@ -79,6 +82,7 @@ public final class SettingsActivity extends ScaledActivity {
     private Switch slideshowSwitch;
     private LinearLayout ownSlides;
     private LinearLayout redirectState;
+    private Runnable connectivityChanged;
 
     static void open(Context context, int page) {
         // A second tap before the settings cover HOME must not open them twice.
@@ -103,10 +107,11 @@ public final class SettingsActivity extends ScaledActivity {
         content.setPadding(dp(24), dp(8), dp(24), dp(24) + HomeActivity.CLIMATE_PANEL_PX);
         scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        // Dock, clock and volume are widgets: their pages open only from the widget's own settings button.
+        // Dock, clock, volume and Wi-Fi/Bluetooth are widgets: their pages open only from the widget's own settings button.
         if (page == PAGE_DOCK) buildDockPage(content);
         else if (page == PAGE_CLOCK) buildClockPage(content);
         else if (page == PAGE_VOLUME) buildVolumePage(content);
+        else if (page == PAGE_CONNECTIVITY) buildConnectivityPage(content);
         else {
             buildWallpaperTab(page(content));
             buildDesktopTab(page(content));
@@ -140,7 +145,8 @@ public final class SettingsActivity extends ScaledActivity {
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.setBaselineAligned(false);
         int title = page == PAGE_DOCK ? R.string.settings_dock : page == PAGE_CLOCK ? R.string.settings_clock
-                : page == PAGE_VOLUME ? R.string.settings_volume : R.string.app_name;
+                : page == PAGE_VOLUME ? R.string.settings_volume
+                : page == PAGE_CONNECTIVITY ? R.string.settings_connectivity : R.string.app_name;
         titleRow.addView(Ui.heading(this, title, 24));
         TextView versionView = Ui.text(this, page == PAGE_MAIN ? version() : "", 12, Ui.TEXT_SECONDARY);
         versionView.setPadding(dp(8), dp(6), 0, 0);
@@ -462,6 +468,51 @@ public final class SettingsActivity extends ScaledActivity {
         toggle(preview, "Одним блоком", BuiltInWidgets.VOLUME_JOINED, false, changed);
         preview.addView(label("Значки"));
         choice(preview, BuiltInWidgets.VOLUME_ICONS, new String[]{"Динамик", "Плюс и минус", "Стрелки"}, 0, changed);
+    }
+
+    private void buildConnectivityPage(LinearLayout content) {
+        LinearLayout preview = card(content, "Предпросмотр",
+                "У широкой плитки подпись стоит рядом со значком, у узкой — под ним.");
+        HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(0, 0, 0, 384, 96);
+        View connectivity = BuiltInWidgets.createConnectivity(this, previewPlacement);
+        // Only shows the style: its tiles would switch the car's radios.
+        FrameLayout frame = new FrameLayout(this) {
+            @Override public boolean onInterceptTouchEvent(MotionEvent event) { return true; }
+        };
+        frame.addView(connectivity, new FrameLayout.LayoutParams(-1, -1));
+        preview.addView(frame, margin(12, dp(96)));
+        Runnable changed = () -> BuiltInWidgets.updateConnectivity(this, connectivity, previewPlacement);
+        connectivityChanged = changed;
+        Switch[] shown = new Switch[2];
+        String[] keys = {BuiltInWidgets.CONNECTIVITY_WIFI, BuiltInWidgets.CONNECTIVITY_BLUETOOTH};
+        String[] names = {"Wi-Fi", "Bluetooth"};
+        for (int i = 0; i < 2; i++) {
+            int index = i;
+            shown[i] = toggle(preview, names[i], prefs.getBoolean(keys[i], true), checked -> {
+                // At least one tile stays: an empty widget could not be found to remove.
+                if (!checked && !shown[1 - index].isChecked()) {
+                    shown[index].setChecked(true);
+                    return;
+                }
+                prefs.edit().putBoolean(keys[index], checked).apply();
+                changed.run();
+            });
+        }
+        preview.addView(label("Подпись"));
+        choice(preview, BuiltInWidgets.CONNECTIVITY_STYLE, new String[]{"Только значки", "Вкл и выкл", "Сеть и устройство"},
+                BuiltInWidgets.STYLE_STATE, () -> {
+                    changed.run();
+                    if (prefs.getInt(BuiltInWidgets.CONNECTIVITY_STYLE, BuiltInWidgets.STYLE_STATE) == BuiltInWidgets.STYLE_NETWORK
+                            && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+                        requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION);
+                });
+        preview.addView(Ui.text(this, "Название сети Wi-Fi Android показывает только с доступом к местоположению "
+                + "и при включённой геолокации; без них плитка пишет «Подключено».", 13, Ui.TEXT_SECONDARY), margin(10, -2));
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        if (request == LOCATION_PERMISSION && connectivityChanged != null) connectivityChanged.run();
     }
 
     // ---- Фон ----

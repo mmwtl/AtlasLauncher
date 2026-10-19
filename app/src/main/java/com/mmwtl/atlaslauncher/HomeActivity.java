@@ -11,6 +11,7 @@ import android.appwidget.AppWidgetHostView;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProviderInfo;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -363,6 +364,8 @@ public final class HomeActivity extends Activity {
             case BuiltInWidgets.CLOCK_DATE: updateDesktopClock(); break;
             case BuiltInWidgets.VOLUME_MUTE: case BuiltInWidgets.VOLUME_ICONS: case BuiltInWidgets.VOLUME_JOINED:
                 updateDesktopVolume(); break;
+            case BuiltInWidgets.CONNECTIVITY_WIFI: case BuiltInWidgets.CONNECTIVITY_BLUETOOTH:
+            case BuiltInWidgets.CONNECTIVITY_STYLE: updateDesktopConnectivity(); break;
         }
     };
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
@@ -427,7 +430,10 @@ public final class HomeActivity extends Activity {
         volume.addAction("android.media.STREAM_MUTE_CHANGED_ACTION");
         registerReceiver(volumeReceiver, volume);
         IntentFilter connectivity = new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION);
+        connectivity.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         connectivity.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+        connectivity.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
+        connectivity.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
         registerReceiver(connectivityReceiver, connectivity);
         // HOME is not drawn yet, so a due slideshow change here is never seen.
         if (slideshowDelay() == 0) saveSlide(nextSlides().get(0));
@@ -469,6 +475,8 @@ public final class HomeActivity extends Activity {
         pausedSinceResume = false;
         // The system 12/24-hour setting may have changed while HOME was in the background.
         updateDesktopClock();
+        // Location access, which the network name needs, may have been granted or switched meanwhile.
+        updateDesktopConnectivity();
         // Like Launcher3: OneOS LifeControlService starts its last boot stage (hvac, settings, gesture and
         // other OEM services, night mode) only on this broadcast from the first resume of HOME.
         if (startupPending) {
@@ -2080,14 +2088,14 @@ public final class HomeActivity extends Activity {
         dragSurface.setContentDescription("Перетащить " + title);
         dragSurface.setOnTouchListener(widgetTouch(container, hostView, placement, info, false));
         container.addView(dragSurface, new FrameLayout.LayoutParams(-1, -1));
-        // The Wi-Fi/Bluetooth widget has nothing to set up.
-        if (info == null ? placement.id != CONNECTIVITY_WIDGET_ID : info.configure != null) {
+        if (info == null || info.configure != null) {
             Button settings = button("⚙");
             settings.setContentDescription("Настроить " + title);
             settings.setOnClickListener(v -> {
                 if (placement.id == CLOCK_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_CLOCK);
                 else if (placement.id == DOCK_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_DOCK);
                 else if (placement.id == VOLUME_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_VOLUME);
+                else if (placement.id == CONNECTIVITY_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_CONNECTIVITY);
                 else reconfigureWidget(placement);
             });
             container.addView(settings, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.LEFT));

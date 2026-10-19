@@ -10,6 +10,7 @@
     <string name="settings_dock">Док приложений</string>
     <string name="settings_clock">Часы</string>
     <string name="settings_volume">Громкость</string>
+    <string name="settings_connectivity">Wi-Fi и Bluetooth</string>
 
     <string name="gstore_url" translatable="false">https://disk.yandex.ru/d/bJoMhjqGw8rMtg</string>
     <string name="gstore_title">Обновления через GStore</string>
