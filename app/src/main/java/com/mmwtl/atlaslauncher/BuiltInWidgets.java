@@ -1,21 +1,29 @@
 package com.mmwtl.atlaslauncher;
 
+import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.RippleDrawable;
 import android.media.AudioManager;
+import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextClock;
+import android.widget.TextView;
+import android.widget.Toast;
 
-/** The clock and volume widgets built into HOME; settings show them as previews. */
+/** The clock, volume and Wi-Fi/Bluetooth widgets built into HOME; settings show them as previews. */
 final class BuiltInWidgets {
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
@@ -178,6 +186,91 @@ final class BuiltInWidgets {
             int margin = joined ? 0 : Ui.dp(context, 3);
             params.setMargins(margin, margin, margin, margin);
             panel.addView(button, params);
+        }
+    }
+
+    static View createConnectivity(Context context, HomeActivity.WidgetPlacement placement) {
+        LinearLayout panel = new LinearLayout(context);
+        updateConnectivity(context, panel, placement);
+        return panel;
+    }
+
+    /** Rebuilds the Wi-Fi and Bluetooth tiles: in a row for a wide widget, in a column for a tall one. */
+    // BLUETOOTH_CONNECT exists from API 31; with targetSdk 30 the BLUETOOTH and BLUETOOTH_ADMIN grants apply.
+    @SuppressLint("MissingPermission")
+    static void updateConnectivity(Context context, View hostView, HomeActivity.WidgetPlacement placement) {
+        LinearLayout panel = (LinearLayout) hostView;
+        panel.removeAllViews();
+        boolean horizontal = placement.width >= placement.height;
+        panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        int tileWidth = horizontal ? placement.width / 2 : placement.width;
+        int tileHeight = horizontal ? placement.height : placement.height / 2;
+        // A wide tile puts the name and state beside the icon, a narrow one shows only the icon.
+        boolean showText = tileWidth >= tileHeight * 2;
+        int iconSize = Math.max(16, Math.min(48, Math.min(tileWidth, tileHeight) * 2 / 5));
+        WifiManager wifi = context.getApplicationContext().getSystemService(WifiManager.class);
+        BluetoothAdapter bluetooth = BluetoothAdapter.getDefaultAdapter();
+        for (int i = 0; i < 2; i++) {
+            boolean isWifi = i == 0;
+            if (isWifi ? wifi == null : bluetooth == null) continue;
+            int state = isWifi ? wifi.getWifiState() : bluetooth.getState();
+            boolean on = isWifi ? state == WifiManager.WIFI_STATE_ENABLED : state == BluetoothAdapter.STATE_ON;
+            boolean off = isWifi ? state == WifiManager.WIFI_STATE_DISABLED : state == BluetoothAdapter.STATE_OFF;
+            String name = isWifi ? "Wi-Fi" : "Bluetooth";
+            String status = on ? "Вкл" : off ? "Выкл"
+                    : isWifi ? (state == WifiManager.WIFI_STATE_ENABLING ? "Включается…" : "Выключается…")
+                    : (state == BluetoothAdapter.STATE_TURNING_ON ? "Включается…" : "Выключается…");
+            LinearLayout button = new LinearLayout(context);
+            button.setGravity(Gravity.CENTER);
+            int radius = Ui.dp(context, 24);
+            button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+                    Ui.rounded(on ? ATLAS_ACTIVE : HomeActivity.NEUTRAL_SURFACE, radius), Ui.rounded(Color.WHITE, radius)));
+            button.setContentDescription(name + ": " + status);
+            button.setOnClickListener(v -> {
+                if (!on && !off) return;
+                if (isWifi) toggleWifi(context, wifi, on);
+                else if (!(on ? bluetooth.disable() : bluetooth.enable()))
+                    Toast.makeText(context, "Не удалось переключить Bluetooth", Toast.LENGTH_SHORT).show();
+            });
+            ImageView image = new ImageView(context);
+            image.setImageResource(isWifi ? R.drawable.ic_wifi : R.drawable.ic_bluetooth);
+            image.setAlpha(on || off ? 1f : 0.5f);
+            button.addView(image, new LinearLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize)));
+            if (showText) {
+                LinearLayout texts = new LinearLayout(context);
+                texts.setOrientation(LinearLayout.VERTICAL);
+                TextView title = new TextView(context);
+                title.setText(name);
+                title.setTextSize(18);
+                title.setTextColor(TEXT);
+                title.setSingleLine(true);
+                texts.addView(title);
+                TextView value = new TextView(context);
+                value.setText(status);
+                value.setTextSize(14);
+                value.setTextColor(on ? TEXT : MUTED);
+                value.setSingleLine(true);
+                texts.addView(value);
+                LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
+                textParams.leftMargin = Ui.dp(context, 12);
+                button.addView(texts, textParams);
+            }
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
+            int margin = Ui.dp(context, 3);
+            params.setMargins(margin, margin, margin, margin);
+            panel.addView(button, params);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void toggleWifi(Context context, WifiManager wifi, boolean on) {
+        if (wifi.setWifiEnabled(!on)) return;
+        // Android 10+ refuses the switch to apps targeting API 29+; the system panel has its own toggle.
+        try {
+            context.startActivity(new Intent(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                    ? Settings.Panel.ACTION_WIFI : Settings.ACTION_WIFI_SETTINGS));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(context, "Не удалось переключить Wi-Fi", Toast.LENGTH_SHORT).show();
         }
     }
 }
