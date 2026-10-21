@@ -115,7 +115,7 @@ public class MultiFingerGesturesTest {
                 events.add(kind + "@" + Math.round(level * 100));
             }
         });
-        gestures.setScale(true);
+        gestures.setScale(MultiFingerGestures.SCALE_VOLUME | MultiFingerGestures.SCALE_FAN);
     }
 
     @Test
@@ -128,6 +128,14 @@ public class MultiFingerGesturesTest {
         send(MOVE, 0, 400, 200, 900, 200);
         send(MOVE, 0, 400, 1700, 900, 1700);
         assertEquals(List.of("VOLUME@49", "VOLUME@100", "VOLUME@0"), events);
+    }
+
+    @Test
+    public void scaleAppliesOnlyToTheChosenAdjustments() {
+        useScale();
+        fingersDown(100, 1000, 700, 1000, 1300, 1000);
+        send(MOVE, 0, 100, 890, 700, 890, 1300, 890);
+        assertEquals(List.of("BRIGHTNESS:1"), events);
     }
 
     @Test

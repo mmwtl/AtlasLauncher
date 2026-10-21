@@ -157,7 +157,8 @@ public final class HomeActivity extends Activity {
     static final String GESTURES_ENABLED = "gestures_enabled";
     static final String GESTURES_PRIORITY = "gestures_priority";
     static final String GESTURES_TRIGGER = "gestures_trigger";
-    static final String GESTURES_SCALE = "gestures_scale";
+    // MultiFingerGestures.SCALE_ bits; "gestures_scale" was a boolean in test builds.
+    static final String GESTURES_SCALE = "gestures_scale_kinds";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     static final String DOCK_APPS = "dock_apps";
@@ -927,7 +928,7 @@ public final class HomeActivity extends Activity {
                 .putExtra(GestureFilterService.EXTRA_TRIGGER, getSharedPreferences(PREFS, MODE_PRIVATE)
                         .getInt(GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL))
                 .putExtra(GestureFilterService.EXTRA_SCALE, getSharedPreferences(PREFS, MODE_PRIVATE)
-                        .getBoolean(GESTURES_SCALE, false));
+                        .getInt(GESTURES_SCALE, 0));
         try {
             if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) startForegroundService(service);
             else stopService(service);

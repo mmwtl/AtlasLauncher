@@ -43,7 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * sequence stays with the gesture, so a map or list does not move along with it. In priority mode
  * (an option) touches that may still become a gesture are held back instead and handed to the app
  * only once they turn out not to be one, at most {@link #HOLD_MAX_MS} late. In scale mode (an
- * option) the fingers set the value directly once the gesture has started. Volume goes through AudioManager, temperature and brightness through
+ * option for each adjustment) the fingers set the value directly once the gesture has started. Volume goes through AudioManager, temperature and brightness through
  * GInputBridge broadcasts, as AtlasClimateWidget does. {@link GestureHud} shows each new
  * temperature, brightness or fan setting; OneOS shows its own volume indicator. Four fingers pinched together go
  * home; four fingers swiped up do what the "All apps" dock button does.
@@ -197,9 +197,9 @@ public final class GestureFilterService extends Service {
                 : getSharedPreferences(HomeActivity.PREFS, MODE_MULTI_PROCESS)
                         .getInt(HomeActivity.GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL));
         gestures.setScale(intent != null && intent.hasExtra(EXTRA_SCALE)
-                ? intent.getBooleanExtra(EXTRA_SCALE, false)
+                ? intent.getIntExtra(EXTRA_SCALE, 0)
                 : getSharedPreferences(HomeActivity.PREFS, MODE_MULTI_PROCESS)
-                        .getBoolean(HomeActivity.GESTURES_SCALE, false));
+                        .getInt(HomeActivity.GESTURES_SCALE, 0));
         return START_STICKY;
     }
 

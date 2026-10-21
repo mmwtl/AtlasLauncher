@@ -326,10 +326,22 @@ public final class SettingsActivity extends ScaledActivity {
                         + "и масштаб в приложениях. Позже: нужно движение длиннее.");
         choice(trigger, HomeActivity.GESTURES_TRIGGER, new String[]{"Раньше", "Средне", "Позже"},
                 MultiFingerGestures.TRIGGER_NORMAL, () -> { });
-        toggle(trigger, "Шкала на весь экран", HomeActivity.GESTURES_SCALE, false, () -> { });
-        trigger.addView(hint("После срабатывания жеста значение задаёт положение пальцев: внизу минимум, "
-                + "вверху максимум, у обдува — слева и справа. Значение сразу переходит туда, где пальцы, "
-                + "поэтому начинайте жест примерно у нужного уровня."));
+
+        LinearLayout scale = card(page, "Шкала на весь экран",
+                "После срабатывания жеста значение задаёт положение пальцев: внизу минимум, вверху максимум, "
+                        + "у обдува — слева и справа. Значение сразу переходит туда, где пальцы, поэтому начинайте "
+                        + "жест примерно у нужного уровня. Выключенные регулировки меняются по шагам.");
+        scaleToggle(scale, "Громкость", MultiFingerGestures.SCALE_VOLUME);
+        scaleToggle(scale, "Температура", MultiFingerGestures.SCALE_TEMPERATURE);
+        scaleToggle(scale, "Яркость", MultiFingerGestures.SCALE_BRIGHTNESS);
+        scaleToggle(scale, "Обдув", MultiFingerGestures.SCALE_FAN);
+    }
+
+    private void scaleToggle(LinearLayout parent, String text, int bit) {
+        toggle(parent, text, (prefs.getInt(HomeActivity.GESTURES_SCALE, 0) & bit) != 0, checked -> {
+            int kinds = prefs.getInt(HomeActivity.GESTURES_SCALE, 0);
+            prefs.edit().putInt(HomeActivity.GESTURES_SCALE, checked ? kinds | bit : kinds & ~bit).apply();
+        });
     }
 
     private void buildSystemTab(LinearLayout page) {

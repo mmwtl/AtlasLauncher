@@ -10,8 +10,8 @@ package com.mmwtl.atlaslauncher;
  * <p>Fingers land and lift one by one, so a two- or three-finger gesture waits until the finger
  * count has settled, a touch belongs to the most fingers it has had, and it makes at most one
  * gesture. Four or more fingers start at once, as nothing above them could be mistaken for them,
- * and a fifth finger keeps the progress already made. In scale mode (an option) a two- or
- * three-finger gesture starts the same way, but then the position of the fingers sets the value:
+ * and a fifth finger keeps the progress already made. In scale mode (an option for each of
+ * volume, temperature, brightness and fan) a two- or three-finger gesture starts the same way, but then the position of the fingers sets the value:
  * the area from bottom to top, or from left to right for the fan, spans the whole range. Has no
  * Android dependencies, so it runs in JVM tests.
  */
@@ -64,6 +64,11 @@ final class MultiFingerGestures {
     private static final int[] ALL_APPS_SWIPES_PX = {120, 150, 180};
     /** Scale mode: the fingers reach the minimum or maximum this far from the edge of the area. */
     static final int SCALE_MARGIN_PX = 150;
+    /** Bits for {@link #setScale}: which adjustments use scale mode. */
+    static final int SCALE_VOLUME = 1;
+    static final int SCALE_TEMPERATURE = 2;
+    static final int SCALE_BRIGHTNESS = 4;
+    static final int SCALE_FAN = 8;
 
     private final int screenWidth;
     private final int top;
@@ -72,7 +77,7 @@ final class MultiFingerGestures {
     private float firstStepFactor = FIRST_STEP_FACTORS[TRIGGER_NORMAL];
     private float pinchRatio = PINCH_RATIOS[TRIGGER_NORMAL];
     private int allAppsSwipePx = ALL_APPS_SWIPES_PX[TRIGGER_NORMAL];
-    private boolean scale;
+    private int scaleKinds;
     private float[] xs = new float[0];
     private float[] ys = new float[0];
     private float[] fingerAnchorXs = new float[0];
@@ -106,8 +111,9 @@ final class MultiFingerGestures {
         allAppsSwipePx = ALL_APPS_SWIPES_PX[level];
     }
 
-    synchronized void setScale(boolean scale) {
-        this.scale = scale;
+    /** A combination of the {@code SCALE_} bits. */
+    synchronized void setScale(int kinds) {
+        scaleKinds = kinds;
     }
 
     /**
@@ -239,6 +245,7 @@ final class MultiFingerGestures {
             kind = Math.abs(dx) > Math.abs(dy) ? Kind.FAN : Kind.BRIGHTNESS;
         }
         boolean sideways = kind == Kind.FAN;
+        boolean scale = (scaleKinds & scaleBit(kind)) != 0;
         if (scale && stepped) {
             // The gesture is already the fingers' own: they only move along the scale now.
             listener.onLevel(kind, level(sideways));
@@ -281,6 +288,11 @@ final class MultiFingerGestures {
         } else {
             listener.onSteps(kind, steps);
         }
+    }
+
+    private static int scaleBit(Kind kind) {
+        return kind == Kind.VOLUME ? SCALE_VOLUME : kind == Kind.BRIGHTNESS ? SCALE_BRIGHTNESS
+                : kind == Kind.FAN ? SCALE_FAN : SCALE_TEMPERATURE;
     }
 
     /** Where the fingers are on the scale: 0 at the bottom or left, 1 at the top or right. */
