@@ -3,9 +3,7 @@ package com.mmwtl.atlaslauncher;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.content.ActivityNotFoundException;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -16,7 +14,6 @@ import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
-import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -209,8 +206,9 @@ final class BuiltInWidgets {
      * Rebuilds the Wi-Fi and Bluetooth tiles: in a row for a wide widget, in a column for a tall one. A wide tile
      * puts its text beside the icon, a narrow one under it.
      */
-    // BLUETOOTH_CONNECT exists from API 31; with targetSdk 30 the BLUETOOTH and BLUETOOTH_ADMIN grants apply.
+    // BLUETOOTH_CONNECT exists from API 31; with targetSdk 28 the BLUETOOTH and BLUETOOTH_ADMIN grants apply.
     @SuppressLint("MissingPermission")
+    @SuppressWarnings("deprecation")
     static void updateConnectivity(Context context, View hostView, HomeActivity.WidgetPlacement placement) {
         LinearLayout panel = (LinearLayout) hostView;
         panel.removeAllViews();
@@ -250,9 +248,10 @@ final class BuiltInWidgets {
             button.setContentDescription(name + ": " + status);
             button.setOnClickListener(v -> {
                 if (!on && !off) return;
-                if (isWifi) toggleWifi(context, wifi, on);
-                else if (!(on ? bluetooth.disable() : bluetooth.enable()))
-                    Toast.makeText(context, "Не удалось переключить Bluetooth", Toast.LENGTH_SHORT).show();
+                // Android 10+ lets only apps targeting API 28 or lower switch Wi-Fi.
+                if (!(isWifi ? wifi.setWifiEnabled(!on) : on ? bluetooth.disable() : bluetooth.enable()))
+                    Toast.makeText(context, isWifi ? "Не удалось переключить Wi-Fi"
+                            : "Не удалось переключить Bluetooth", Toast.LENGTH_SHORT).show();
             });
             ImageView image = new ImageView(context);
             image.setImageResource(isWifi ? R.drawable.ic_wifi : R.drawable.ic_bluetooth);
@@ -311,17 +310,5 @@ final class BuiltInWidgets {
             }
         }
         return "Не подключено";
-    }
-
-    @SuppressWarnings("deprecation")
-    private static void toggleWifi(Context context, WifiManager wifi, boolean on) {
-        if (wifi.setWifiEnabled(!on)) return;
-        // Android 10+ refuses the switch to apps targeting API 29+; the system panel has its own toggle.
-        try {
-            context.startActivity(new Intent(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                    ? Settings.Panel.ACTION_WIFI : Settings.ACTION_WIFI_SETTINGS));
-        } catch (ActivityNotFoundException e) {
-            Toast.makeText(context, "Не удалось переключить Wi-Fi", Toast.LENGTH_SHORT).show();
-        }
     }
 }

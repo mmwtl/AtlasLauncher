@@ -10,7 +10,7 @@ AtlasLauncher — портретный Android HOME для автомобиль�
 - Донаты: сердечко в заголовке настроек и последняя карточка вкладки «Система» открывают `DonateDialog` — самостоятельное окно (QR-код CloudTips, ссылка, «Открыть ссылку» только если резолвится браузер), общее для приложений Atlas и копируемое как есть. `ic_donate_qr` генерируется `tools/make_donate_qr.py` из URL; перезапускай скрипт, а не правь drawable руками.
 - GStore: карточка перед донатами на вкладке «Система» рекомендует GStore для автообновления и открывает `GStoreDialog` с QR-кодом и ссылкой на загрузку. `ic_gstore_qr` генерируется `tools/make_gstore_qr.py`; перезапускай скрипт, а не правь drawable руками.
 - `app/src/main/res/` — встроенные фоны WebP 1086×1448 в `drawable-nodpi/`, адаптивная иконка (`mipmap-anydpi/`, монохромный вариант в `mipmap-anydpi-v33/`), векторные значки, цвета и строки. Следи за размером APK при добавлении изображений.
-- `app/src/main/AndroidManifest.xml` — HOME/LAUNCHER intent-фильтры, `singleTask`, портретная ориентация и `<queries>` для Launcher3 и LAUNCHER-активностей (видимость пакетов на API 30).
+- `app/src/main/AndroidManifest.xml` — HOME/LAUNCHER intent-фильтры, `singleTask`, портретная ориентация и `<queries>` для Launcher3 и LAUNCHER-активностей (видимость пакетов для targetSdk 30+; при targetSdk 28 не действует, но оставлен).
 - `app/build.gradle.kts` — SDK, Java, версия, имя APK и подключение подписи; корневые Gradle-файлы — конфигурация сборки.
 - `gestureprobe/` — отдельный диагностический APK для OEM-службы касаний, описан в `gestureprobe/README.md`.
 - `docs/` — документация, оглавление в `docs/README.md`: `guide/` — для пользователя (настройка, жесты, устранение проблем); `development/` — сборка и протокол проверки/отката на ГУ; `oneos/` — исследования прошивки OneOS (почему что-то работает так); `archive/` — исторические документы, статус в них не обновляется; `images/` — картинки документации.
@@ -19,7 +19,7 @@ AtlasLauncher — портретный Android HOME для автомобиль�
 
 ## Сборка и запуск
 
-Нужны JDK 17 и Android SDK API 35. Используй Gradle Wrapper (8.13, AGP 8.10.1). Текущие `minSdk=26`, `targetSdk=30`; не меняй их ради устранения предупреждений без отдельной задачи.
+Нужны JDK 17 и Android SDK API 35. Используй Gradle Wrapper (8.13, AGP 8.10.1). Текущие `minSdk=26`, `targetSdk=28`: Android 10+ разрешает переключать Wi-Fi (`WifiManager.setWifiEnabled`) только приложениям с targetSdk ≤ 28. Не меняй их ради устранения предупреждений без отдельной задачи.
 
 Из корня репозитория:
 
@@ -29,7 +29,7 @@ ANDROID_USER_HOME="$PWD/.android-user" ./gradlew :app:lintDebug
 ANDROID_USER_HOME="$PWD/.android-user" ./gradlew :app:testDebugUnitTest
 ```
 
-Команды соответственно собирают debug APK, запускают Android Lint и задачу JVM-тестов. `lintDebug` сейчас завершается `BUILD FAILED` из-за единственной ошибки `ExpiredTargetSdkVersion` (следствие `targetSdk=30`); это ожидаемо. Не подавляй её, но проверяй отчёт `app/build/reports/lint-results-debug.*` на новые ошибки и предупреждения от своих изменений.
+Команды соответственно собирают debug APK, запускают Android Lint и задачу JVM-тестов. `lintDebug` сейчас завершается `BUILD FAILED` из-за единственной ошибки `ExpiredTargetSdkVersion` (следствие `targetSdk=28`); это ожидаемо. Не подавляй её, но проверяй отчёт `app/build/reports/lint-results-debug.*` на новые ошибки и предупреждения от своих изменений.
 
 Версия задаётся `appVersionName` и `appVersionCode` в `app/build.gradle.kts`; вне ветки `main` к имени версии добавляется имя ветки. Повышай версию только по запросу, отдельным коммитом вида `Bump version to 0.5.0 (15)`. APK называется `<версия>[<versionCode>]AtlasLauncher-<тип>.apk`, например `app/build/outputs/apk/debug/0.5.0[15]AtlasLauncher-debug.apk`.
 

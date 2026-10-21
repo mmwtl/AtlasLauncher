@@ -8,7 +8,7 @@ ANDROID_USER_HOME="$PWD/.android-user" ./gradlew :app:testDebugUnitTest
 ANDROID_USER_HOME="$PWD/.android-user" ./gradlew :app:lintDebug
 ```
 
-`lintDebug` завершается `BUILD FAILED` из-за единственной ошибки `ExpiredTargetSdkVersion`: `targetSdk=30` намеренно оставлен под Android 11 на ГУ и ради требований Google Play не повышается. Новые замечания смотрите в `app/build/reports/lint-results-debug.*`.
+`lintDebug` завершается `BUILD FAILED` из-за единственной ошибки `ExpiredTargetSdkVersion`: `targetSdk=28` выбран намеренно: только так Android 10+ даёт приложению переключать Wi-Fi из виджета, а Google Play не используется. Новые замечания смотрите в `app/build/reports/lint-results-debug.*`.
 
 ## Release
 

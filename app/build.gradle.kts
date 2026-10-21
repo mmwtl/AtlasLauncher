@@ -23,7 +23,7 @@ android {
     defaultConfig {
         applicationId = "com.geely.atlaslauncher"
         minSdk = 26
-        targetSdk = 30
+        targetSdk = 28
         versionCode = appVersionCode
         versionName = effectiveVersionName
     }
