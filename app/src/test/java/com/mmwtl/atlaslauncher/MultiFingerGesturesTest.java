@@ -25,7 +25,7 @@ public class MultiFingerGesturesTest {
 
     @Before
     public void setUp() {
-        gestures = new MultiFingerGestures(1440, (kind, steps) -> events.add(kind + ":" + steps));
+        gestures = new MultiFingerGestures(1440, 65, 1727, (kind, steps) -> events.add(kind + ":" + steps));
     }
 
     /** Sends one event 16 ms after the previous one; pointer ids are the indices of the pairs. */
@@ -100,6 +100,43 @@ public class MultiFingerGesturesTest {
         assertTrue(events.isEmpty());
         send(MOVE, 0, 600, 910, 800, 910);
         assertEquals(List.of("VOLUME:1"), events);
+    }
+
+    /** Scale mode, with levels recorded in percent. */
+    private void useScale() {
+        gestures = new MultiFingerGestures(1440, 65, 1727, new MultiFingerGestures.Listener() {
+            @Override
+            public void onSteps(MultiFingerGestures.Kind kind, int steps) {
+                events.add(kind + ":" + steps);
+            }
+
+            @Override
+            public void onLevel(MultiFingerGestures.Kind kind, float level) {
+                events.add(kind + "@" + Math.round(level * 100));
+            }
+        });
+        gestures.setScale(true);
+    }
+
+    @Test
+    public void scaleStartsLikeAStepThenFollowsTheFingers() {
+        useScale();
+        twoFingersDown(600, 800, 1000);
+        assertEquals(Decision.UNDECIDED, send(MOVE, 0, 600, 930, 800, 930));
+        assertEquals(Decision.CLAIMED, send(MOVE, 0, 600, 905, 800, 905));
+        // Sideways and apart no longer end it, and the ends of the area clamp to the limits.
+        send(MOVE, 0, 400, 200, 900, 200);
+        send(MOVE, 0, 400, 1700, 900, 1700);
+        assertEquals(List.of("VOLUME@49", "VOLUME@100", "VOLUME@0"), events);
+    }
+
+    @Test
+    public void scaleRunsFromLeftToRightForTheFan() {
+        useScale();
+        fingersDown(400, 1000, 600, 1000, 500, 1150);
+        send(MOVE, 0, 530, 1005, 730, 1005, 630, 1150);
+        send(MOVE, 0, 1330, 600, 1530, 600, 1430, 750);
+        assertEquals(List.of("FAN@42", "FAN@100"), events);
     }
 
     @Test

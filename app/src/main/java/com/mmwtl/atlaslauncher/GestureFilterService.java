@@ -42,7 +42,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * makes its first step; then the app under the fingers gets a cancel and the rest of that touch
  * sequence stays with the gesture, so a map or list does not move along with it. In priority mode
  * (an option) touches that may still become a gesture are held back instead and handed to the app
- * only once they turn out not to be one, at most {@link #HOLD_MAX_MS} late. Volume goes through AudioManager, temperature and brightness through
+ * only once they turn out not to be one, at most {@link #HOLD_MAX_MS} late. In scale mode (an
+ * option) the fingers set the value directly once the gesture has started. Volume goes through AudioManager, temperature and brightness through
  * GInputBridge broadcasts, as AtlasClimateWidget does. {@link GestureHud} shows each new
  * temperature, brightness or fan setting; OneOS shows its own volume indicator. Four fingers pinched together go
  * home; four fingers swiped up do what the "All apps" dock button does.
@@ -96,12 +97,24 @@ public final class GestureFilterService extends Service {
     private static final String CHANNEL = "gestures";
     static final String EXTRA_PRIORITY = "priority";
     static final String EXTRA_TRIGGER = "trigger";
+    static final String EXTRA_SCALE = "scale";
     private static final long HOLD_MAX_MS = 500;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean priority;
     private final GestureFilter filter = new GestureFilter();
-    private final MultiFingerGestures gestures = new MultiFingerGestures(SCREEN_WIDTH, this::onSteps);
+    private final MultiFingerGestures gestures = new MultiFingerGestures(SCREEN_WIDTH, REGION.top, REGION.bottom,
+            new MultiFingerGestures.Listener() {
+                @Override
+                public void onSteps(MultiFingerGestures.Kind kind, int steps) {
+                    GestureFilterService.this.onSteps(kind, steps);
+                }
+
+                @Override
+                public void onLevel(MultiFingerGestures.Kind kind, float level) {
+                    GestureFilterService.this.onLevel(kind, level);
+                }
+            });
     // GInputBridge subscriptions live in its memory only, so they are repeated.
     private final Map<String, Float> gibValues = new ConcurrentHashMap<>();
     // Integer properties apart: their values are enum codes too large for a float.
@@ -183,6 +196,10 @@ public final class GestureFilterService extends Service {
                 ? intent.getIntExtra(EXTRA_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL)
                 : getSharedPreferences(HomeActivity.PREFS, MODE_MULTI_PROCESS)
                         .getInt(HomeActivity.GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL));
+        gestures.setScale(intent != null && intent.hasExtra(EXTRA_SCALE)
+                ? intent.getBooleanExtra(EXTRA_SCALE, false)
+                : getSharedPreferences(HomeActivity.PREFS, MODE_MULTI_PROCESS)
+                        .getBoolean(HomeActivity.GESTURES_SCALE, false));
         return START_STICKY;
     }
 
@@ -300,7 +317,7 @@ public final class GestureFilterService extends Service {
                             gibValues.getOrDefault(BRIGHTNESS_MAX_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MAX_DEFAULT));
                     break;
                 case FAN:
-                    fanStep(steps);
+                    fan(steps, Float.NaN);
                     break;
                 case HOME:
                     main.post(this::openHome);
@@ -308,6 +325,38 @@ public final class GestureFilterService extends Service {
                 case ALL_APPS:
                     // From the background Android 11 allows it only with "display over other apps".
                     main.post(() -> AllAppsActivity.open(this));
+                    break;
+            }
+        });
+    }
+
+    /** Scale mode: sets the value at {@code level} of its range, 0 to 1. */
+    private void onLevel(MultiFingerGestures.Kind kind, float level) {
+        actions.post(() -> {
+            switch (kind) {
+                case VOLUME:
+                    int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                    int volume = Math.round(level * max);
+                    if (volume != audio.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+                        audio.setStreamVolume(AudioManager.STREAM_MUSIC, volume, AudioManager.FLAG_SHOW_UI);
+                    }
+                    break;
+                case TEMPERATURE_LEFT:
+                case TEMPERATURE_RIGHT:
+                    float temperature = TEMPERATURE_MIN
+                            + Math.round(level * (TEMPERATURE_MAX - TEMPERATURE_MIN) / TEMPERATURE_STEP) * TEMPERATURE_STEP;
+                    gibSet(kind, TEMPERATURE, kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT
+                            ? TEMPERATURE_ROW_LEFT : TEMPERATURE_ROW_RIGHT, temperature, TEMPERATURE_MIN, TEMPERATURE_MAX);
+                    break;
+                case BRIGHTNESS:
+                    float min = gibValues.getOrDefault(BRIGHTNESS_MIN_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MIN_DEFAULT);
+                    float top = gibValues.getOrDefault(BRIGHTNESS_MAX_ID + "_" + GLOBAL_AREA, BRIGHTNESS_MAX_DEFAULT);
+                    gibSet(kind, BRIGHTNESS, GLOBAL_AREA, Math.round(min + level * (top - min)), min, top);
+                    break;
+                case FAN:
+                    fan(0, level);
+                    break;
+                default:
                     break;
             }
         });
@@ -335,10 +384,17 @@ public final class GestureFilterService extends Service {
             refreshGib();
             return;
         }
-        float target = Math.max(min, Math.min(max, current + delta));
+        gibSet(kind, id, area, current + delta, min, max);
+    }
+
+    /** Sets a GInputBridge property, kept within its range, unless it already has that value. */
+    private void gibSet(MultiFingerGestures.Kind kind, int id, int area, float value, float min, float max) {
+        String key = id + "_" + area;
+        Float current = gibValues.get(key);
+        float target = Math.max(min, Math.min(max, value));
         // Shown at a limit too, so the driver sees why nothing changes.
         main.post(() -> hud.show(kind, target, min, max));
-        if (target == current) {
+        if (current != null && target == current) {
             return;
         }
         // The bridge reports the real value back and corrects this guess.
@@ -349,8 +405,10 @@ public final class GestureFilterService extends Service {
     /**
      * In climate AUTO the car ignores a manual fan speed, so there the gesture moves the auto-fan
      * profile instead; outside AUTO it sets the speed, 1 to 9. Same rules as AtlasClimateWidget.
+     * Moves by {@code steps}, or in scale mode goes to {@code level} of the range, 0 to 1.
      */
-    private void fanStep(int steps) {
+    private void fan(int steps, float level) {
+        boolean scale = !Float.isNaN(level);
         Integer auto = gibInts.get(CLIMATE_AUTO + "_" + CLIMATE_AUTO_ZONE);
         Integer speed = gibInts.get(FAN_SPEED + "_" + FAN_ZONE);
         if (auto == null && speed == null) {
@@ -367,7 +425,7 @@ public final class GestureFilterService extends Service {
                 }
             }
             // A profile outside these five snaps to the middle one, as in the climate widget.
-            int next = index < 0 ? FAN_PROFILES.length / 2
+            int next = scale ? Math.round(level * (FAN_PROFILES.length - 1)) : index < 0 ? FAN_PROFILES.length / 2
                     : Math.max(0, Math.min(FAN_PROFILES.length - 1, index + steps));
             main.post(() -> hud.showFan("Обдув · авто", FAN_PROFILE_NAMES[next],
                     next / (FAN_PROFILES.length - 1f)));
@@ -377,13 +435,13 @@ public final class GestureFilterService extends Service {
             }
             return;
         }
-        int level = speed == null ? 0 : speed - FAN_SPEED_LEVEL_1 + 1;
-        if (level < 1 || level > FAN_LEVELS) {
-            level = 0;
+        int speedLevel = speed == null ? 0 : speed - FAN_SPEED_LEVEL_1 + 1;
+        if (speedLevel < 1 || speedLevel > FAN_LEVELS) {
+            speedLevel = 0;
         }
-        int next = Math.max(1, Math.min(FAN_LEVELS, level + steps));
+        int next = scale ? 1 + Math.round(level * (FAN_LEVELS - 1)) : Math.max(1, Math.min(FAN_LEVELS, speedLevel + steps));
         main.post(() -> hud.showFan("Обдув", String.valueOf(next), (next - 1f) / (FAN_LEVELS - 1)));
-        if (next != level) {
+        if (next != speedLevel) {
             gibInts.put(FAN_SPEED + "_" + FAN_ZONE, FAN_SPEED_LEVEL_1 + next - 1);
             sendGib("SET_INT_PROPERTY", FAN_SPEED, FAN_ZONE, FAN_SPEED_LEVEL_1 + next - 1);
         }

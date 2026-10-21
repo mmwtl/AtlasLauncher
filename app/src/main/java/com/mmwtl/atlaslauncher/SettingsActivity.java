@@ -326,6 +326,10 @@ public final class SettingsActivity extends ScaledActivity {
                         + "и масштаб в приложениях. Позже: нужно движение длиннее.");
         choice(trigger, HomeActivity.GESTURES_TRIGGER, new String[]{"Раньше", "Средне", "Позже"},
                 MultiFingerGestures.TRIGGER_NORMAL, () -> { });
+        toggle(trigger, "Шкала на весь экран", HomeActivity.GESTURES_SCALE, false, () -> { });
+        trigger.addView(hint("После срабатывания жеста значение задаёт положение пальцев: внизу минимум, "
+                + "вверху максимум, у обдува — слева и справа. Значение сразу переходит туда, где пальцы, "
+                + "поэтому начинайте жест примерно у нужного уровня."));
     }
 
     private void buildSystemTab(LinearLayout page) {

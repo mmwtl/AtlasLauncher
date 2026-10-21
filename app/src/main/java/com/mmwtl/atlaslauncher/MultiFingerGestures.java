@@ -10,7 +10,9 @@ package com.mmwtl.atlaslauncher;
  * <p>Fingers land and lift one by one, so a two- or three-finger gesture waits until the finger
  * count has settled, a touch belongs to the most fingers it has had, and it makes at most one
  * gesture. Four or more fingers start at once, as nothing above them could be mistaken for them,
- * and a fifth finger keeps the progress already made. Has no
+ * and a fifth finger keeps the progress already made. In scale mode (an option) a two- or
+ * three-finger gesture starts the same way, but then the position of the fingers sets the value:
+ * the area from bottom to top, or from left to right for the fan, spans the whole range. Has no
  * Android dependencies, so it runs in JVM tests.
  */
 final class MultiFingerGestures {
@@ -29,6 +31,10 @@ final class MultiFingerGestures {
     interface Listener {
         /** {@code steps} is positive for a swipe up or right and negative for down or left. */
         void onSteps(Kind kind, int steps);
+
+        /** Scale mode: {@code level} is 0 for the minimum and 1 for the maximum. */
+        default void onLevel(Kind kind, float level) {
+        }
     }
 
     // Same numbers as MotionEvent, so the Binder side passes its actions straight through.
@@ -56,12 +62,17 @@ final class MultiFingerGestures {
     // A pinch has brought the fingers to this share of their starting spread.
     private static final float[] PINCH_RATIOS = {0.8f, 0.75f, 0.6f};
     private static final int[] ALL_APPS_SWIPES_PX = {120, 150, 180};
+    /** Scale mode: the fingers reach the minimum or maximum this far from the edge of the area. */
+    static final int SCALE_MARGIN_PX = 150;
 
     private final int screenWidth;
+    private final int top;
+    private final int bottom;
     private final Listener listener;
     private float firstStepFactor = FIRST_STEP_FACTORS[TRIGGER_NORMAL];
     private float pinchRatio = PINCH_RATIOS[TRIGGER_NORMAL];
     private int allAppsSwipePx = ALL_APPS_SWIPES_PX[TRIGGER_NORMAL];
+    private boolean scale;
     private float[] xs = new float[0];
     private float[] ys = new float[0];
     private float[] fingerAnchorXs = new float[0];
@@ -80,8 +91,11 @@ final class MultiFingerGestures {
     private float startY;
     private float startSpread;
 
-    MultiFingerGestures(int screenWidth, Listener listener) {
+    /** Gestures start between {@code top} and {@code bottom}; scale mode spans that height. */
+    MultiFingerGestures(int screenWidth, int top, int bottom, Listener listener) {
         this.screenWidth = screenWidth;
+        this.top = top;
+        this.bottom = bottom;
         this.listener = listener;
     }
 
@@ -90,6 +104,10 @@ final class MultiFingerGestures {
         firstStepFactor = FIRST_STEP_FACTORS[level];
         pinchRatio = PINCH_RATIOS[level];
         allAppsSwipePx = ALL_APPS_SWIPES_PX[level];
+    }
+
+    synchronized void setScale(boolean scale) {
+        this.scale = scale;
     }
 
     /**
@@ -221,6 +239,11 @@ final class MultiFingerGestures {
             kind = Math.abs(dx) > Math.abs(dy) ? Kind.FAN : Kind.BRIGHTNESS;
         }
         boolean sideways = kind == Kind.FAN;
+        if (scale && stepped) {
+            // The gesture is already the fingers' own: they only move along the scale now.
+            listener.onLevel(kind, level(sideways));
+            return;
+        }
         // Positive along the axis is up or right.
         float along = sideways ? dx : -dy;
         float across = sideways ? dy : dx;
@@ -253,7 +276,18 @@ final class MultiFingerGestures {
         anchorFingers();
         stepped = true;
         claimed = true;
-        listener.onSteps(kind, steps);
+        if (scale) {
+            listener.onLevel(kind, level(sideways));
+        } else {
+            listener.onSteps(kind, steps);
+        }
+    }
+
+    /** Where the fingers are on the scale: 0 at the bottom or left, 1 at the top or right. */
+    private float level(boolean sideways) {
+        float position = sideways ? mean(xs) - SCALE_MARGIN_PX : bottom - SCALE_MARGIN_PX - mean(ys);
+        float length = (sideways ? screenWidth : bottom - top) - 2 * SCALE_MARGIN_PX;
+        return Math.max(0, Math.min(1, position / length));
     }
 
     /**

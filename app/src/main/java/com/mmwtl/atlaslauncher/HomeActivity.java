@@ -157,6 +157,7 @@ public final class HomeActivity extends Activity {
     static final String GESTURES_ENABLED = "gestures_enabled";
     static final String GESTURES_PRIORITY = "gestures_priority";
     static final String GESTURES_TRIGGER = "gestures_trigger";
+    static final String GESTURES_SCALE = "gestures_scale";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     static final String DOCK_APPS = "dock_apps";
@@ -357,7 +358,7 @@ public final class HomeActivity extends Activity {
                 if (widgetsHidden && !prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false)
                         && !prefs.getBoolean(HIDE_BY_PANEL_HOME, false)) setWidgetsHidden(false);
                 break;
-            case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: applyGestures(); break;
+            case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: case GESTURES_SCALE: applyGestures(); break;
             case FAVORITES: loadFavorites(prefs); showFavorites(); break;
             case DOCK_LABELS: case DOCK_APPS: case DRAWER_ICON_SIZE: scheduleShowWidgets(); break;
             case BuiltInWidgets.CLOCK_FORMAT: case BuiltInWidgets.CLOCK_WEIGHT: case BuiltInWidgets.CLOCK_FONT:
@@ -924,7 +925,9 @@ public final class HomeActivity extends Activity {
         Intent service = new Intent(this, GestureFilterService.class).putExtra(GestureFilterService.EXTRA_PRIORITY,
                 getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_PRIORITY, false))
                 .putExtra(GestureFilterService.EXTRA_TRIGGER, getSharedPreferences(PREFS, MODE_PRIVATE)
-                        .getInt(GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL));
+                        .getInt(GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL))
+                .putExtra(GestureFilterService.EXTRA_SCALE, getSharedPreferences(PREFS, MODE_PRIVATE)
+                        .getBoolean(GESTURES_SCALE, false));
         try {
             if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) startForegroundService(service);
             else stopService(service);
