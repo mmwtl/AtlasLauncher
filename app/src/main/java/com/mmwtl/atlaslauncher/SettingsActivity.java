@@ -514,6 +514,10 @@ public final class SettingsActivity extends ScaledActivity {
                 changed.run();
             });
         }
+        toggle(preview, "Как виджет климата", prefs.getBoolean(BuiltInWidgets.CONNECTIVITY_CLIMATE, false), checked -> {
+            prefs.edit().putBoolean(BuiltInWidgets.CONNECTIVITY_CLIMATE, checked).apply();
+            changed.run();
+        });
         preview.addView(label("Подпись"));
         choice(preview, BuiltInWidgets.CONNECTIVITY_STYLE, new String[]{"Только значки", "Вкл и выкл", "Сеть и устройство"},
                 BuiltInWidgets.STYLE_STATE, () -> {

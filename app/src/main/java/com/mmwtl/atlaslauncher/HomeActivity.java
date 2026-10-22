@@ -367,7 +367,8 @@ public final class HomeActivity extends Activity {
             case BuiltInWidgets.VOLUME_MUTE: case BuiltInWidgets.VOLUME_ICONS: case BuiltInWidgets.VOLUME_JOINED:
                 updateDesktopVolume(); break;
             case BuiltInWidgets.CONNECTIVITY_WIFI: case BuiltInWidgets.CONNECTIVITY_BLUETOOTH:
-            case BuiltInWidgets.CONNECTIVITY_STYLE: updateDesktopConnectivity(); break;
+            case BuiltInWidgets.CONNECTIVITY_STYLE: case BuiltInWidgets.CONNECTIVITY_CLIMATE:
+                updateDesktopConnectivity(); break;
         }
     };
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
