@@ -60,6 +60,7 @@ public final class SettingsActivity extends ScaledActivity {
     static final int PAGE_VOLUME = 3;
     static final int PAGE_CONNECTIVITY = 4;
     private static final String EXTRA_PAGE = "page";
+    private static final String EXTRA_WIDGET = "widget";
     private static final String TAB = "settings_tab";
     private static final int[] TAB_LABELS = {R.string.settings_tab_wallpaper, R.string.settings_tab_desktop,
             R.string.settings_tab_gestures, R.string.settings_tab_system};
@@ -83,11 +84,17 @@ public final class SettingsActivity extends ScaledActivity {
     private LinearLayout ownSlides;
     private LinearLayout redirectState;
     private Runnable connectivityChanged;
+    /** The clock, volume or Wi-Fi/Bluetooth widget whose page is open. */
+    private int widgetId;
 
     static void open(Context context, int page) {
+        open(context, page, 0);
+    }
+
+    static void open(Context context, int page, int widgetId) {
         // A second tap before the settings cover HOME must not open them twice.
         context.startActivity(new Intent(context, SettingsActivity.class).putExtra(EXTRA_PAGE, page)
-                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
+                .putExtra(EXTRA_WIDGET, widgetId).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
     }
 
     @Override
@@ -95,6 +102,7 @@ public final class SettingsActivity extends ScaledActivity {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);
         int page = getIntent().getIntExtra(EXTRA_PAGE, PAGE_MAIN);
+        widgetId = getIntent().getIntExtra(EXTRA_WIDGET, 0);
 
         LinearLayout root = column();
         root.setBackgroundColor(Ui.BACKGROUND);
@@ -454,24 +462,24 @@ public final class SettingsActivity extends ScaledActivity {
 
     private void buildClockPage(LinearLayout content) {
         LinearLayout preview = card(content, "Предпросмотр", "Параметры применяются к часам на рабочем столе.");
-        HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(0, 0, 0, 280, 192);
+        HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(widgetId, 0, 0, 280, 192);
         previewPlacement.clockSize = 64;
         View clock = BuiltInWidgets.createClock(this, previewPlacement);
         preview.addView(clock, margin(12, dp(156)));
         Runnable changed = () -> BuiltInWidgets.updateClock(this, clock, previewPlacement);
-        toggle(preview, "Показывать дату", BuiltInWidgets.CLOCK_DATE, true, changed);
+        toggle(preview, "Показывать дату", key(BuiltInWidgets.CLOCK_DATE), true, changed);
         preview.addView(label("Формат времени"));
-        choice(preview, BuiltInWidgets.CLOCK_FORMAT, new String[]{"Как в системе", "24 часа", "12 часов"}, 0, changed);
+        choice(preview, key(BuiltInWidgets.CLOCK_FORMAT), new String[]{"Как в системе", "24 часа", "12 часов"}, 0, changed);
         preview.addView(label("Начертание"));
-        choice(preview, BuiltInWidgets.CLOCK_WEIGHT, new String[]{"Тонкий", "Обычный", "Жирный"}, 0, changed);
+        choice(preview, key(BuiltInWidgets.CLOCK_WEIGHT), new String[]{"Тонкий", "Обычный", "Жирный"}, 0, changed);
         preview.addView(label("Шрифт"));
-        choice(preview, BuiltInWidgets.CLOCK_FONT, new String[]{"Без засечек", "С засечками", "Моноширинный"}, 0, changed);
+        choice(preview, key(BuiltInWidgets.CLOCK_FONT), new String[]{"Без засечек", "С засечками", "Моноширинный"}, 0, changed);
     }
 
     private void buildVolumePage(LinearLayout content) {
         LinearLayout preview = card(content, "Предпросмотр",
                 "Кнопки встают в ряд у широкого виджета и в столбик у высокого.");
-        HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(0, 0, 0, 288, 96);
+        HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(widgetId, 0, 0, 288, 96);
         View volume = BuiltInWidgets.createVolume(this, previewPlacement);
         // Only shows the style: its buttons would change the car's volume.
         FrameLayout frame = new FrameLayout(this) {
@@ -480,16 +488,16 @@ public final class SettingsActivity extends ScaledActivity {
         frame.addView(volume, new FrameLayout.LayoutParams(-1, -1));
         preview.addView(frame, margin(12, dp(96)));
         Runnable changed = () -> BuiltInWidgets.updateVolume(this, volume, previewPlacement);
-        toggle(preview, "Кнопка отключения звука", BuiltInWidgets.VOLUME_MUTE, true, changed);
-        toggle(preview, "Одним блоком", BuiltInWidgets.VOLUME_JOINED, false, changed);
+        toggle(preview, "Кнопка отключения звука", key(BuiltInWidgets.VOLUME_MUTE), true, changed);
+        toggle(preview, "Одним блоком", key(BuiltInWidgets.VOLUME_JOINED), false, changed);
         preview.addView(label("Значки"));
-        choice(preview, BuiltInWidgets.VOLUME_ICONS, new String[]{"Динамик", "Плюс и минус", "Стрелки"}, 0, changed);
+        choice(preview, key(BuiltInWidgets.VOLUME_ICONS), new String[]{"Динамик", "Плюс и минус", "Стрелки"}, 0, changed);
     }
 
     private void buildConnectivityPage(LinearLayout content) {
         LinearLayout preview = card(content, "Предпросмотр",
                 "У широкой плитки подпись стоит рядом со значком, у узкой — под ним.");
-        HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(0, 0, 0, 384, 96);
+        HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(widgetId, 0, 0, 384, 96);
         View connectivity = BuiltInWidgets.createConnectivity(this, previewPlacement);
         // Only shows the style: its tiles would switch the car's radios.
         FrameLayout frame = new FrameLayout(this) {
@@ -500,7 +508,7 @@ public final class SettingsActivity extends ScaledActivity {
         Runnable changed = () -> BuiltInWidgets.updateConnectivity(this, connectivity, previewPlacement);
         connectivityChanged = changed;
         Switch[] shown = new Switch[2];
-        String[] keys = {BuiltInWidgets.CONNECTIVITY_WIFI, BuiltInWidgets.CONNECTIVITY_BLUETOOTH};
+        String[] keys = {key(BuiltInWidgets.CONNECTIVITY_WIFI), key(BuiltInWidgets.CONNECTIVITY_BLUETOOTH)};
         String[] names = {"Wi-Fi", "Bluetooth"};
         for (int i = 0; i < 2; i++) {
             int index = i;
@@ -514,20 +522,25 @@ public final class SettingsActivity extends ScaledActivity {
                 changed.run();
             });
         }
-        toggle(preview, "Как виджет климата", prefs.getBoolean(BuiltInWidgets.CONNECTIVITY_CLIMATE, false), checked -> {
-            prefs.edit().putBoolean(BuiltInWidgets.CONNECTIVITY_CLIMATE, checked).apply();
+        toggle(preview, "Как виджет климата", prefs.getBoolean(key(BuiltInWidgets.CONNECTIVITY_CLIMATE), false), checked -> {
+            prefs.edit().putBoolean(key(BuiltInWidgets.CONNECTIVITY_CLIMATE), checked).apply();
             changed.run();
         });
         preview.addView(label("Подпись"));
-        choice(preview, BuiltInWidgets.CONNECTIVITY_STYLE, new String[]{"Только значки", "Вкл и выкл", "Сеть и устройство"},
+        choice(preview, key(BuiltInWidgets.CONNECTIVITY_STYLE), new String[]{"Только значки", "Вкл и выкл", "Сеть и устройство"},
                 BuiltInWidgets.STYLE_STATE, () -> {
                     changed.run();
-                    if (prefs.getInt(BuiltInWidgets.CONNECTIVITY_STYLE, BuiltInWidgets.STYLE_STATE) == BuiltInWidgets.STYLE_NETWORK
+                    if (prefs.getInt(key(BuiltInWidgets.CONNECTIVITY_STYLE), BuiltInWidgets.STYLE_STATE) == BuiltInWidgets.STYLE_NETWORK
                             && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
                         requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION);
                 });
         preview.addView(Ui.text(this, "Название сети Wi-Fi Android показывает только с доступом к местоположению "
                 + "и при включённой геолокации; без них плитка пишет «Подключено».", 13, Ui.TEXT_SECONDARY), margin(10, -2));
+    }
+
+    /** Settings key of the widget whose page is open. */
+    private String key(String base) {
+        return BuiltInWidgets.key(base, widgetId);
     }
 
     @Override

@@ -117,6 +117,8 @@ public final class HomeActivity extends Activity {
     private static final int DOCK_WIDGET_ID = -3;
     private static final int VOLUME_WIDGET_ID = -4;
     private static final int CONNECTIVITY_WIDGET_ID = -5;
+    // Clocks, volume and Wi-Fi/Bluetooth may be added again: the n-th copy of a kind gets ID kind - 10 * n.
+    static final int BUILT_IN_STEP = 10;
     static final int WIDGET_CELL_DP = 96;
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
     static final int CLIMATE_PANEL_PX = 150;
@@ -341,7 +343,8 @@ public final class HomeActivity extends Activity {
     // Settings only write the prefs; HOME applies each change, also while it is hidden under them.
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
         if (key == null) return;
-        switch (key) {
+        // Settings of the second and later built-in widgets of a kind end with the widget ID.
+        switch (BuiltInWidgets.baseKey(key)) {
             case VIDEO_WALLPAPER: case WALLPAPER:
                 if (!Objects.equals(shownWallpaper, prefs.getString(WALLPAPER, null))
                         || !Objects.equals(shownVideo, prefs.getString(VIDEO_WALLPAPER, null))) showWallpaper();
@@ -1281,9 +1284,8 @@ public final class HomeActivity extends Activity {
             dialog.dismiss();
             if (position == 0) addClockWidget();
             else if (position == 1) addDockWidget();
-            else if (position == 2) addButtonsWidget(VOLUME_WIDGET_ID, 3, "Громкость уже добавлена", "Недостаточно места для громкости");
-            else if (position == 3) addButtonsWidget(CONNECTIVITY_WIDGET_ID, 4,
-                    "Wi-Fi и Bluetooth уже добавлены", "Недостаточно места для Wi-Fi и Bluetooth");
+            else if (position == 2) addButtonsWidget(VOLUME_WIDGET_ID, 3, "Недостаточно места для громкости");
+            else if (position == 3) addButtonsWidget(CONNECTIVITY_WIDGET_ID, 4, "Недостаточно места для Wi-Fi и Bluetooth");
             else addProviderWidget(providers.get(position - 4));
         });
         // Preview images can be large bitmaps, so decode and downscale them off the UI thread.
@@ -1397,11 +1399,11 @@ public final class HomeActivity extends Activity {
     }
 
     private View volumePreview() {
-        return buttonsPreview(BuiltInWidgets.createVolume(this, new WidgetPlacement(VOLUME_WIDGET_ID, 0, 0, 240, 80)));
+        return buttonsPreview(BuiltInWidgets.createVolume(this, new WidgetPlacement(newBuiltInId(VOLUME_WIDGET_ID), 0, 0, 240, 80)));
     }
 
     private View connectivityPreview() {
-        return buttonsPreview(BuiltInWidgets.createConnectivity(this, new WidgetPlacement(CONNECTIVITY_WIDGET_ID, 0, 0, 240, 80)));
+        return buttonsPreview(BuiltInWidgets.createConnectivity(this, new WidgetPlacement(newBuiltInId(CONNECTIVITY_WIDGET_ID), 0, 0, 240, 80)));
     }
 
     private View buttonsPreview(View view) {
@@ -1467,17 +1469,11 @@ public final class HomeActivity extends Activity {
     }
 
     private void addClockWidget() {
-        for (WidgetPlacement placement : widgets) {
-            if (placement.id == CLOCK_WIDGET_ID) {
-                Toast.makeText(this, "Часы уже добавлены", Toast.LENGTH_SHORT).show();
-                return;
-            }
-        }
         WidgetGrid grid = widgetGrid();
         if (grid == null) return;
         int columns = Math.min(4, grid.columns);
         int rows = Math.min(2, grid.rows);
-        WidgetPlacement placement = new WidgetPlacement(CLOCK_WIDGET_ID, 0, 0,
+        WidgetPlacement placement = new WidgetPlacement(newBuiltInId(CLOCK_WIDGET_ID), 0, 0,
                 columns * grid.cellWidth, rows * grid.cellHeight);
         compactClockWidget(placement, grid);
         columns = grid.span(placement.width, grid.cellWidth, grid.columns);
@@ -1530,13 +1526,7 @@ public final class HomeActivity extends Activity {
     }
 
     /** Adds a one-row widget of built-in buttons: volume or Wi-Fi/Bluetooth. */
-    private void addButtonsWidget(int id, int columns, String alreadyAdded, String noRoom) {
-        for (WidgetPlacement placement : widgets) {
-            if (placement.id == id) {
-                Toast.makeText(this, alreadyAdded, Toast.LENGTH_SHORT).show();
-                return;
-            }
-        }
+    private void addButtonsWidget(int kind, int columns, String noRoom) {
         WidgetGrid grid = widgetGrid();
         if (grid == null) return;
         columns = Math.min(columns, grid.columns);
@@ -1545,7 +1535,7 @@ public final class HomeActivity extends Activity {
             Toast.makeText(this, noRoom, Toast.LENGTH_SHORT).show();
             return;
         }
-        WidgetPlacement placement = new WidgetPlacement(id, 0, 0, 0, 0);
+        WidgetPlacement placement = new WidgetPlacement(newBuiltInId(kind), 0, 0, 0, 0);
         setGridPlacement(placement, grid, slot, columns, 1);
         placement.page = currentPage;
         widgets.add(placement);
@@ -1627,10 +1617,10 @@ public final class HomeActivity extends Activity {
         while (iterator.hasNext()) {
             WidgetPlacement placement = iterator.next();
             if (!multiplePages && placement.page != 0) continue;
-            boolean clockWidget = placement.id == CLOCK_WIDGET_ID;
+            boolean clockWidget = isBuiltIn(placement.id, CLOCK_WIDGET_ID);
             boolean dockWidget = placement.id == DOCK_WIDGET_ID;
-            boolean volumeWidget = placement.id == VOLUME_WIDGET_ID;
-            boolean connectivityWidget = placement.id == CONNECTIVITY_WIDGET_ID;
+            boolean volumeWidget = isBuiltIn(placement.id, VOLUME_WIDGET_ID);
+            boolean connectivityWidget = isBuiltIn(placement.id, CONNECTIVITY_WIDGET_ID);
             boolean buttonsWidget = volumeWidget || connectivityWidget;
             boolean builtIn = clockWidget || dockWidget || buttonsWidget;
             AppWidgetProviderInfo info = builtIn ? null : fitFixedWidget(widgetManager.getAppWidgetInfo(placement.id));
@@ -1693,15 +1683,15 @@ public final class HomeActivity extends Activity {
             View hostView;
             if (clockWidget) {
                 hostView = BuiltInWidgets.createClock(this, placement);
-                hostView.setTag(CLOCK_WIDGET_ID);
+                hostView.setTag(placement.id);
             } else if (dockWidget) {
                 hostView = createDockWidget();
             } else if (volumeWidget) {
                 hostView = BuiltInWidgets.createVolume(this, placement);
-                hostView.setTag(VOLUME_WIDGET_ID);
+                hostView.setTag(placement.id);
             } else if (connectivityWidget) {
                 hostView = BuiltInWidgets.createConnectivity(this, placement);
-                hostView.setTag(CONNECTIVITY_WIDGET_ID);
+                hostView.setTag(placement.id);
             } else {
                 AppWidgetHostView widgetView = widgetHost.createView(this, placement.id, info);
                 widgetView.setAppWidget(placement.id, info);
@@ -1973,35 +1963,40 @@ public final class HomeActivity extends Activity {
     }
 
     private void updateDesktopClock() {
-        View desktopClock = widgetRow.findViewWithTag(CLOCK_WIDGET_ID);
-        if (desktopClock == null) return;
-        for (WidgetPlacement placement : widgets) {
-            if (placement.id == CLOCK_WIDGET_ID) {
-                BuiltInWidgets.updateClock(this, desktopClock, placement);
-                return;
-            }
-        }
+        updateDesktopBuiltIns(CLOCK_WIDGET_ID);
     }
 
     private void updateDesktopVolume() {
-        View desktopVolume = widgetRow.findViewWithTag(VOLUME_WIDGET_ID);
-        if (desktopVolume == null) return;
-        for (WidgetPlacement placement : widgets) {
-            if (placement.id == VOLUME_WIDGET_ID) {
-                BuiltInWidgets.updateVolume(this, desktopVolume, placement);
-                return;
-            }
-        }
+        updateDesktopBuiltIns(VOLUME_WIDGET_ID);
     }
 
     private void updateDesktopConnectivity() {
-        View desktopConnectivity = widgetRow.findViewWithTag(CONNECTIVITY_WIDGET_ID);
-        if (desktopConnectivity == null) return;
+        updateDesktopBuiltIns(CONNECTIVITY_WIDGET_ID);
+    }
+
+    private void updateDesktopBuiltIns(int kind) {
         for (WidgetPlacement placement : widgets) {
-            if (placement.id == CONNECTIVITY_WIDGET_ID) {
-                BuiltInWidgets.updateConnectivity(this, desktopConnectivity, placement);
-                return;
-            }
+            View view = isBuiltIn(placement.id, kind) ? widgetRow.findViewWithTag(placement.id) : null;
+            if (view != null) updateBuiltIn(view, placement);
+        }
+    }
+
+    /** Rebuilds a clock, volume or Wi-Fi/Bluetooth widget for its settings and size. */
+    private void updateBuiltIn(View view, WidgetPlacement placement) {
+        if (isBuiltIn(placement.id, CLOCK_WIDGET_ID)) BuiltInWidgets.updateClock(this, view, placement);
+        else if (isBuiltIn(placement.id, VOLUME_WIDGET_ID)) BuiltInWidgets.updateVolume(this, view, placement);
+        else if (isBuiltIn(placement.id, CONNECTIVITY_WIDGET_ID)) BuiltInWidgets.updateConnectivity(this, view, placement);
+    }
+
+    private static boolean isBuiltIn(int id, int kind) {
+        return id < 0 && id % BUILT_IN_STEP == kind;
+    }
+
+    /** The first free ID of a kind: the kind itself for the first widget, which keeps the historical ID and keys. */
+    private int newBuiltInId(int kind) {
+        for (int id = kind; ; id -= BUILT_IN_STEP) {
+            int candidate = id;
+            if (widgets.stream().noneMatch(placement -> placement.id == candidate)) return candidate;
         }
     }
 
@@ -2086,9 +2081,9 @@ public final class HomeActivity extends Activity {
                                        WidgetPlacement placement, AppWidgetProviderInfo info) {
         container.setForeground(round(Color.TRANSPARENT, ACCENT, 12));
         View dragSurface = new View(this);
-        String title = placement.id == CLOCK_WIDGET_ID ? "часы" : placement.id == DOCK_WIDGET_ID
-                ? "док приложений" : placement.id == VOLUME_WIDGET_ID ? "громкость"
-                : placement.id == CONNECTIVITY_WIDGET_ID ? "Wi-Fi и Bluetooth"
+        String title = isBuiltIn(placement.id, CLOCK_WIDGET_ID) ? "часы" : placement.id == DOCK_WIDGET_ID
+                ? "док приложений" : isBuiltIn(placement.id, VOLUME_WIDGET_ID) ? "громкость"
+                : isBuiltIn(placement.id, CONNECTIVITY_WIDGET_ID) ? "Wi-Fi и Bluetooth"
                 : String.valueOf(info.loadLabel(getPackageManager()));
         dragSurface.setContentDescription("Перетащить " + title);
         dragSurface.setOnTouchListener(widgetTouch(container, hostView, placement, info, false));
@@ -2097,10 +2092,11 @@ public final class HomeActivity extends Activity {
             Button settings = button("⚙");
             settings.setContentDescription("Настроить " + title);
             settings.setOnClickListener(v -> {
-                if (placement.id == CLOCK_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_CLOCK);
+                if (isBuiltIn(placement.id, CLOCK_WIDGET_ID)) SettingsActivity.open(this, SettingsActivity.PAGE_CLOCK, placement.id);
                 else if (placement.id == DOCK_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_DOCK);
-                else if (placement.id == VOLUME_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_VOLUME);
-                else if (placement.id == CONNECTIVITY_WIDGET_ID) SettingsActivity.open(this, SettingsActivity.PAGE_CONNECTIVITY);
+                else if (isBuiltIn(placement.id, VOLUME_WIDGET_ID)) SettingsActivity.open(this, SettingsActivity.PAGE_VOLUME, placement.id);
+                else if (isBuiltIn(placement.id, CONNECTIVITY_WIDGET_ID))
+                    SettingsActivity.open(this, SettingsActivity.PAGE_CONNECTIVITY, placement.id);
                 else reconfigureWidget(placement);
             });
             container.addView(settings, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.LEFT));
@@ -2181,13 +2177,9 @@ public final class HomeActivity extends Activity {
                     params.leftMargin = dp(placement.x);
                     params.topMargin = dp(placement.y);
                     container.setLayoutParams(params);
-                    if (resizing && placement.id == CLOCK_WIDGET_ID) {
+                    if (resizing && isBuiltIn(placement.id, CLOCK_WIDGET_ID))
                         placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
-                        BuiltInWidgets.updateClock(HomeActivity.this, hostView, placement);
-                    }
-                    if (resizing && placement.id == VOLUME_WIDGET_ID) BuiltInWidgets.updateVolume(HomeActivity.this, hostView, placement);
-                    if (resizing && placement.id == CONNECTIVITY_WIDGET_ID)
-                        BuiltInWidgets.updateConnectivity(HomeActivity.this, hostView, placement);
+                    if (resizing && !(hostView instanceof AppWidgetHostView)) updateBuiltIn(hostView, placement);
                     if (!resizing && multiplePagesEnabled(HomeActivity.this)) {
                         int[] row = new int[2];
                         widgetRow.getLocationOnScreen(row);
@@ -2230,11 +2222,11 @@ public final class HomeActivity extends Activity {
                         placement.y = target.y;
                         placement.width = target.width;
                         placement.height = target.height;
-                        if (placement.id == CLOCK_WIDGET_ID && resizing)
+                        if (isBuiltIn(placement.id, CLOCK_WIDGET_ID) && resizing)
                             placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
                         saveWidgets();
                     }
-                    if (placement.id == CLOCK_WIDGET_ID && resizing) {
+                    if (isBuiltIn(placement.id, CLOCK_WIDGET_ID) && resizing) {
                         placement.clockSize = Math.max(28, Math.round((float) originalClockSize * placement.width / originalWidth));
                     }
                     FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) container.getLayoutParams();
@@ -2245,10 +2237,7 @@ public final class HomeActivity extends Activity {
                     container.setLayoutParams(params);
                     if (resizing) {
                         if (hostView instanceof AppWidgetHostView) updateWidgetSize((AppWidgetHostView) hostView, placement);
-                        else if (placement.id == CLOCK_WIDGET_ID) BuiltInWidgets.updateClock(HomeActivity.this, hostView, placement);
-                        else if (placement.id == VOLUME_WIDGET_ID) BuiltInWidgets.updateVolume(HomeActivity.this, hostView, placement);
-                        else if (placement.id == CONNECTIVITY_WIDGET_ID)
-                            BuiltInWidgets.updateConnectivity(HomeActivity.this, hostView, placement);
+                        else updateBuiltIn(hostView, placement);
                     }
                     ((View) container.getParent()).setTranslationZ(0);
                     // The widget belongs to the page it was dropped on; views are rebuilt once this touch is over.
@@ -2343,7 +2332,7 @@ public final class HomeActivity extends Activity {
                 item.put("width", widget.width);
                 item.put("height", widget.height);
                 item.put("page", widget.page);
-                if (widget.id == CLOCK_WIDGET_ID) item.put("clockSize", widget.clockSize);
+                if (isBuiltIn(widget.id, CLOCK_WIDGET_ID)) item.put("clockSize", widget.clockSize);
                 saved.put(item);
             } catch (JSONException e) { throw new IllegalStateException(e); }
         }

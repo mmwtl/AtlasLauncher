@@ -58,6 +58,15 @@ final class BuiltInWidgets {
     private BuiltInWidgets() {
     }
 
+    /** Settings key of a widget: the first of its kind keeps the plain key, later ones add their ID. */
+    static String key(String base, int widgetId) {
+        return widgetId > -HomeActivity.BUILT_IN_STEP ? base : base + widgetId;
+    }
+
+    static String baseKey(String key) {
+        return key.replaceFirst("-\\d+$", "");
+    }
+
     static View createClock(Context context, HomeActivity.WidgetPlacement placement) {
         LinearLayout group = new LinearLayout(context);
         group.setOrientation(LinearLayout.VERTICAL);
@@ -104,7 +113,7 @@ final class BuiltInWidgets {
         TextClock date = (TextClock) group.getChildAt(1);
         date.setTextSize(Math.max(18, clockSize / 5));
         SharedPreferences prefs = context.getSharedPreferences(HomeActivity.PREFS, Context.MODE_PRIVATE);
-        int format = prefs.getInt(CLOCK_FORMAT, 0);
+        int format = prefs.getInt(key(CLOCK_FORMAT, placement.id), 0);
         TextClock clock = (TextClock) timeLine.getChildAt(0);
         clock.setFormat24Hour(format == 2 ? "h:mm" : "HH:mm");
         clock.setFormat12Hour(format == 1 ? "HH:mm" : "h:mm");
@@ -113,15 +122,15 @@ final class BuiltInWidgets {
             timeLine.getChildAt(1).setVisibility(periodVisible ? View.VISIBLE : View.GONE);
         }
         String[] fonts = {"sans-serif", "serif", "monospace"};
-        int font = Math.max(0, Math.min(2, prefs.getInt(CLOCK_FONT, 0)));
-        int weight = Math.max(0, Math.min(2, prefs.getInt(CLOCK_WEIGHT, 0)));
+        int font = Math.max(0, Math.min(2, prefs.getInt(key(CLOCK_FONT, placement.id), 0)));
+        int weight = Math.max(0, Math.min(2, prefs.getInt(key(CLOCK_WEIGHT, placement.id), 0)));
         Typeface face = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
                 ? Typeface.create(Typeface.create(fonts[font], Typeface.NORMAL), weight == 0 ? 300 : weight == 1 ? 400 : 700, false)
                 : Typeface.create(weight == 0 && font == 0 ? "sans-serif-light" : fonts[font], weight == 2 ? Typeface.BOLD : Typeface.NORMAL);
         clock.setTypeface(face);
         ((TextClock) timeLine.getChildAt(1)).setTypeface(face);
         date.setTypeface(face);
-        date.setVisibility(showDate && prefs.getBoolean(CLOCK_DATE, true) ? View.VISIBLE : View.GONE);
+        date.setVisibility(showDate && prefs.getBoolean(key(CLOCK_DATE, placement.id), true) ? View.VISIBLE : View.GONE);
         TextClock period = (TextClock) timeLine.getChildAt(1);
         float availableWidth = Ui.dp(context, Math.max(1, placement.width - 16));
         float timeWidth = clockTimeWidth(context, clock, period);
@@ -160,9 +169,9 @@ final class BuiltInWidgets {
         SharedPreferences prefs = context.getSharedPreferences(HomeActivity.PREFS, Context.MODE_PRIVATE);
         AudioManager audio = context.getSystemService(AudioManager.class);
         boolean horizontal = placement.width >= placement.height;
-        boolean showMute = prefs.getBoolean(VOLUME_MUTE, true);
-        boolean joined = prefs.getBoolean(VOLUME_JOINED, false);
-        int[] icons = VOLUME_ICON_STYLES[Math.max(0, Math.min(VOLUME_ICON_STYLES.length - 1, prefs.getInt(VOLUME_ICONS, 0)))];
+        boolean showMute = prefs.getBoolean(key(VOLUME_MUTE, placement.id), true);
+        boolean joined = prefs.getBoolean(key(VOLUME_JOINED, placement.id), false);
+        int[] icons = VOLUME_ICON_STYLES[Math.max(0, Math.min(VOLUME_ICON_STYLES.length - 1, prefs.getInt(key(VOLUME_ICONS, placement.id), 0)))];
         panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         // A joined block draws one card behind the buttons; separate buttons have a card each.
         panel.setBackground(joined ? Ui.rounded(HomeActivity.NEUTRAL_SURFACE, Ui.dp(context, 24)) : null);
@@ -218,16 +227,18 @@ final class BuiltInWidgets {
         LinearLayout panel = (LinearLayout) hostView;
         panel.removeAllViews();
         SharedPreferences prefs = context.getSharedPreferences(HomeActivity.PREFS, Context.MODE_PRIVATE);
-        WifiManager wifi = prefs.getBoolean(CONNECTIVITY_WIFI, true)
+        WifiManager wifi = prefs.getBoolean(key(CONNECTIVITY_WIFI, placement.id), true)
                 ? context.getApplicationContext().getSystemService(WifiManager.class) : null;
-        BluetoothAdapter bluetooth = prefs.getBoolean(CONNECTIVITY_BLUETOOTH, true) ? BluetoothAdapter.getDefaultAdapter() : null;
-        int style = prefs.getInt(CONNECTIVITY_STYLE, STYLE_STATE);
+        BluetoothAdapter bluetooth = prefs.getBoolean(key(CONNECTIVITY_BLUETOOTH, placement.id), true) ? BluetoothAdapter.getDefaultAdapter() : null;
+        int style = prefs.getInt(key(CONNECTIVITY_STYLE, placement.id), STYLE_STATE);
         int tiles = (wifi == null ? 0 : 1) + (bluetooth == null ? 0 : 1);
         if (tiles == 0) return;
         // The AtlasClimateWidget look: tiles on a card, an indicator bar under each icon.
-        boolean climate = prefs.getBoolean(CONNECTIVITY_CLIMATE, false);
-        int padding = climate ? CLIMATE_PADDING_DP : 0;
-        int gap = climate ? CLIMATE_GAP_DP : 0;
+        boolean climate = prefs.getBoolean(key(CONNECTIVITY_CLIMATE, placement.id), false);
+        // A low or narrow widget keeps the climate card's proportions instead of its full padding.
+        int side = Math.min(placement.width, placement.height);
+        int padding = climate ? Math.min(CLIMATE_PADDING_DP, side / 8) : 0;
+        int gap = climate ? Math.min(CLIMATE_GAP_DP, side / 12) : 0;
         int inset = Ui.dp(context, climate ? padding - gap / 2 : 0);
         panel.setBackground(climate ? Ui.rounded(CLIMATE_CARD, Ui.dp(context, 24)) : null);
         panel.setPadding(inset, inset, inset, inset);
