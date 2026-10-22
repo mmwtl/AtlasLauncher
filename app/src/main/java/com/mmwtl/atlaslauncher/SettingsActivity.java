@@ -522,10 +522,15 @@ public final class SettingsActivity extends ScaledActivity {
                 changed.run();
             });
         }
+        // The bars belong to the climate look.
+        Switch[] bars = new Switch[1];
         toggle(preview, "Как виджет климата", prefs.getBoolean(key(BuiltInWidgets.CONNECTIVITY_CLIMATE), false), checked -> {
             prefs.edit().putBoolean(key(BuiltInWidgets.CONNECTIVITY_CLIMATE), checked).apply();
+            bars[0].setVisibility(checked ? View.VISIBLE : View.GONE);
             changed.run();
         });
+        bars[0] = toggle(preview, "Полоски под значками", key(BuiltInWidgets.CONNECTIVITY_BARS), true, changed);
+        bars[0].setVisibility(prefs.getBoolean(key(BuiltInWidgets.CONNECTIVITY_CLIMATE), false) ? View.VISIBLE : View.GONE);
         preview.addView(label("Подпись"));
         choice(preview, key(BuiltInWidgets.CONNECTIVITY_STYLE), new String[]{"Только значки", "Вкл и выкл", "Сеть и устройство"},
                 BuiltInWidgets.STYLE_STATE, () -> {

@@ -3,10 +3,13 @@ package com.mmwtl.atlaslauncher;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.appwidget.AppWidgetHostView;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.RippleDrawable;
 import android.media.AudioManager;
@@ -45,6 +48,7 @@ final class BuiltInWidgets {
     static final String CONNECTIVITY_BLUETOOTH = "connectivity_bluetooth";
     static final String CONNECTIVITY_STYLE = "connectivity_style";
     static final String CONNECTIVITY_CLIMATE = "connectivity_climate";
+    static final String CONNECTIVITY_BARS = "connectivity_bars";
     static final int STYLE_ICONS = 0;
     static final int STYLE_STATE = 1;
     static final int STYLE_NETWORK = 2;
@@ -233,19 +237,30 @@ final class BuiltInWidgets {
         int style = prefs.getInt(key(CONNECTIVITY_STYLE, placement.id), STYLE_STATE);
         int tiles = (wifi == null ? 0 : 1) + (bluetooth == null ? 0 : 1);
         if (tiles == 0) return;
-        // The AtlasClimateWidget look: tiles on a card, an indicator bar under each icon.
+        // The AtlasClimateWidget look: tiles on a card, optionally an indicator bar under each icon.
         boolean climate = prefs.getBoolean(key(CONNECTIVITY_CLIMATE, placement.id), false);
+        boolean bars = climate && prefs.getBoolean(key(CONNECTIVITY_BARS, placement.id), true);
+        int width = placement.width;
+        int height = placement.height;
+        if (context instanceof HomeActivity) {
+            // On the desktop the widget sits inside the default widget padding, like the climate widget itself.
+            Rect hostPadding = AppWidgetHostView.getDefaultPaddingForWidget(context,
+                    new ComponentName(context, HomeActivity.class), null);
+            float density = context.getResources().getDisplayMetrics().density;
+            width -= Math.round((hostPadding.left + hostPadding.right) / density);
+            height -= Math.round((hostPadding.top + hostPadding.bottom) / density);
+        }
         // A low or narrow widget keeps the climate card's proportions instead of its full padding.
-        int side = Math.min(placement.width, placement.height);
+        int side = Math.min(width, height);
         int padding = climate ? Math.min(CLIMATE_PADDING_DP, side / 8) : 0;
         int gap = climate ? Math.min(CLIMATE_GAP_DP, side / 12) : 0;
         int inset = Ui.dp(context, climate ? padding - gap / 2 : 0);
         panel.setBackground(climate ? Ui.rounded(CLIMATE_CARD, Ui.dp(context, 24)) : null);
         panel.setPadding(inset, inset, inset, inset);
-        boolean horizontal = placement.width >= placement.height;
+        boolean horizontal = width >= height;
         panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        int tileWidth = (horizontal ? (placement.width - 2 * padding + gap) / tiles : placement.width - 2 * padding + gap) - gap;
-        int tileHeight = (horizontal ? placement.height - 2 * padding + gap : (placement.height - 2 * padding + gap) / tiles) - gap;
+        int tileWidth = (horizontal ? (width - 2 * padding + gap) / tiles : width - 2 * padding + gap) - gap;
+        int tileHeight = (horizontal ? height - 2 * padding + gap : (height - 2 * padding + gap) / tiles) - gap;
         int tileSize = Math.max(1, Math.min(tileWidth, tileHeight));
         boolean beside = style != STYLE_ICONS && tileWidth >= tileHeight * 2;
         boolean below = style != STYLE_ICONS && !beside;
@@ -284,7 +299,7 @@ final class BuiltInWidgets {
             image.setImageResource(isWifi ? R.drawable.ic_wifi : R.drawable.ic_bluetooth);
             image.setAlpha(on || off ? 1f : 0.5f);
             LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize));
-            if (climate) {
+            if (bars) {
                 LinearLayout icon = new LinearLayout(context);
                 icon.setOrientation(LinearLayout.VERTICAL);
                 icon.setGravity(Gravity.CENTER_HORIZONTAL);
