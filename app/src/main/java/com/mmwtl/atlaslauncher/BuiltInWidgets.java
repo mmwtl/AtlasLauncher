@@ -263,8 +263,11 @@ final class BuiltInWidgets {
         int tileHeight = (horizontal ? height - 2 * padding + gap : (height - 2 * padding + gap) / tiles) - gap;
         int tileSize = Math.max(1, Math.min(tileWidth, tileHeight));
         int besideIcon = climate ? Math.max(16, tileSize * 44 / 86) : Math.max(16, Math.min(48, tileSize * 2 / 5));
-        // Text goes beside the icon in a wide tile (from 3:2) with room for "Bluetooth" or a short network name.
-        boolean beside = style != STYLE_ICONS && tileWidth * 2 >= tileHeight * 3 && tileWidth - besideIcon - 32 >= 100;
+        // Beside its text the icon keeps its place: a centred row would shift as the text changes.
+        int start = Math.max(10, Math.min(32, (tileHeight - besideIcon) / 2));
+        // Text goes beside the icon in a wide tile (from 3:2) with room for "Bluetooth"; longer names are ellipsized.
+        boolean beside = style != STYLE_ICONS && tileWidth * 2 >= tileHeight * 3
+                && tileWidth - start - besideIcon - 12 - 10 >= 80;
         boolean below = style != STYLE_ICONS && !beside;
         int iconSize = beside ? besideIcon : climate ? Math.max(16, tileSize * 44 / 86 * (below ? 82 : 100) / 100)
                 : Math.max(16, Math.min(48, below ? tileSize / 3 : tileSize * 2 / 5));
@@ -282,10 +285,8 @@ final class BuiltInWidgets {
                     : isWifi ? wifiNetwork(wifi) : bluetoothDevice(bluetooth);
             LinearLayout button = new LinearLayout(context);
             button.setOrientation(below ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-            // Beside its text the icon keeps its place: a centred row would shift as the text changes.
             button.setGravity(beside ? Gravity.START | Gravity.CENTER_VERTICAL : Gravity.CENTER);
-            int start = beside ? Math.max(10, Math.min(32, (tileHeight - iconSize) / 2)) : 10;
-            button.setPadding(Ui.dp(context, start), 0, Ui.dp(context, 10), 0);
+            button.setPadding(Ui.dp(context, beside ? start : 10), 0, Ui.dp(context, 10), 0);
             int radius = Ui.dp(context, climate ? tileSize * 24 / 100 : 24);
             int surface = on ? ATLAS_ACTIVE : climate ? Ui.SURFACE_RAISED : HomeActivity.NEUTRAL_SURFACE;
             int textColor = on || !climate ? TEXT : Ui.TEXT_SECONDARY;
