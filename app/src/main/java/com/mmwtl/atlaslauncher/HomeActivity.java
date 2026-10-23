@@ -369,7 +369,7 @@ public final class HomeActivity extends Activity {
             case BuiltInWidgets.CLOCK_DATE: updateDesktopClock(); break;
             case BuiltInWidgets.VOLUME_MUTE: case BuiltInWidgets.VOLUME_ICONS: case BuiltInWidgets.VOLUME_JOINED:
                 updateDesktopVolume(); break;
-            case BuiltInWidgets.CONNECTIVITY_WIFI: case BuiltInWidgets.CONNECTIVITY_BLUETOOTH:
+            case BuiltInWidgets.CONNECTIVITY_WIFI: case BuiltInWidgets.CONNECTIVITY_BLUETOOTH: case BuiltInWidgets.CONNECTIVITY_HOTSPOT:
             case BuiltInWidgets.CONNECTIVITY_STYLE: case BuiltInWidgets.CONNECTIVITY_CLIMATE: case BuiltInWidgets.CONNECTIVITY_BARS:
                 updateDesktopConnectivity(); break;
         }
@@ -438,6 +438,7 @@ public final class HomeActivity extends Activity {
         IntentFilter connectivity = new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION);
         connectivity.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         connectivity.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+        connectivity.addAction(BuiltInWidgets.WIFI_AP_STATE_CHANGED);
         connectivity.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
         connectivity.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
         registerReceiver(connectivityReceiver, connectivity);

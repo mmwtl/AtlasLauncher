@@ -6,6 +6,8 @@ import android.bluetooth.BluetoothDevice;
 import android.appwidget.AppWidgetHostView;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -13,10 +15,14 @@ import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.RippleDrawable;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -27,7 +33,10 @@ import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
 
-/** The clock, volume and Wi-Fi/Bluetooth widgets built into HOME; settings show them as previews. */
+import java.lang.reflect.Proxy;
+import java.util.concurrent.Executor;
+
+/** The clock, volume and Wi-Fi/Bluetooth/hotspot widgets built into HOME; settings show them as previews. */
 final class BuiltInWidgets {
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
@@ -46,12 +55,18 @@ final class BuiltInWidgets {
     static final String VOLUME_JOINED = "volume_joined";
     static final String CONNECTIVITY_WIFI = "connectivity_wifi";
     static final String CONNECTIVITY_BLUETOOTH = "connectivity_bluetooth";
+    static final String CONNECTIVITY_HOTSPOT = "connectivity_hotspot";
     static final String CONNECTIVITY_STYLE = "connectivity_style";
     static final String CONNECTIVITY_CLIMATE = "connectivity_climate";
     static final String CONNECTIVITY_BARS = "connectivity_bars";
     static final int STYLE_ICONS = 0;
     static final int STYLE_STATE = 1;
     static final int STYLE_NETWORK = 2;
+    // Hidden WifiManager constants: the sticky hotspot state broadcast and its states.
+    static final String WIFI_AP_STATE_CHANGED = "android.net.wifi.WIFI_AP_STATE_CHANGED";
+    private static final int WIFI_AP_STATE_DISABLING = 10;
+    private static final int WIFI_AP_STATE_ENABLING = 12;
+    private static final int WIFI_AP_STATE_ENABLED = 13;
     // Volume up, volume down for each icon style; mute uses one icon in every style.
     private static final int[][] VOLUME_ICON_STYLES = {
             {R.drawable.ic_volume_up, R.drawable.ic_volume_down},
@@ -221,7 +236,7 @@ final class BuiltInWidgets {
     }
 
     /**
-     * Rebuilds the Wi-Fi and Bluetooth tiles: in a row for a wide widget, in a column for a tall one. A wide tile
+     * Rebuilds the Wi-Fi, Bluetooth and hotspot tiles: in a row for a wide widget, in a column for a tall one. A wide tile
      * puts its text beside the icon, a narrow one under it.
      */
     // BLUETOOTH_CONNECT exists from API 31; with targetSdk 28 the BLUETOOTH and BLUETOOTH_ADMIN grants apply.
@@ -234,8 +249,9 @@ final class BuiltInWidgets {
         WifiManager wifi = prefs.getBoolean(key(CONNECTIVITY_WIFI, placement.id), true)
                 ? context.getApplicationContext().getSystemService(WifiManager.class) : null;
         BluetoothAdapter bluetooth = prefs.getBoolean(key(CONNECTIVITY_BLUETOOTH, placement.id), true) ? BluetoothAdapter.getDefaultAdapter() : null;
+        boolean hotspot = prefs.getBoolean(key(CONNECTIVITY_HOTSPOT, placement.id), false);
         int style = prefs.getInt(key(CONNECTIVITY_STYLE, placement.id), STYLE_STATE);
-        int tiles = (wifi == null ? 0 : 1) + (bluetooth == null ? 0 : 1);
+        int tiles = (wifi == null ? 0 : 1) + (bluetooth == null ? 0 : 1) + (hotspot ? 1 : 0);
         if (tiles == 0) return;
         // The AtlasClimateWidget look: tiles on a card, optionally an indicator bar under each icon.
         boolean climate = prefs.getBoolean(key(CONNECTIVITY_CLIMATE, placement.id), false);
@@ -271,17 +287,33 @@ final class BuiltInWidgets {
         boolean below = style != STYLE_ICONS && !beside;
         int iconSize = beside ? besideIcon : climate ? Math.max(16, tileSize * 44 / 86 * (below ? 82 : 100) / 100)
                 : Math.max(16, Math.min(48, below ? tileSize / 3 : tileSize * 2 / 5));
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 3; i++) {
             boolean isWifi = i == 0;
-            if (isWifi ? wifi == null : bluetooth == null) continue;
-            int state = isWifi ? wifi.getWifiState() : bluetooth.getState();
-            boolean on = isWifi ? state == WifiManager.WIFI_STATE_ENABLED : state == BluetoothAdapter.STATE_ON;
-            boolean off = isWifi ? state == WifiManager.WIFI_STATE_DISABLED : state == BluetoothAdapter.STATE_OFF;
-            String name = isWifi ? "Wi-Fi" : "Bluetooth";
+            boolean isHotspot = i == 2;
+            if (isWifi ? wifi == null : isHotspot ? !hotspot : bluetooth == null) continue;
+            boolean on, off, turningOn;
+            if (isWifi) {
+                int state = wifi.getWifiState();
+                on = state == WifiManager.WIFI_STATE_ENABLED;
+                off = state == WifiManager.WIFI_STATE_DISABLED;
+                turningOn = state == WifiManager.WIFI_STATE_ENABLING;
+            } else if (isHotspot) {
+                // The sticky broadcast keeps the current state; a failed start counts as off.
+                Intent ap = context.registerReceiver(null, new IntentFilter(WIFI_AP_STATE_CHANGED));
+                int state = ap == null ? 0 : ap.getIntExtra("wifi_state", 0);
+                on = state == WIFI_AP_STATE_ENABLED;
+                turningOn = state == WIFI_AP_STATE_ENABLING;
+                off = !on && !turningOn && state != WIFI_AP_STATE_DISABLING;
+            } else {
+                int state = bluetooth.getState();
+                on = state == BluetoothAdapter.STATE_ON;
+                off = state == BluetoothAdapter.STATE_OFF;
+                turningOn = state == BluetoothAdapter.STATE_TURNING_ON;
+            }
+            String name = isWifi ? "Wi-Fi" : isHotspot ? "Точка доступа" : "Bluetooth";
             String status = off ? "Выкл"
-                    : !on ? (isWifi ? state == WifiManager.WIFI_STATE_ENABLING : state == BluetoothAdapter.STATE_TURNING_ON)
-                            ? "Включается…" : "Выключается…"
-                    : style != STYLE_NETWORK ? "Вкл"
+                    : !on ? turningOn ? "Включается…" : "Выключается…"
+                    : style != STYLE_NETWORK || isHotspot ? "Вкл"
                     : isWifi ? wifiNetwork(wifi) : bluetoothDevice(bluetooth);
             LinearLayout button = new LinearLayout(context);
             button.setOrientation(below ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
@@ -295,13 +327,17 @@ final class BuiltInWidgets {
             button.setContentDescription(name + ": " + status);
             button.setOnClickListener(v -> {
                 if (!on && !off) return;
+                if (isHotspot) {
+                    setHotspotEnabled(context, !on);
+                    return;
+                }
                 // Android 10+ lets only apps targeting API 28 or lower switch Wi-Fi.
                 if (!(isWifi ? wifi.setWifiEnabled(!on) : on ? bluetooth.disable() : bluetooth.enable()))
                     Toast.makeText(context, isWifi ? "Не удалось переключить Wi-Fi"
                             : "Не удалось переключить Bluetooth", Toast.LENGTH_SHORT).show();
             });
             ImageView image = new ImageView(context);
-            image.setImageResource(isWifi ? R.drawable.ic_wifi : R.drawable.ic_bluetooth);
+            image.setImageResource(isWifi ? R.drawable.ic_wifi : isHotspot ? R.drawable.ic_hotspot : R.drawable.ic_bluetooth);
             image.setAlpha(on || off ? 1f : 0.5f);
             LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize));
             if (bars) {
@@ -337,6 +373,39 @@ final class BuiltInWidgets {
             int margin = Ui.dp(context, climate ? gap / 2 : 3);
             params.setMargins(margin, margin, margin, margin);
             panel.addView(button, params);
+        }
+    }
+
+    /**
+     * Starts or stops the Wi-Fi hotspot like the system settings do. TetheringManager is a system API; apps may call
+     * it with the "modify system settings" access when the operator needs no tethering check, as in the car.
+     */
+    @SuppressLint("WrongConstant")
+    private static void setHotspotEnabled(Context context, boolean enable) {
+        if (!Settings.System.canWrite(context)) {
+            Toast.makeText(context, "Разрешите изменение системных настроек, чтобы переключать точку доступа",
+                    Toast.LENGTH_LONG).show();
+            context.startActivity(new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                    Uri.parse("package:" + context.getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            return;
+        }
+        try {
+            Object tethering = context.getSystemService("tethering");
+            Class<?> manager = Class.forName("android.net.TetheringManager");
+            if (!enable) {
+                manager.getMethod("stopTethering", int.class).invoke(tethering, 0 /* TETHERING_WIFI */);
+                return;
+            }
+            Class<?> callback = Class.forName("android.net.TetheringManager$StartTetheringCallback");
+            Object listener = Proxy.newProxyInstance(callback.getClassLoader(), new Class<?>[]{callback}, (proxy, method, args) -> {
+                if ("onTetheringFailed".equals(method.getName()))
+                    Toast.makeText(context, "Не удалось включить точку доступа", Toast.LENGTH_SHORT).show();
+                return null;
+            });
+            manager.getMethod("startTethering", int.class, Executor.class, callback)
+                    .invoke(tethering, 0 /* TETHERING_WIFI */, (Executor) new Handler(Looper.getMainLooper())::post, listener);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            Toast.makeText(context, "Не удалось переключить точку доступа", Toast.LENGTH_SHORT).show();
         }
     }
 

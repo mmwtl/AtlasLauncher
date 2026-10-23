@@ -43,6 +43,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -507,14 +508,15 @@ public final class SettingsActivity extends ScaledActivity {
         preview.addView(frame, margin(12, dp(96)));
         Runnable changed = () -> BuiltInWidgets.updateConnectivity(this, connectivity, previewPlacement);
         connectivityChanged = changed;
-        Switch[] shown = new Switch[2];
-        String[] keys = {key(BuiltInWidgets.CONNECTIVITY_WIFI), key(BuiltInWidgets.CONNECTIVITY_BLUETOOTH)};
-        String[] names = {"Wi-Fi", "Bluetooth"};
-        for (int i = 0; i < 2; i++) {
+        Switch[] shown = new Switch[3];
+        String[] keys = {key(BuiltInWidgets.CONNECTIVITY_WIFI), key(BuiltInWidgets.CONNECTIVITY_BLUETOOTH),
+                key(BuiltInWidgets.CONNECTIVITY_HOTSPOT)};
+        String[] names = {"Wi-Fi", "Bluetooth", "Точка доступа"};
+        for (int i = 0; i < 3; i++) {
             int index = i;
-            shown[i] = toggle(preview, names[i], prefs.getBoolean(keys[i], true), checked -> {
+            shown[i] = toggle(preview, names[i], prefs.getBoolean(keys[i], i < 2), checked -> {
                 // At least one tile stays: an empty widget could not be found to remove.
-                if (!checked && !shown[1 - index].isChecked()) {
+                if (!checked && Arrays.stream(shown).noneMatch(Switch::isChecked)) {
                     shown[index].setChecked(true);
                     return;
                 }
@@ -540,7 +542,8 @@ public final class SettingsActivity extends ScaledActivity {
                         requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION);
                 });
         preview.addView(Ui.text(this, "Название сети Wi-Fi Android показывает только с доступом к местоположению "
-                + "и при включённой геолокации; без них плитка пишет «Подключено».", 13, Ui.TEXT_SECONDARY), margin(10, -2));
+                + "и при включённой геолокации; без них плитка пишет «Подключено». Точке доступа нужно разрешение "
+                + "на изменение системных настроек: его попросят при первом нажатии.", 13, Ui.TEXT_SECONDARY), margin(10, -2));
     }
 
     /** Settings key of the widget whose page is open. */
