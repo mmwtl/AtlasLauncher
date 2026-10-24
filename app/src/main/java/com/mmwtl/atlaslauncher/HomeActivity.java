@@ -94,6 +94,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
 
@@ -138,6 +140,8 @@ public final class HomeActivity extends Activity {
     static final String SLIDESHOW_UNIT = "wallpaper_slideshow_unit";
     static final String SLIDESHOW_INTERVAL = "wallpaper_slideshow_interval";
     static final int[] SLIDESHOW_MAX_INTERVAL = {0, 60, 24};
+    // File name prefix of the cached wallpaper copy in getFilesDir().
+    private static final String WALLPAPER_CACHE = "wallpaper-";
     private static final String SLIDESHOW_CHANGED_AT = "wallpaper_slideshow_changed_at";
     private static final String SLIDESHOW_BOOT = "wallpaper_slideshow_boot";
     // Index 0 changes the wallpaper once per boot.
@@ -912,6 +916,7 @@ public final class HomeActivity extends Activity {
                     crossfadeWallpaper(image);
                     shownWallpaper = slide;
                     saveSlide(slide);
+                    wallpaperLoader.execute(() -> cacheWallpaper(isPresetUri(slide) ? null : slide, false));
                 });
                 return;
             }
@@ -1053,15 +1058,23 @@ public final class HomeActivity extends Activity {
         shownVideo = prefs.getString(VIDEO_WALLPAPER, null);
         videoWallpaper.setVideo(shownVideo);
         if (shownVideo != null) {
-            wallpaperView.setImageResource(R.drawable.coastal_twilight);
+            // The cached first frame stays until the video renders its own.
+            String video = shownVideo;
+            Drawable frame = cachedWallpaper(video);
+            if (frame != null) wallpaperView.setImageDrawable(frame);
+            else wallpaperView.setImageResource(R.drawable.coastal_twilight);
             updateWallpaperStyle();
+            wallpaperLoader.execute(() -> cacheWallpaper(video, true));
             return;
         }
         String saved = shownWallpaper;
         Uri uri = saved == null ? null : Uri.parse(saved);
         if (uri != null && !ContentResolver.SCHEME_ANDROID_RESOURCE.equals(uri.getScheme())) {
-            if (wallpaperView.getDrawable() == null) wallpaperView.setImageResource(R.drawable.coastal_twilight);
+            Drawable cached = cachedWallpaper(saved);
+            if (cached != null) wallpaperView.setImageDrawable(cached);
+            else if (wallpaperView.getDrawable() == null) wallpaperView.setImageResource(R.drawable.coastal_twilight);
             // A picked image comes from its document provider, which may take seconds to start right after boot.
+            // The original still loads: the cache holds only the first frame of an animation.
             wallpaperLoader.execute(() -> {
                 Drawable image = decodeWallpaperDrawable(this, uri, 2048);
                 runOnUiThread(() -> {
@@ -1069,12 +1082,48 @@ public final class HomeActivity extends Activity {
                     if (!isDestroyed() && generation == wallpaperGeneration) {
                         applyWallpaper(image);
                         if (image == null) Toast.makeText(this, "Не удалось загрузить фон", Toast.LENGTH_SHORT).show();
+                        else wallpaperLoader.execute(() -> cacheWallpaper(saved, false));
                     }
                 });
             });
             return;
         }
+        wallpaperLoader.execute(() -> cacheWallpaper(null, false));
         applyWallpaper(uri == null ? null : decodeWallpaperDrawable(this, uri, 2048));
+    }
+
+    /** A screen-sized copy of a picked wallpaper: unlike its document provider, app files are readable right after boot. */
+    private File wallpaperCache(String uri) {
+        return new File(getFilesDir(), WALLPAPER_CACHE + Integer.toHexString(uri.hashCode()) + ".jpg");
+    }
+
+    private Drawable cachedWallpaper(String uri) {
+        Bitmap bitmap = BitmapFactory.decodeFile(wallpaperCache(uri).getPath());
+        return bitmap == null ? null : new BitmapDrawable(getResources(), bitmap);
+    }
+
+    /** Runs on the wallpaper loader. Keeps only the cache of the given wallpaper, for a video its first frame. */
+    private void cacheWallpaper(String uri, boolean video) {
+        File cache = uri == null ? null : wallpaperCache(uri);
+        File[] files = getFilesDir().listFiles((dir, name) -> name.startsWith(WALLPAPER_CACHE));
+        if (files != null) for (File file : files) if (!file.equals(cache)) file.delete();
+        if (cache == null || cache.exists()) return;
+        Bitmap frame = video ? VideoWallpaperView.preview(this, Uri.parse(uri), 2048) : decodeWallpaper(this, Uri.parse(uri), 2048);
+        if (frame == null) return;
+        // Only as large as the screen it covers.
+        float scale = Math.min(1, Math.max((float) getResources().getDisplayMetrics().widthPixels / frame.getWidth(),
+                (float) getResources().getDisplayMetrics().heightPixels / frame.getHeight()));
+        if (scale < 1) frame = Bitmap.createScaledBitmap(frame, Math.max(1, Math.round(frame.getWidth() * scale)),
+                Math.max(1, Math.round(frame.getHeight() * scale)), true);
+        // A half-written file must never be shown, so the copy appears under its name only when complete.
+        File temp = new File(getFilesDir(), "wallpaper.tmp");
+        try (FileOutputStream out = new FileOutputStream(temp)) {
+            frame.compress(Bitmap.CompressFormat.JPEG, 90, out);
+        } catch (IOException e) {
+            Log.w("AtlasLauncher", "Cannot cache wallpaper", e);
+            return;
+        }
+        if (!temp.renameTo(cache)) temp.delete();
     }
 
     /** Android 9+ decodes GIF and animated WebP without a separate animation library. */
