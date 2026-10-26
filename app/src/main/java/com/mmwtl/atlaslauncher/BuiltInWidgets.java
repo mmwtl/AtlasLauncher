@@ -42,10 +42,6 @@ final class BuiltInWidgets {
     private static final int MUTED = Color.rgb(188, 204, 224);
     // Active tiles of the Atlas widgets (AtlasClimateWidget palette "Atlas").
     private static final int ATLAS_ACTIVE = Color.rgb(120, 147, 160);
-    // AtlasClimateWidget card: its surface at 80 % opacity, 12 dp padding and 8 dp gaps at its default 160 % scale.
-    private static final int CLIMATE_CARD = Color.argb(204, 38, 38, 38);
-    private static final int CLIMATE_PADDING_DP = 19;
-    private static final int CLIMATE_GAP_DP = 13;
     static final String CLOCK_FORMAT = "clock_format";
     static final String CLOCK_WEIGHT = "clock_weight";
     static final String CLOCK_FONT = "clock_font";
@@ -57,8 +53,6 @@ final class BuiltInWidgets {
     static final String CONNECTIVITY_BLUETOOTH = "connectivity_bluetooth";
     static final String CONNECTIVITY_HOTSPOT = "connectivity_hotspot";
     static final String CONNECTIVITY_STYLE = "connectivity_style";
-    static final String CONNECTIVITY_CLIMATE = "connectivity_climate";
-    static final String CONNECTIVITY_BARS = "connectivity_bars";
     static final int STYLE_ICONS = 0;
     static final int STYLE_STATE = 1;
     static final int STYLE_NETWORK = 2;
@@ -254,40 +248,29 @@ final class BuiltInWidgets {
         int style = prefs.getInt(key(CONNECTIVITY_STYLE, placement.id), STYLE_STATE);
         int tiles = (wifi == null ? 0 : 1) + (bluetooth == null ? 0 : 1) + (hotspot ? 1 : 0);
         if (tiles == 0) return;
-        // The AtlasClimateWidget look: tiles on a card, optionally an indicator bar under each icon.
-        boolean climate = prefs.getBoolean(key(CONNECTIVITY_CLIMATE, placement.id), false);
-        boolean bars = climate && prefs.getBoolean(key(CONNECTIVITY_BARS, placement.id), true);
         int width = placement.width;
         int height = placement.height;
         if (context instanceof HomeActivity) {
-            // On the desktop the widget sits inside the default widget padding, like the climate widget itself.
+            // On the desktop the widget sits inside the default widget padding.
             Rect hostPadding = AppWidgetHostView.getDefaultPaddingForWidget(context,
                     new ComponentName(context, HomeActivity.class), null);
             float density = context.getResources().getDisplayMetrics().density;
             width -= Math.round((hostPadding.left + hostPadding.right) / density);
             height -= Math.round((hostPadding.top + hostPadding.bottom) / density);
         }
-        // A low or narrow widget keeps the climate card's proportions instead of its full padding.
-        int side = Math.min(width, height);
-        int padding = climate ? Math.min(CLIMATE_PADDING_DP, side / 8) : 0;
-        int gap = climate ? Math.min(CLIMATE_GAP_DP, side / 12) : 0;
-        int inset = Ui.dp(context, climate ? padding - gap / 2 : 0);
-        panel.setBackground(climate ? Ui.rounded(CLIMATE_CARD, Ui.dp(context, 24)) : null);
-        panel.setPadding(inset, inset, inset, inset);
         boolean horizontal = width >= height;
         panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        int tileWidth = (horizontal ? (width - 2 * padding + gap) / tiles : width - 2 * padding + gap) - gap;
-        int tileHeight = (horizontal ? height - 2 * padding + gap : (height - 2 * padding + gap) / tiles) - gap;
+        int tileWidth = horizontal ? width / tiles : width;
+        int tileHeight = horizontal ? height : height / tiles;
         int tileSize = Math.max(1, Math.min(tileWidth, tileHeight));
-        int besideIcon = climate ? Math.max(16, tileSize * 44 / 86) : Math.max(16, Math.min(48, tileSize * 2 / 5));
+        int besideIcon = Math.max(16, Math.min(48, tileSize * 2 / 5));
         // Beside its text the icon keeps its place: a centred row would shift as the text changes.
         int start = Math.max(10, Math.min(32, (tileHeight - besideIcon) / 2));
         // Text goes beside the icon in a wide tile (from 3:2) with room for "Bluetooth"; longer names are ellipsized.
         boolean beside = style != STYLE_ICONS && tileWidth * 2 >= tileHeight * 3
                 && tileWidth - start - besideIcon - 12 - 10 >= 80;
         boolean below = style != STYLE_ICONS && !beside;
-        int iconSize = beside ? besideIcon : climate ? Math.max(16, tileSize * 44 / 86 * (below ? 82 : 100) / 100)
-                : Math.max(16, Math.min(48, below ? tileSize / 3 : tileSize * 2 / 5));
+        int iconSize = beside ? besideIcon : Math.max(16, Math.min(48, below ? tileSize / 3 : tileSize * 2 / 5));
         for (int i = 0; i < 3; i++) {
             boolean isWifi = i == 0;
             boolean isHotspot = i == 2;
@@ -320,14 +303,11 @@ final class BuiltInWidgets {
             button.setOrientation(below ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
             button.setGravity(beside ? Gravity.START | Gravity.CENTER_VERTICAL : Gravity.CENTER);
             button.setPadding(Ui.dp(context, beside ? start : 10), 0, Ui.dp(context, 10), 0);
-            int radius = Ui.dp(context, climate ? tileSize * 24 / 100 : 24);
-            int surface = on ? ATLAS_ACTIVE : climate ? Ui.SURFACE_RAISED : context.getColor(R.color.neutral_surface);
-            // Only the plain tiles follow the day/night mode; the climate card stays dark like AtlasClimateWidget.
-            boolean themed = !on && !climate;
-            int textColor = themed ? context.getColor(R.color.neutral_text) : on ? TEXT : Ui.TEXT_SECONDARY;
-            int statusColor = themed ? context.getColor(R.color.neutral_muted) : on ? TEXT : MUTED;
-            button.setBackground(new RippleDrawable(climate ? ColorStateList.valueOf(Color.argb(40, 255, 255, 255))
-                    : context.getColorStateList(R.color.neutral_ripple),
+            int radius = Ui.dp(context, 24);
+            int surface = on ? ATLAS_ACTIVE : context.getColor(R.color.neutral_surface);
+            int textColor = on ? TEXT : context.getColor(R.color.neutral_text);
+            int statusColor = on ? TEXT : context.getColor(R.color.neutral_muted);
+            button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
                     Ui.rounded(surface, radius), Ui.rounded(Color.WHITE, radius)));
             button.setContentDescription(name + ": " + status);
             button.setOnClickListener(v -> {
@@ -344,23 +324,8 @@ final class BuiltInWidgets {
             ImageView image = new ImageView(context);
             image.setImageResource(isWifi ? R.drawable.ic_wifi : isHotspot ? R.drawable.ic_hotspot : R.drawable.ic_bluetooth);
             image.setAlpha(on || off ? 1f : 0.5f);
-            if (themed) image.setImageTintList(ColorStateList.valueOf(textColor));
-            LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize));
-            if (bars) {
-                LinearLayout icon = new LinearLayout(context);
-                icon.setOrientation(LinearLayout.VERTICAL);
-                icon.setGravity(Gravity.CENTER_HORIZONTAL);
-                icon.addView(image, imageParams);
-                int barHeight = Math.max(Ui.dp(context, 2), Ui.dp(context, tileSize * 4 / 86));
-                View bar = new View(context);
-                bar.setBackground(Ui.rounded(on ? Color.WHITE : Color.argb(56, 255, 255, 255), barHeight / 2f));
-                LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(Ui.dp(context, tileSize * 36 / 86), barHeight);
-                barParams.topMargin = Ui.dp(context, tileSize * 7 / 86);
-                icon.addView(bar, barParams);
-                button.addView(icon);
-            } else {
-                button.addView(image, imageParams);
-            }
+            if (!on) image.setImageTintList(ColorStateList.valueOf(textColor));
+            button.addView(image, new LinearLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize)));
             if (beside) {
                 LinearLayout texts = new LinearLayout(context);
                 texts.setOrientation(LinearLayout.VERTICAL);
@@ -376,7 +341,7 @@ final class BuiltInWidgets {
                 button.addView(tileText(context, status, 14, statusColor), textParams);
             }
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
-            int margin = Ui.dp(context, climate ? gap / 2 : 3);
+            int margin = Ui.dp(context, 3);
             params.setMargins(margin, margin, margin, margin);
             panel.addView(button, params);
         }
