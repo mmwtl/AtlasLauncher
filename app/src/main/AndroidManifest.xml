@@ -85,6 +85,18 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/stock_home_redirect" />
         </service>
+        <!-- Open to any app on purpose: automation apps hide and show the climate panel on HOME.
+             targetSdk 26+ skips implicit broadcasts, so senders set the package. -->
+        <receiver
+            android:name=".ClimatePanelReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.geely.atlaslauncher.action.HIDE_CLIMATE_PANEL" />
+                <action android:name="com.geely.atlaslauncher.action.SHOW_CLIMATE_PANEL" />
+                <action android:name="com.geely.atlaslauncher.action.TOGGLE_CLIMATE_PANEL" />
+            </intent-filter>
+        </receiver>
         <!-- Own process: a failure of the input filter must not take HOME down with it. -->
         <service
             android:name=".GestureFilterService"
