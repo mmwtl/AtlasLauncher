@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="neutral_surface">#232528</color>
+    <color name="neutral_raised">#404347</color>
+    <color name="neutral_text">#F1F2F4</color>
+    <color name="neutral_muted">#C4C7CA</color>
+    <color name="neutral_ripple">#28FFFFFF</color>
+</resources>

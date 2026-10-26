@@ -106,10 +106,6 @@ public final class HomeActivity extends Activity {
     private static final int ACCENT = Color.rgb(46, 150, 246);
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
-    static final int NEUTRAL_SURFACE = Color.rgb(35, 37, 40);
-    static final int NEUTRAL_RAISED = Color.rgb(64, 67, 71);
-    static final int NEUTRAL_TEXT = Color.rgb(241, 242, 244);
-    static final int NEUTRAL_MUTED = Color.rgb(196, 199, 202);
     private static final int HOST_ID = 240925;
     private static final int BIND_WIDGET = 1;
     private static final int CONFIGURE_WIDGET = 2;
@@ -529,7 +525,7 @@ public final class HomeActivity extends Activity {
     }
 
     // Night mode switches with the lights and once more after boot, when OneOS applies the mode deferred until
-    // the HOME startup broadcast. Atlas colors are fixed; only widgets and app icons may have night resources.
+    // the HOME startup broadcast. The dock and the built-in widgets take their day or night colors on rebuild.
     @Override public void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
         loadApps();
@@ -673,7 +669,7 @@ public final class HomeActivity extends Activity {
     private View createDockWidget() {
         favoritePanel = new LinearLayout(this);
         favoritePanel.setGravity(Gravity.CENTER_VERTICAL);
-        favoritePanel.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 32));
+        favoritePanel.setBackground(round(getColor(R.color.neutral_surface), Color.TRANSPARENT, 32));
         favoritePanel.setElevation(editingWidgets ? 0 : dp(8));
         HorizontalScrollView favoriteScroll = new HorizontalScrollView(this);
         favoriteScroll.setFillViewport(true);
@@ -684,7 +680,7 @@ public final class HomeActivity extends Activity {
         favoriteScroll.addView(favoriteRow, new FrameLayout.LayoutParams(-2, -1));
         appsTile = dockTile(getDrawable(R.drawable.ic_apps), "Все приложения");
         ImageView appsIcon = (ImageView) appsTile.getChildAt(0);
-        appsIcon.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 34));
+        appsIcon.setBackground(round(getColor(R.color.neutral_raised), Color.TRANSPARENT, 34));
         appsIcon.setPadding(dp(18), dp(18), dp(18), dp(18));
         appsTile.setOnClickListener(v -> AllAppsActivity.open(this));
         updateDock();
@@ -777,7 +773,7 @@ public final class HomeActivity extends Activity {
         int shownApps = favoriteRow.getChildCount();
         // Until the app list has loaded, pinned apps cannot be found yet; skip the hint instead of flashing it.
         if (shownApps == 0 && !apps.isEmpty()) {
-            TextView empty = label("Добавьте приложения кнопкой ⚙ дока в режиме редактирования", 14, NEUTRAL_MUTED, false);
+            TextView empty = label("Добавьте приложения кнопкой ⚙ дока в режиме редактирования", 14, getColor(R.color.neutral_muted), false);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(14), dp(14), dp(14), dp(14));
             favoriteRow.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
@@ -795,7 +791,7 @@ public final class HomeActivity extends Activity {
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(Gravity.CENTER);
         tile.setPadding(dp(6), dp(verticalPadding), dp(6), dp(verticalPadding));
-        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+        tile.setBackground(new RippleDrawable(getColorStateList(R.color.neutral_ripple),
                 null, round(Color.WHITE, Color.TRANSPARENT, 24)));
         tile.setFocusable(true);
         tile.setContentDescription(title);
@@ -803,7 +799,7 @@ public final class HomeActivity extends Activity {
         icon.setImageDrawable(drawable);
         int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
         tile.addView(icon, new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
-        TextView titleView = label(title, 14, NEUTRAL_TEXT, false);
+        TextView titleView = label(title, 14, getColor(R.color.neutral_text), false);
         titleView.setGravity(Gravity.CENTER);
         titleView.setMaxLines(2);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
@@ -817,10 +813,10 @@ public final class HomeActivity extends Activity {
 
     private Button neutralButton(String title) {
         Button button = button(title);
-        button.setTextColor(NEUTRAL_TEXT);
+        button.setTextColor(getColor(R.color.neutral_text));
         button.setMinimumHeight(0);
-        button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                round(NEUTRAL_RAISED, Color.TRANSPARENT, 20), null));
+        button.setBackground(new RippleDrawable(getColorStateList(R.color.neutral_ripple),
+                round(getColor(R.color.neutral_raised), Color.TRANSPARENT, 20), null));
         return button;
     }
 
@@ -1276,10 +1272,10 @@ public final class HomeActivity extends Activity {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(22), dp(20), dp(22), dp(20));
-        content.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 32));
+        content.setBackground(round(getColor(R.color.neutral_surface), Color.TRANSPARENT, 32));
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.addView(label("Добавить виджет", 24, NEUTRAL_TEXT, true), new LinearLayout.LayoutParams(0, -2, 1));
+        titleRow.addView(label("Добавить виджет", 24, getColor(R.color.neutral_text), true), new LinearLayout.LayoutParams(0, -2, 1));
         Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         Button close = neutralButton("×");
@@ -1369,21 +1365,21 @@ public final class HomeActivity extends Activity {
         LinearLayout tile = new LinearLayout(this);
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setPadding(dp(10), dp(10), dp(10), dp(10));
-        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                round(NEUTRAL_RAISED, Color.TRANSPARENT, 20), null));
+        tile.setBackground(new RippleDrawable(getColorStateList(R.color.neutral_ripple),
+                round(getColor(R.color.neutral_raised), Color.TRANSPARENT, 20), null));
         tile.setContentDescription(title);
         FrameLayout frame = new FrameLayout(this);
         frame.setPadding(dp(8), dp(8), dp(8), dp(8));
-        frame.setBackground(round(NEUTRAL_SURFACE, Color.TRANSPARENT, 14));
+        frame.setBackground(round(getColor(R.color.neutral_surface), Color.TRANSPARENT, 14));
         frame.addView(preview, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
         tile.addView(frame, new LinearLayout.LayoutParams(-1, dp(WIDGET_PREVIEW_DP)));
-        TextView titleView = label(title, 16, NEUTRAL_TEXT, true);
+        TextView titleView = label(title, 16, getColor(R.color.neutral_text), true);
         titleView.setSingleLine(true);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
         titleParams.topMargin = dp(10);
         tile.addView(titleView, titleParams);
-        TextView detailsView = label(details, 13, NEUTRAL_MUTED, false);
+        TextView detailsView = label(details, 13, getColor(R.color.neutral_muted), false);
         detailsView.setSingleLine(true);
         detailsView.setEllipsize(TextUtils.TruncateAt.END);
         tile.addView(detailsView, new LinearLayout.LayoutParams(-1, -2));
@@ -1411,13 +1407,13 @@ public final class HomeActivity extends Activity {
         time.setFormat24Hour("HH:mm");
         time.setFormat12Hour("h:mm");
         time.setTextSize(44);
-        time.setTextColor(TEXT);
+        time.setTextColor(getColor(R.color.neutral_text));
         group.addView(time);
         TextClock date = new TextClock(this);
         date.setFormat24Hour("EEE, d MMM");
         date.setFormat12Hour("EEE, d MMM");
         date.setTextSize(14);
-        date.setTextColor(MUTED);
+        date.setTextColor(getColor(R.color.neutral_muted));
         group.addView(date);
         return group;
     }
@@ -1426,7 +1422,7 @@ public final class HomeActivity extends Activity {
         LinearLayout panel = new LinearLayout(this);
         panel.setGravity(Gravity.CENTER);
         panel.setPadding(dp(8), dp(8), dp(8), dp(8));
-        panel.setBackground(round(NEUTRAL_RAISED, Color.TRANSPARENT, 20));
+        panel.setBackground(round(getColor(R.color.neutral_raised), Color.TRANSPARENT, 20));
         List<AppEntry> shown = new ArrayList<>();
         for (String favorite : favorites) {
             AppEntry app = findApp(favorite);

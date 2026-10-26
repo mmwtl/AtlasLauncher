@@ -193,7 +193,7 @@ final class BuiltInWidgets {
         int[] icons = VOLUME_ICON_STYLES[Math.max(0, Math.min(VOLUME_ICON_STYLES.length - 1, prefs.getInt(key(VOLUME_ICONS, placement.id), 0)))];
         panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         // A joined block draws one card behind the buttons; separate buttons have a card each.
-        panel.setBackground(joined ? Ui.rounded(HomeActivity.NEUTRAL_SURFACE, Ui.dp(context, 24)) : null);
+        panel.setBackground(joined ? Ui.rounded(context.getColor(R.color.neutral_surface), Ui.dp(context, 24)) : null);
         panel.setPadding(joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0);
         int buttonLength = (horizontal ? placement.width : placement.height) / (showMute ? 3 : 2);
         int iconSize = Math.max(16, Math.min(64, Math.min(buttonLength, horizontal ? placement.height : placement.width) / 2));
@@ -207,8 +207,8 @@ final class BuiltInWidgets {
             boolean muted = mute && audio.isStreamMute(AudioManager.STREAM_MUSIC);
             FrameLayout button = new FrameLayout(context);
             int radius = joined ? 20 : 24;
-            button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                    muted ? Ui.rounded(ATLAS_ACTIVE, Ui.dp(context, radius)) : joined ? null : Ui.rounded(HomeActivity.NEUTRAL_SURFACE, Ui.dp(context, radius)),
+            button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
+                    muted ? Ui.rounded(ATLAS_ACTIVE, Ui.dp(context, radius)) : joined ? null : Ui.rounded(context.getColor(R.color.neutral_surface), Ui.dp(context, radius)),
                     Ui.rounded(Color.WHITE, Ui.dp(context, radius))));
             button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
                     : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
@@ -221,6 +221,7 @@ final class BuiltInWidgets {
             ImageView image = new ImageView(context);
             image.setImageResource(direction == AudioManager.ADJUST_RAISE ? icons[0]
                     : direction == AudioManager.ADJUST_LOWER ? icons[1] : R.drawable.ic_volume_off);
+            if (!muted) image.setImageTintList(context.getColorStateList(R.color.neutral_text));
             button.addView(image, new FrameLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize), Gravity.CENTER));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
             int margin = joined ? 0 : Ui.dp(context, 3);
@@ -320,9 +321,13 @@ final class BuiltInWidgets {
             button.setGravity(beside ? Gravity.START | Gravity.CENTER_VERTICAL : Gravity.CENTER);
             button.setPadding(Ui.dp(context, beside ? start : 10), 0, Ui.dp(context, 10), 0);
             int radius = Ui.dp(context, climate ? tileSize * 24 / 100 : 24);
-            int surface = on ? ATLAS_ACTIVE : climate ? Ui.SURFACE_RAISED : HomeActivity.NEUTRAL_SURFACE;
-            int textColor = on || !climate ? TEXT : Ui.TEXT_SECONDARY;
-            button.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+            int surface = on ? ATLAS_ACTIVE : climate ? Ui.SURFACE_RAISED : context.getColor(R.color.neutral_surface);
+            // Only the plain tiles follow the day/night mode; the climate card stays dark like AtlasClimateWidget.
+            boolean themed = !on && !climate;
+            int textColor = themed ? context.getColor(R.color.neutral_text) : on ? TEXT : Ui.TEXT_SECONDARY;
+            int statusColor = themed ? context.getColor(R.color.neutral_muted) : on ? TEXT : MUTED;
+            button.setBackground(new RippleDrawable(climate ? ColorStateList.valueOf(Color.argb(40, 255, 255, 255))
+                    : context.getColorStateList(R.color.neutral_ripple),
                     Ui.rounded(surface, radius), Ui.rounded(Color.WHITE, radius)));
             button.setContentDescription(name + ": " + status);
             button.setOnClickListener(v -> {
@@ -339,6 +344,7 @@ final class BuiltInWidgets {
             ImageView image = new ImageView(context);
             image.setImageResource(isWifi ? R.drawable.ic_wifi : isHotspot ? R.drawable.ic_hotspot : R.drawable.ic_bluetooth);
             image.setAlpha(on || off ? 1f : 0.5f);
+            if (themed) image.setImageTintList(ColorStateList.valueOf(textColor));
             LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize));
             if (bars) {
                 LinearLayout icon = new LinearLayout(context);
@@ -359,7 +365,7 @@ final class BuiltInWidgets {
                 LinearLayout texts = new LinearLayout(context);
                 texts.setOrientation(LinearLayout.VERTICAL);
                 texts.addView(tileText(context, name, 18, textColor));
-                texts.addView(tileText(context, status, 14, on ? TEXT : MUTED));
+                texts.addView(tileText(context, status, 14, statusColor));
                 LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
                 textParams.leftMargin = Ui.dp(context, 12);
                 button.addView(texts, textParams);
@@ -367,7 +373,7 @@ final class BuiltInWidgets {
                 // The icon already names the tile; only its state goes under it.
                 LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
                 textParams.topMargin = Ui.dp(context, 4);
-                button.addView(tileText(context, status, 14, on ? TEXT : MUTED), textParams);
+                button.addView(tileText(context, status, 14, statusColor), textParams);
             }
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
             int margin = Ui.dp(context, climate ? gap / 2 : 3);

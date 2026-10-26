@@ -4,4 +4,10 @@
     <!-- Atlas graphite, as in Ui. -->
     <color name="atlas_background">#171717</color>
     <color name="atlas_accent">#7893A0</color>
+    <!-- Dock, app list, widget list and built-in widget tiles follow the OneOS day/night mode; values-night has the night set. -->
+    <color name="neutral_surface">#EDEEF0</color>
+    <color name="neutral_raised">#FFFFFF</color>
+    <color name="neutral_text">#202124</color>
+    <color name="neutral_muted">#5F6368</color>
+    <color name="neutral_ripple">#1F000000</color>
 </resources>

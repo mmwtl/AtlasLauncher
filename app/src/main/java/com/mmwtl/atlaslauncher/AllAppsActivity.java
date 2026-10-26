@@ -76,7 +76,7 @@ public final class AllAppsActivity extends Activity {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(22), dp(20), dp(22), dp(20));
-        content.setBackground(round(HomeActivity.NEUTRAL_SURFACE, 32));
+        content.setBackground(round(getColor(R.color.neutral_surface), 32));
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         content.addView(titleRow, new LinearLayout.LayoutParams(-1, dp(76)));
@@ -86,22 +86,22 @@ public final class AllAppsActivity extends Activity {
         Button close = new Button(this);
         close.setText("×");
         close.setContentDescription("Закрыть список приложений");
-        close.setTextColor(HomeActivity.NEUTRAL_TEXT);
+        close.setTextColor(getColor(R.color.neutral_text));
         close.setTextSize(22);
         close.setTypeface(null, Typeface.BOLD);
         close.setMinimumHeight(0);
-        close.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
-                round(HomeActivity.NEUTRAL_RAISED, 20), null));
+        close.setBackground(new RippleDrawable(getColorStateList(R.color.neutral_ripple),
+                round(getColor(R.color.neutral_raised), 20), null));
         close.setOnClickListener(v -> finish());
         titleRow.addView(close, new LinearLayout.LayoutParams(dp(64), dp(64)));
         search = new EditText(this);
         search.setSingleLine(true);
         search.setHint("Поиск приложений");
-        search.setTextColor(HomeActivity.NEUTRAL_TEXT);
-        search.setHintTextColor(HomeActivity.NEUTRAL_MUTED);
+        search.setTextColor(getColor(R.color.neutral_text));
+        search.setHintTextColor(getColor(R.color.neutral_muted));
         search.setTextSize(16);
         search.setPadding(dp(18), 0, dp(18), 0);
-        search.setBackground(round(HomeActivity.NEUTRAL_RAISED, 20));
+        search.setBackground(round(getColor(R.color.neutral_raised), 20));
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, dp(76));
         searchParams.setMargins(0, dp(8), 0, dp(18));
         content.addView(search, searchParams);
@@ -190,7 +190,7 @@ public final class AllAppsActivity extends Activity {
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(Gravity.CENTER);
         tile.setPadding(dp(6), dp(6), dp(6), dp(6));
-        tile.setBackground(new RippleDrawable(ColorStateList.valueOf(Color.argb(40, 255, 255, 255)),
+        tile.setBackground(new RippleDrawable(getColorStateList(R.color.neutral_ripple),
                 null, round(Color.WHITE, 20)));
         ImageView icon = new ImageView(this);
         icon.setImageDrawable(app.icon);
@@ -209,7 +209,7 @@ public final class AllAppsActivity extends Activity {
     private TextView label(String value, int size) {
         TextView view = new TextView(this);
         view.setText(value);
-        view.setTextColor(HomeActivity.NEUTRAL_TEXT);
+        view.setTextColor(getColor(R.color.neutral_text));
         view.setTextSize(size);
         return view;
     }
