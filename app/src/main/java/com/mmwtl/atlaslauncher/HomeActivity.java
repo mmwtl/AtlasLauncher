@@ -2171,9 +2171,11 @@ public final class HomeActivity extends Activity {
         container.addView(resize, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.BOTTOM | Gravity.RIGHT));
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false) || prefs.getBoolean(HIDE_BY_PANEL_HOME, false)) {
-            Button pin = button("📌");
+            ImageView pin = new ImageView(this);
+            pin.setImageResource(R.drawable.ic_pin);
+            pin.setScaleType(ImageView.ScaleType.CENTER);
             pin.setContentDescription((placement.pinned ? "Открепить " : "Закрепить ") + title);
-            if (placement.pinned) pin.setBackground(round(ACCENT, Color.TRANSPARENT, 16));
+            pin.setBackground(round(placement.pinned ? ACCENT : SURFACE_RAISED, Color.TRANSPARENT, 16));
             pin.setOnClickListener(v -> {
                 placement.pinned = !placement.pinned;
                 saveWidgets();
