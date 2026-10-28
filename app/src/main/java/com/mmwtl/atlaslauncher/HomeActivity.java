@@ -72,6 +72,7 @@ import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
+import android.widget.RemoteViews;
 import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -2535,8 +2536,45 @@ public final class HomeActivity extends Activity {
 
     /** Scales a fixed-size widget layout into the padded area instead of cropping it, keeping its proportions. */
     private static final class FittedWidgetView extends AppWidgetHostView {
+        // Reapplying RemoteViews may recreate the touched views and cancel the press, so updates wait for the
+        // finger to lift; only the latest one is kept.
+        private boolean touched;
+        private boolean updateDeferred;
+        private RemoteViews deferredViews;
+
         FittedWidgetView(Context context) {
             super(context);
+        }
+
+        @Override public void updateAppWidget(RemoteViews views) {
+            if (touched) {
+                updateDeferred = true;
+                deferredViews = views;
+                return;
+            }
+            super.updateAppWidget(views);
+        }
+
+        @Override public boolean dispatchTouchEvent(MotionEvent event) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) touched = true;
+            boolean handled = super.dispatchTouchEvent(event);
+            // A press nothing in the widget took never brings its release here.
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
+                    || action == MotionEvent.ACTION_DOWN && !handled) {
+                touched = false;
+                // Posted after the click the release has just posted, so the click reaches the views it pressed.
+                if (updateDeferred) post(this::applyDeferredUpdate);
+            }
+            return handled;
+        }
+
+        private void applyDeferredUpdate() {
+            if (touched || !updateDeferred) return;
+            updateDeferred = false;
+            RemoteViews views = deferredViews;
+            deferredViews = null;
+            super.updateAppWidget(views);
         }
 
         @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
