@@ -224,7 +224,7 @@ public final class HomeActivity extends Activity {
     private float pressY;
     private boolean pressStartedEditing;
     // Desktop pages lie side by side in pageLayer with the current one in view; each holds its widgets at grid
-    // coordinates. Hiding the widgets hides the whole layer.
+    // coordinates. Hiding the widgets hides all but the pinned ones.
     private final List<FrameLayout> pages = new ArrayList<>();
     private FrameLayout pageLayer;
     private int currentPage;
@@ -361,6 +361,8 @@ public final class HomeActivity extends Activity {
             case HIDE_BY_DOUBLE_TAP: case HIDE_BY_PANEL_HOME:
                 if (widgetsHidden && !prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false)
                         && !prefs.getBoolean(HIDE_BY_PANEL_HOME, false)) setWidgetsHidden(false);
+                // The pin buttons are shown only while hiding is enabled.
+                if (editingWidgets) scheduleShowWidgets();
                 break;
             case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: case GESTURES_SCALE: applyGestures(); break;
             case FAVORITES: loadFavorites(prefs); showFavorites(); break;
@@ -1638,8 +1640,6 @@ public final class HomeActivity extends Activity {
         pageLayer = new FrameLayout(this);
         // A dragged widget stays in view while its page slides away.
         pageLayer.setClipChildren(false);
-        pageLayer.setAlpha(widgetsHidden ? 0 : 1);
-        pageLayer.setVisibility(widgetsHidden ? View.INVISIBLE : View.VISIBLE);
         widgetRow.addView(pageLayer, new FrameLayout.LayoutParams(-1, -1));
         int pageCount = pageCount();
         currentPage = Math.min(currentPage, pageCount - 1);
@@ -1755,6 +1755,11 @@ public final class HomeActivity extends Activity {
                 hostParams.setMargins(inset.left, inset.top, inset.right, inset.bottom);
             }
             container.addView(hostView, hostParams);
+            container.setTag(placement);
+            if (widgetsHidden && !placement.pinned) {
+                container.setAlpha(0);
+                container.setVisibility(View.INVISIBLE);
+            }
             if (editingWidgets) addWidgetEditControls(container, hostView, placement, info);
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(placement.width), dp(placement.height));
             params.leftMargin = dp(placement.x);
@@ -1893,12 +1898,16 @@ public final class HomeActivity extends Activity {
     private void setWidgetsHidden(boolean hidden) {
         widgetsHidden = hidden;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(WIDGETS_HIDDEN, hidden).apply();
-        FrameLayout layer = pageLayer;
-        if (layer != null) {
-            layer.animate().cancel();
-            layer.setVisibility(View.VISIBLE);
-            layer.animate().alpha(hidden ? 0 : 1).setDuration(200)
-                    .withEndAction(() -> layer.setVisibility(hidden ? View.INVISIBLE : View.VISIBLE)).start();
+        for (FrameLayout page : pages) {
+            for (int i = 0; i < page.getChildCount(); i++) {
+                View container = page.getChildAt(i);
+                if (!(container.getTag() instanceof WidgetPlacement) || ((WidgetPlacement) container.getTag()).pinned)
+                    continue;
+                container.animate().cancel();
+                container.setVisibility(View.VISIBLE);
+                container.animate().alpha(hidden ? 0 : 1).setDuration(200)
+                        .withEndAction(() -> container.setVisibility(hidden ? View.INVISIBLE : View.VISIBLE)).start();
+            }
         }
         updateIndicator(false);
     }
@@ -2160,6 +2169,18 @@ public final class HomeActivity extends Activity {
         resize.setContentDescription("Изменить размер " + title);
         resize.setOnTouchListener(widgetTouch(container, hostView, placement, info, true));
         container.addView(resize, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.BOTTOM | Gravity.RIGHT));
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false) || prefs.getBoolean(HIDE_BY_PANEL_HOME, false)) {
+            Button pin = button("📌");
+            pin.setContentDescription((placement.pinned ? "Открепить " : "Закрепить ") + title);
+            if (placement.pinned) pin.setBackground(round(ACCENT, Color.TRANSPARENT, 16));
+            pin.setOnClickListener(v -> {
+                placement.pinned = !placement.pinned;
+                saveWidgets();
+                showWidgets();
+            });
+            container.addView(pin, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.BOTTOM | Gravity.LEFT));
+        }
     }
 
     private View.OnTouchListener widgetTouch(FrameLayout container, View hostView,
@@ -2334,6 +2355,7 @@ public final class HomeActivity extends Activity {
                             item.getInt("width"), item.getInt("height"));
                     placement.clockSize = item.optInt("clockSize", 0);
                     placement.page = item.optInt("page", 0);
+                    placement.pinned = item.optBoolean("pinned", false);
                     widgets.add(placement);
                 } else {
                     int id = savedWidgets.getInt(i);
@@ -2378,6 +2400,7 @@ public final class HomeActivity extends Activity {
                 item.put("width", widget.width);
                 item.put("height", widget.height);
                 item.put("page", widget.page);
+                if (widget.pinned) item.put("pinned", true);
                 if (isBuiltIn(widget.id, CLOCK_WIDGET_ID)) item.put("clockSize", widget.clockSize);
                 saved.put(item);
             } catch (JSONException e) { throw new IllegalStateException(e); }
@@ -2589,6 +2612,8 @@ public final class HomeActivity extends Activity {
         int height;
         int clockSize;
         int page;
+        // Stays in view while the other widgets are hidden.
+        boolean pinned;
 
         WidgetPlacement(int id, int x, int y, int width, int height) {
             this.id = id;
