@@ -371,14 +371,11 @@ public final class HomeActivity extends Activity {
             case BuiltInWidgets.CLOCK_FORMAT: case BuiltInWidgets.CLOCK_WEIGHT: case BuiltInWidgets.CLOCK_FONT:
             case BuiltInWidgets.CLOCK_DATE: updateDesktopClock(); break;
             case BuiltInWidgets.VOLUME_MUTE: case BuiltInWidgets.VOLUME_ICONS: case BuiltInWidgets.VOLUME_JOINED:
+            case BuiltInWidgets.VOLUME_OPACITY:
                 updateDesktopVolume(); break;
             case BuiltInWidgets.CONNECTIVITY_WIFI: case BuiltInWidgets.CONNECTIVITY_BLUETOOTH: case BuiltInWidgets.CONNECTIVITY_HOTSPOT:
-            case BuiltInWidgets.CONNECTIVITY_STYLE:
+            case BuiltInWidgets.CONNECTIVITY_STYLE: case BuiltInWidgets.CONNECTIVITY_OPACITY:
                 updateDesktopConnectivity(); break;
-            case BuiltInWidgets.CARD_OPACITY:
-                updateDesktopVolume();
-                updateDesktopConnectivity();
-                break;
         }
     };
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
