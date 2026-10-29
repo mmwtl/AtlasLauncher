@@ -53,6 +53,8 @@ final class BuiltInWidgets {
     static final String CONNECTIVITY_BLUETOOTH = "connectivity_bluetooth";
     static final String CONNECTIVITY_HOTSPOT = "connectivity_hotspot";
     static final String CONNECTIVITY_STYLE = "connectivity_style";
+    // Opacity of the volume and Wi-Fi/Bluetooth cards in percent; switched-on tiles stay opaque.
+    static final String CARD_OPACITY = "card_opacity";
     static final int STYLE_ICONS = 0;
     static final int STYLE_STATE = 1;
     static final int STYLE_NETWORK = 2;
@@ -78,6 +80,13 @@ final class BuiltInWidgets {
 
     static String baseKey(String key) {
         return key.replaceFirst("-\\d+$", "");
+    }
+
+    /** The card color of a widget with its opacity setting. */
+    private static int surface(Context context, SharedPreferences prefs, int widgetId) {
+        int opacity = Math.max(0, Math.min(100, prefs.getInt(key(CARD_OPACITY, widgetId), 100)));
+        int color = context.getColor(R.color.neutral_surface);
+        return Color.argb(Color.alpha(color) * opacity / 100, Color.red(color), Color.green(color), Color.blue(color));
     }
 
     static View createClock(Context context, HomeActivity.WidgetPlacement placement) {
@@ -187,7 +196,8 @@ final class BuiltInWidgets {
         int[] icons = VOLUME_ICON_STYLES[Math.max(0, Math.min(VOLUME_ICON_STYLES.length - 1, prefs.getInt(key(VOLUME_ICONS, placement.id), 0)))];
         panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         // A joined block draws one card behind the buttons; separate buttons have a card each.
-        panel.setBackground(joined ? Ui.rounded(context.getColor(R.color.neutral_surface), Ui.dp(context, 24)) : null);
+        int surface = surface(context, prefs, placement.id);
+        panel.setBackground(joined ? Ui.rounded(surface, Ui.dp(context, 24)) : null);
         panel.setPadding(joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0);
         int buttonLength = (horizontal ? placement.width : placement.height) / (showMute ? 3 : 2);
         int iconSize = Math.max(16, Math.min(64, Math.min(buttonLength, horizontal ? placement.height : placement.width) / 2));
@@ -202,7 +212,7 @@ final class BuiltInWidgets {
             FrameLayout button = new FrameLayout(context);
             int radius = joined ? 20 : 24;
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
-                    muted ? Ui.rounded(ATLAS_ACTIVE, Ui.dp(context, radius)) : joined ? null : Ui.rounded(context.getColor(R.color.neutral_surface), Ui.dp(context, radius)),
+                    muted ? Ui.rounded(ATLAS_ACTIVE, Ui.dp(context, radius)) : joined ? null : Ui.rounded(surface, Ui.dp(context, radius)),
                     Ui.rounded(Color.WHITE, Ui.dp(context, radius))));
             button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
                     : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
@@ -270,6 +280,7 @@ final class BuiltInWidgets {
         boolean beside = style != STYLE_ICONS && tileWidth * 2 >= tileHeight * 3
                 && tileWidth - start - besideIcon - 12 - 10 >= 80;
         boolean below = style != STYLE_ICONS && !beside;
+        int offSurface = surface(context, prefs, placement.id);
         int iconSize = beside ? besideIcon : Math.max(16, Math.min(48, below ? tileSize / 3 : tileSize * 2 / 5));
         for (int i = 0; i < 3; i++) {
             boolean isWifi = i == 0;
@@ -304,7 +315,7 @@ final class BuiltInWidgets {
             button.setGravity(beside ? Gravity.START | Gravity.CENTER_VERTICAL : Gravity.CENTER);
             button.setPadding(Ui.dp(context, beside ? start : 10), 0, Ui.dp(context, 10), 0);
             int radius = Ui.dp(context, 24);
-            int surface = on ? ATLAS_ACTIVE : context.getColor(R.color.neutral_surface);
+            int surface = on ? ATLAS_ACTIVE : offSurface;
             int textColor = on ? TEXT : context.getColor(R.color.neutral_text);
             int statusColor = on ? TEXT : context.getColor(R.color.neutral_muted);
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),

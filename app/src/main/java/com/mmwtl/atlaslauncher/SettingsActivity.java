@@ -493,6 +493,7 @@ public final class SettingsActivity extends ScaledActivity {
         toggle(preview, "Одним блоком", key(BuiltInWidgets.VOLUME_JOINED), false, changed);
         preview.addView(label("Значки"));
         choice(preview, key(BuiltInWidgets.VOLUME_ICONS), new String[]{"Динамик", "Плюс и минус", "Стрелки"}, 0, changed);
+        opacitySlider(preview, changed);
     }
 
     private void buildConnectivityPage(LinearLayout content) {
@@ -535,6 +536,34 @@ public final class SettingsActivity extends ScaledActivity {
         preview.addView(Ui.text(this, "Название сети Wi-Fi Android показывает только с доступом к местоположению "
                 + "и при включённой геолокации; без них плитка пишет «Подключено». Точке доступа нужно разрешение "
                 + "на изменение системных настроек: его попросят при первом нажатии.", 13, Ui.TEXT_SECONDARY), margin(10, -2));
+        opacitySlider(preview, changed);
+    }
+
+    /** Opacity of the widget cards in steps of 5%. */
+    private void opacitySlider(LinearLayout parent, Runnable changed) {
+        LinearLayout head = new LinearLayout(this);
+        head.addView(Ui.text(this, "Непрозрачность фона", 14, Ui.TEXT), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView value = Ui.text(this, "", 14, Ui.TEXT_SECONDARY);
+        head.addView(value);
+        parent.addView(head, margin(14, -2));
+        SeekBar slider = new SeekBar(this);
+        slider.setMax(20);
+        slider.setProgress(Math.max(0, Math.min(100, prefs.getInt(key(BuiltInWidgets.CARD_OPACITY), 100))) / 5);
+        slider.setContentDescription("Непрозрачность фона");
+        value.setText(slider.getProgress() * 5 + "%");
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                value.setText(progress * 5 + "%");
+                if (!user) return;
+                prefs.edit().putInt(key(BuiltInWidgets.CARD_OPACITY), progress * 5).apply();
+                changed.run();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        parent.addView(slider, margin(4, -2));
     }
 
     /** Settings key of the widget whose page is open. */

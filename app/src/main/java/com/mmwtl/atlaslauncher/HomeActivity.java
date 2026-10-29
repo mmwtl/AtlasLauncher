@@ -375,6 +375,10 @@ public final class HomeActivity extends Activity {
             case BuiltInWidgets.CONNECTIVITY_WIFI: case BuiltInWidgets.CONNECTIVITY_BLUETOOTH: case BuiltInWidgets.CONNECTIVITY_HOTSPOT:
             case BuiltInWidgets.CONNECTIVITY_STYLE:
                 updateDesktopConnectivity(); break;
+            case BuiltInWidgets.CARD_OPACITY:
+                updateDesktopVolume();
+                updateDesktopConnectivity();
+                break;
         }
     };
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
