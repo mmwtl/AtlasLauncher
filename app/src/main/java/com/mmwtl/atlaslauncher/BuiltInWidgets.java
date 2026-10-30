@@ -225,7 +225,7 @@ final class BuiltInWidgets {
             ImageView image = new ImageView(context);
             image.setImageResource(direction == AudioManager.ADJUST_RAISE ? icons[0]
                     : direction == AudioManager.ADJUST_LOWER ? icons[1] : R.drawable.ic_volume_off);
-            if (!muted) image.setImageTintList(context.getColorStateList(R.color.neutral_text));
+            image.setImageTintList(context.getColorStateList(muted ? R.color.tile_active_content : R.color.neutral_text));
             button.addView(image, new FrameLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize), Gravity.CENTER));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
             int margin = joined ? 0 : Ui.dp(context, 3);
@@ -316,8 +316,8 @@ final class BuiltInWidgets {
             button.setPadding(Ui.dp(context, beside ? start : 10), 0, Ui.dp(context, 10), 0);
             int radius = Ui.dp(context, 24);
             int surface = on ? context.getColor(R.color.tile_active) : offSurface;
-            int textColor = on ? TEXT : context.getColor(R.color.neutral_text);
-            int statusColor = on ? TEXT : context.getColor(R.color.neutral_muted);
+            int textColor = context.getColor(on ? R.color.tile_active_content : R.color.neutral_text);
+            int statusColor = context.getColor(on ? R.color.tile_active_content : R.color.neutral_muted);
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
                     Ui.rounded(surface, radius), Ui.rounded(Color.WHITE, radius)));
             button.setContentDescription(name + ": " + status);
@@ -335,7 +335,7 @@ final class BuiltInWidgets {
             ImageView image = new ImageView(context);
             image.setImageResource(isWifi ? R.drawable.ic_wifi : isHotspot ? R.drawable.ic_hotspot : R.drawable.ic_bluetooth);
             image.setAlpha(on || off ? 1f : 0.5f);
-            if (!on) image.setImageTintList(ColorStateList.valueOf(textColor));
+            image.setImageTintList(ColorStateList.valueOf(textColor));
             button.addView(image, new LinearLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize)));
             if (beside) {
                 LinearLayout texts = new LinearLayout(context);
