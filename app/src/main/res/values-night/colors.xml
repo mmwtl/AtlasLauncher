@@ -5,4 +5,5 @@
     <color name="neutral_text">#F1F2F4</color>
     <color name="neutral_muted">#C4C7CA</color>
     <color name="neutral_ripple">#28FFFFFF</color>
+    <color name="tile_active">#7893A0</color>
 </resources>

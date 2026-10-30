@@ -40,8 +40,6 @@ import java.util.concurrent.Executor;
 final class BuiltInWidgets {
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
-    // Active tiles of the Atlas widgets (AtlasClimateWidget palette "Atlas").
-    private static final int ATLAS_ACTIVE = Color.rgb(120, 147, 160);
     static final String CLOCK_FORMAT = "clock_format";
     static final String CLOCK_WEIGHT = "clock_weight";
     static final String CLOCK_FONT = "clock_font";
@@ -214,7 +212,7 @@ final class BuiltInWidgets {
             FrameLayout button = new FrameLayout(context);
             int radius = joined ? 20 : 24;
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
-                    muted ? Ui.rounded(ATLAS_ACTIVE, Ui.dp(context, radius)) : joined ? null : Ui.rounded(surface, Ui.dp(context, radius)),
+                    muted ? Ui.rounded(context.getColor(R.color.tile_active), Ui.dp(context, radius)) : joined ? null : Ui.rounded(surface, Ui.dp(context, radius)),
                     Ui.rounded(Color.WHITE, Ui.dp(context, radius))));
             button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
                     : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
@@ -317,7 +315,7 @@ final class BuiltInWidgets {
             button.setGravity(beside ? Gravity.START | Gravity.CENTER_VERTICAL : Gravity.CENTER);
             button.setPadding(Ui.dp(context, beside ? start : 10), 0, Ui.dp(context, 10), 0);
             int radius = Ui.dp(context, 24);
-            int surface = on ? ATLAS_ACTIVE : offSurface;
+            int surface = on ? context.getColor(R.color.tile_active) : offSurface;
             int textColor = on ? TEXT : context.getColor(R.color.neutral_text);
             int statusColor = on ? TEXT : context.getColor(R.color.neutral_muted);
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
