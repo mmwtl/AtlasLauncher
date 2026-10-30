@@ -95,6 +95,8 @@ public final class AllAppsActivity extends Activity {
         close.setOnClickListener(v -> finish());
         titleRow.addView(close, new LinearLayout.LayoutParams(dp(64), dp(64)));
         search = new EditText(this);
+        // An id lets the query survive the recreation when the day/night mode switches.
+        search.setId(android.R.id.edit);
         search.setSingleLine(true);
         search.setHint("Поиск приложений");
         search.setTextColor(getColor(R.color.neutral_text));

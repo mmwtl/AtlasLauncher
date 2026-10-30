@@ -207,6 +207,7 @@ public final class HomeActivity extends Activity {
     private final Map<ComponentName, Point> fixedLayouts = new HashMap<>();
     private AppWidgetManager widgetManager;
     private AppWidgetHost widgetHost;
+    private Dialog widgetPicker;
     private LinearLayout favoriteRow;
     private FrameLayout widgetRow;
     private View dropTarget;
@@ -534,6 +535,11 @@ public final class HomeActivity extends Activity {
         super.onConfigurationChanged(config);
         loadApps();
         showWidgets();
+        // The open widget list is drawn in the old mode's colors; open it again in the new ones.
+        if (widgetPicker != null) {
+            widgetPicker.dismiss();
+            chooseWidget();
+        }
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -1281,6 +1287,7 @@ public final class HomeActivity extends Activity {
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.addView(label("Добавить виджет", 24, getColor(R.color.neutral_text), true), new LinearLayout.LayoutParams(0, -2, 1));
         Dialog dialog = new Dialog(this);
+        widgetPicker = dialog;
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         Button close = neutralButton("×");
         close.setContentDescription("Закрыть список виджетов");
@@ -1340,7 +1347,10 @@ public final class HomeActivity extends Activity {
         });
         // Preview images can be large bitmaps, so decode and downscale them off the UI thread.
         ExecutorService loader = Executors.newSingleThreadExecutor();
-        dialog.setOnDismissListener(d -> loader.shutdownNow());
+        dialog.setOnDismissListener(d -> {
+            loader.shutdownNow();
+            if (widgetPicker == dialog) widgetPicker = null;
+        });
         int density = getResources().getDisplayMetrics().densityDpi;
         for (int i = 0; i < providers.size(); i++) {
             int index = i;
