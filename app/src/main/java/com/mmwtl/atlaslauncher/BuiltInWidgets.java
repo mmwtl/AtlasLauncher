@@ -13,7 +13,6 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.media.AudioManager;
 import android.net.Uri;
@@ -84,9 +83,9 @@ final class BuiltInWidgets {
     }
 
     /** The card color of a widget with its opacity setting. */
-    static int surface(Context context, SharedPreferences prefs, String opacityKey, int widgetId) {
+    static int surface(Context context, int colorRes, SharedPreferences prefs, String opacityKey, int widgetId) {
         int opacity = Math.max(0, Math.min(100, prefs.getInt(key(opacityKey, widgetId), 100)));
-        int color = context.getColor(R.color.neutral_surface);
+        int color = context.getColor(colorRes);
         return Color.argb(Color.alpha(color) * opacity / 100, Color.red(color), Color.green(color), Color.blue(color));
     }
 
@@ -197,7 +196,7 @@ final class BuiltInWidgets {
         int[] icons = VOLUME_ICON_STYLES[Math.max(0, Math.min(VOLUME_ICON_STYLES.length - 1, prefs.getInt(key(VOLUME_ICONS, placement.id), 0)))];
         panel.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         // A joined block draws one card behind the buttons; separate buttons have a card each.
-        int surface = surface(context, prefs, VOLUME_OPACITY, placement.id);
+        int surface = surface(context, R.color.tile_off, prefs, VOLUME_OPACITY, placement.id);
         panel.setBackground(joined ? Ui.rounded(surface, Ui.dp(context, 24)) : null);
         panel.setPadding(joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0, joined ? Ui.dp(context, 4) : 0);
         int buttonLength = (horizontal ? placement.width : placement.height) / (showMute ? 3 : 2);
@@ -213,7 +212,7 @@ final class BuiltInWidgets {
             FrameLayout button = new FrameLayout(context);
             int radius = joined ? 20 : 24;
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
-                    muted ? activeTile(context, Ui.dp(context, radius)) : joined ? null : Ui.rounded(surface, Ui.dp(context, radius)),
+                    muted ? Ui.rounded(context.getColor(R.color.tile_active), Ui.dp(context, radius)) : joined ? null : Ui.rounded(surface, Ui.dp(context, radius)),
                     Ui.rounded(Color.WHITE, Ui.dp(context, radius))));
             button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
                     : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
@@ -281,7 +280,7 @@ final class BuiltInWidgets {
         boolean beside = style != STYLE_ICONS && tileWidth * 2 >= tileHeight * 3
                 && tileWidth - start - besideIcon - 12 - 10 >= 80;
         boolean below = style != STYLE_ICONS && !beside;
-        int offSurface = surface(context, prefs, CONNECTIVITY_OPACITY, placement.id);
+        int offSurface = surface(context, R.color.tile_off, prefs, CONNECTIVITY_OPACITY, placement.id);
         int iconSize = beside ? besideIcon : Math.max(16, Math.min(48, below ? tileSize / 3 : tileSize * 2 / 5));
         for (int i = 0; i < 3; i++) {
             boolean isWifi = i == 0;
@@ -316,10 +315,11 @@ final class BuiltInWidgets {
             button.setGravity(beside ? Gravity.START | Gravity.CENTER_VERTICAL : Gravity.CENTER);
             button.setPadding(Ui.dp(context, beside ? start : 10), 0, Ui.dp(context, 10), 0);
             int radius = Ui.dp(context, 24);
+            int surface = on ? context.getColor(R.color.tile_active) : offSurface;
             int textColor = context.getColor(on ? R.color.tile_active_content : R.color.neutral_text);
             int statusColor = context.getColor(on ? R.color.tile_active_content : R.color.neutral_muted);
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
-                    on ? activeTile(context, radius) : Ui.rounded(offSurface, radius), Ui.rounded(Color.WHITE, radius)));
+                    Ui.rounded(surface, radius), Ui.rounded(Color.WHITE, radius)));
             button.setContentDescription(name + ": " + status);
             button.setOnClickListener(v -> {
                 if (!on && !off) return;
@@ -389,13 +389,6 @@ final class BuiltInWidgets {
         } catch (ReflectiveOperationException | RuntimeException e) {
             Toast.makeText(context, "Не удалось переключить точку доступа", Toast.LENGTH_SHORT).show();
         }
-    }
-
-    /** The background of a switched-on tile; the stroke keeps it apart from an opaque switched-off one. */
-    private static GradientDrawable activeTile(Context context, int radiusPx) {
-        GradientDrawable tile = Ui.rounded(context.getColor(R.color.tile_active), radiusPx);
-        tile.setStroke(Ui.dp(context, 2), context.getColor(R.color.tile_active_stroke));
-        return tile;
     }
 
     private static TextView tileText(Context context, String value, float sizeSp, int color) {

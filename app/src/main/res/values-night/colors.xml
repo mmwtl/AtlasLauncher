@@ -5,7 +5,7 @@
     <color name="neutral_text">#F1F2F4</color>
     <color name="neutral_muted">#C4C7CA</color>
     <color name="neutral_ripple">#28FFFFFF</color>
+    <color name="tile_off">#232528</color>
     <color name="tile_active">#7893A0</color>
-    <color name="tile_active_stroke">#7893A0</color>
     <color name="tile_active_content">#FAFCFF</color>
 </resources>

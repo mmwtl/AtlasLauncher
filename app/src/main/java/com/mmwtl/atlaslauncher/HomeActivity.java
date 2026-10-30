@@ -1256,7 +1256,7 @@ public final class HomeActivity extends Activity {
     private void updateDock() {
         if (favoritePanel == null) return;
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        favoritePanel.setBackground(round(BuiltInWidgets.surface(this, prefs, DOCK_OPACITY, DOCK_WIDGET_ID), Color.TRANSPARENT, 32));
+        favoritePanel.setBackground(round(BuiltInWidgets.surface(this, R.color.neutral_surface, prefs, DOCK_OPACITY, DOCK_WIDGET_ID), Color.TRANSPARENT, 32));
         int verticalPadding = prefs.getBoolean(DOCK_LABELS, true) ? 8 : 4;
         favoritePanel.setPadding(dp(12), dp(verticalPadding), dp(12), dp(verticalPadding));
         appsTile.setVisibility(prefs.getBoolean(DOCK_APPS, true) ? View.VISIBLE : View.GONE);

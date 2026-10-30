@@ -10,8 +10,8 @@
     <color name="neutral_text">#202124</color>
     <color name="neutral_muted">#5F6368</color>
     <color name="neutral_ripple">#1F000000</color>
-    <!-- Switched-on tile of the built-in widgets, its stroke and its icon and text. -->
+    <!-- Switched-off and switched-on tiles of the built-in widgets, and the icon and text of a switched-on one. -->
+    <color name="tile_off">#D5D8DC</color>
     <color name="tile_active">#FFFFFF</color>
-    <color name="tile_active_stroke">#2C6E8C</color>
-    <color name="tile_active_content">#2C6E8C</color>
+    <color name="tile_active_content">#202124</color>
 </resources>
