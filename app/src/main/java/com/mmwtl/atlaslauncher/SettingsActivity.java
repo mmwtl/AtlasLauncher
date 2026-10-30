@@ -431,7 +431,7 @@ public final class SettingsActivity extends ScaledActivity {
     }
 
     private void buildDockPage(LinearLayout parent) {
-        LinearLayout look = card(parent, "Внешний вид", "Размер значков и плотность дока на рабочем столе.");
+        LinearLayout look = card(parent, "Внешний вид", "Размер значков, плотность и фон дока на рабочем столе.");
         toggle(look, "Подписи в доке", HomeActivity.DOCK_LABELS, true, () -> { });
         look.addView(Ui.text(this, "Размер значков", 14, Ui.TEXT), margin(14, -2));
         int size = Math.max(40, Math.min(HomeActivity.MAX_ICON_DP, prefs.getInt(HomeActivity.DRAWER_ICON_SIZE, 64)));
@@ -449,6 +449,7 @@ public final class SettingsActivity extends ScaledActivity {
             @Override public void onStopTrackingTouch(SeekBar bar) { }
         });
         look.addView(sizeSlider, margin(4, -2));
+        opacitySlider(look, HomeActivity.DOCK_OPACITY, () -> { });
 
         LinearLayout drawer = card(parent, "Все приложения",
                 "Что открывает кнопка, выбирается в общих настройках AtlasLauncher.");

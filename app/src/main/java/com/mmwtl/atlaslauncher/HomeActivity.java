@@ -165,6 +165,7 @@ public final class HomeActivity extends Activity {
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     static final String DOCK_APPS = "dock_apps";
+    static final String DOCK_OPACITY = "dock_opacity";
     static final String DRAWER_ICON_SIZE = "drawer_icon_size";
     static final String DOCK_LABELS = "drawer_labels";
     static final String DRAWER_ACTIVITY = "drawer_activity";
@@ -369,6 +370,7 @@ public final class HomeActivity extends Activity {
             case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: case GESTURES_SCALE: applyGestures(); break;
             case FAVORITES: loadFavorites(prefs); showFavorites(); break;
             case DOCK_LABELS: case DOCK_APPS: case DRAWER_ICON_SIZE: scheduleShowWidgets(); break;
+            case DOCK_OPACITY: updateDock(); break;
             case BuiltInWidgets.CLOCK_FORMAT: case BuiltInWidgets.CLOCK_WEIGHT: case BuiltInWidgets.CLOCK_FONT:
             case BuiltInWidgets.CLOCK_DATE: updateDesktopClock(); break;
             case BuiltInWidgets.VOLUME_MUTE: case BuiltInWidgets.VOLUME_ICONS: case BuiltInWidgets.VOLUME_JOINED:
@@ -679,7 +681,6 @@ public final class HomeActivity extends Activity {
     private View createDockWidget() {
         favoritePanel = new LinearLayout(this);
         favoritePanel.setGravity(Gravity.CENTER_VERTICAL);
-        favoritePanel.setBackground(round(getColor(R.color.neutral_surface), Color.TRANSPARENT, 32));
         favoritePanel.setElevation(editingWidgets ? 0 : dp(8));
         HorizontalScrollView favoriteScroll = new HorizontalScrollView(this);
         favoriteScroll.setFillViewport(true);
@@ -1255,6 +1256,7 @@ public final class HomeActivity extends Activity {
     private void updateDock() {
         if (favoritePanel == null) return;
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        favoritePanel.setBackground(round(BuiltInWidgets.surface(this, prefs, DOCK_OPACITY, DOCK_WIDGET_ID), Color.TRANSPARENT, 32));
         int verticalPadding = prefs.getBoolean(DOCK_LABELS, true) ? 8 : 4;
         favoritePanel.setPadding(dp(12), dp(verticalPadding), dp(12), dp(verticalPadding));
         appsTile.setVisibility(prefs.getBoolean(DOCK_APPS, true) ? View.VISIBLE : View.GONE);

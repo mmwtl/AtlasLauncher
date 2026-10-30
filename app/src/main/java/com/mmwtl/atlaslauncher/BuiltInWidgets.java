@@ -85,7 +85,7 @@ final class BuiltInWidgets {
     }
 
     /** The card color of a widget with its opacity setting. */
-    private static int surface(Context context, SharedPreferences prefs, String opacityKey, int widgetId) {
+    static int surface(Context context, SharedPreferences prefs, String opacityKey, int widgetId) {
         int opacity = Math.max(0, Math.min(100, prefs.getInt(key(opacityKey, widgetId), 100)));
         int color = context.getColor(R.color.neutral_surface);
         return Color.argb(Color.alpha(color) * opacity / 100, Color.red(color), Color.green(color), Color.blue(color));
