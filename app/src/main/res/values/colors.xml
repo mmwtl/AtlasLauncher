@@ -11,5 +11,5 @@
     <color name="neutral_muted">#5F6368</color>
     <color name="neutral_ripple">#1F000000</color>
     <!-- Switched-on tile of the built-in widgets; its icon and text stay light in both modes. -->
-    <color name="tile_active">#202124</color>
+    <color name="tile_active">#1A73E8</color>
 </resources>
