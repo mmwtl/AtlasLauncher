@@ -14,6 +14,7 @@ import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.net.wifi.SupplicantState;
@@ -211,8 +212,12 @@ final class BuiltInWidgets {
             boolean muted = mute && audio.isStreamMute(AudioManager.STREAM_MUSIC);
             FrameLayout button = new FrameLayout(context);
             int radius = joined ? 20 : 24;
-            button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
-                    muted ? Ui.rounded(context.getColor(R.color.tile_active), Ui.dp(context, radius)) : joined ? null : Ui.rounded(surface, Ui.dp(context, radius)),
+            // Volume buttons hold no state, so they light up only while pressed; the mute button stays lit while muted.
+            StateListDrawable tile = new StateListDrawable();
+            tile.addState(muted ? new int[0] : new int[]{android.R.attr.state_pressed},
+                    Ui.rounded(context.getColor(R.color.tile_active), Ui.dp(context, radius)));
+            if (!joined) tile.addState(new int[0], Ui.rounded(surface, Ui.dp(context, radius)));
+            button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple), tile,
                     Ui.rounded(Color.WHITE, Ui.dp(context, radius))));
             button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
                     : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
