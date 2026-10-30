@@ -48,6 +48,9 @@ final class BuiltInWidgets {
     static final String VOLUME_MUTE = "volume_mute";
     static final String VOLUME_ICONS = "volume_icons";
     static final String VOLUME_JOINED = "volume_joined";
+    private static final String MUTE_TAG = "volume_mute_button";
+    private static final int PRESS_FADE_IN_MS = 120;
+    private static final int PRESS_FADE_OUT_MS = 400;
     static final String CONNECTIVITY_WIFI = "connectivity_wifi";
     static final String CONNECTIVITY_BLUETOOTH = "connectivity_bluetooth";
     static final String CONNECTIVITY_HOTSPOT = "connectivity_hotspot";
@@ -209,34 +212,44 @@ final class BuiltInWidgets {
         for (int direction : directions) {
             boolean mute = direction == AudioManager.ADJUST_TOGGLE_MUTE;
             if (mute && !showMute) continue;
-            boolean muted = mute && audio.isStreamMute(AudioManager.STREAM_MUSIC);
             FrameLayout button = new FrameLayout(context);
             int radius = joined ? 20 : 24;
             // Volume buttons hold no state, so they light up only while pressed; the mute button stays lit while muted.
             StateListDrawable tile = new StateListDrawable();
-            tile.addState(muted ? new int[0] : new int[]{android.R.attr.state_pressed},
-                    Ui.rounded(context.getColor(R.color.tile_active), Ui.dp(context, radius)));
+            tile.addState(new int[]{android.R.attr.state_pressed}, Ui.rounded(context.getColor(R.color.tile_active), Ui.dp(context, radius)));
+            tile.addState(new int[]{android.R.attr.state_selected}, Ui.rounded(context.getColor(R.color.tile_active), Ui.dp(context, radius)));
             if (!joined) tile.addState(new int[0], Ui.rounded(surface, Ui.dp(context, radius)));
+            tile.setEnterFadeDuration(PRESS_FADE_IN_MS);
+            tile.setExitFadeDuration(PRESS_FADE_OUT_MS);
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple), tile,
                     Ui.rounded(Color.WHITE, Ui.dp(context, radius))));
-            button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
-                    : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
-                    : muted ? "Включить звук" : "Выключить звук");
+            if (mute) button.setTag(MUTE_TAG);
+            else button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость" : "Убавить громкость");
             button.setOnClickListener(v -> {
                 // FLAG_SHOW_UI shows the system volume panel, as hardware keys do.
                 audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI);
-                panel.post(() -> updateVolume(context, panel, placement));
+                panel.post(() -> updateVolumeMute(context, panel));
             });
             ImageView image = new ImageView(context);
             image.setImageResource(direction == AudioManager.ADJUST_RAISE ? icons[0]
                     : direction == AudioManager.ADJUST_LOWER ? icons[1] : R.drawable.ic_volume_off);
-            image.setImageTintList(context.getColorStateList(muted ? R.color.tile_active_content : R.color.neutral_text));
+            image.setImageTintList(context.getColorStateList(R.color.neutral_text));
             button.addView(image, new FrameLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize), Gravity.CENTER));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
             int margin = joined ? 0 : Ui.dp(context, 3);
             params.setMargins(margin, margin, margin, margin);
             panel.addView(button, params);
         }
+        updateVolumeMute(context, panel);
+    }
+
+    /** Shows the mute state in place: rebuilding the buttons on every volume change would cut their fade short. */
+    static void updateVolumeMute(Context context, View hostView) {
+        View button = hostView.findViewWithTag(MUTE_TAG);
+        if (button == null) return;
+        boolean muted = context.getSystemService(AudioManager.class).isStreamMute(AudioManager.STREAM_MUSIC);
+        button.setSelected(muted);
+        button.setContentDescription(muted ? "Включить звук" : "Выключить звук");
     }
 
     static View createConnectivity(Context context, HomeActivity.WidgetPlacement placement) {

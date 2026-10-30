@@ -394,7 +394,10 @@ public final class HomeActivity extends Activity {
     // Keeps the mute button in sync when hardware keys or the system change the volume.
     private final BroadcastReceiver volumeReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            updateDesktopVolume();
+            for (WidgetPlacement placement : widgets) {
+                View view = isBuiltIn(placement.id, VOLUME_WIDGET_ID) ? widgetRow.findViewWithTag(placement.id) : null;
+                if (view != null) BuiltInWidgets.updateVolumeMute(HomeActivity.this, view);
+            }
         }
     };
 
