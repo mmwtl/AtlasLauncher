@@ -13,6 +13,7 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.media.AudioManager;
 import android.net.Uri;
@@ -212,7 +213,7 @@ final class BuiltInWidgets {
             FrameLayout button = new FrameLayout(context);
             int radius = joined ? 20 : 24;
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
-                    muted ? Ui.rounded(context.getColor(R.color.tile_active), Ui.dp(context, radius)) : joined ? null : Ui.rounded(surface, Ui.dp(context, radius)),
+                    muted ? activeTile(context, Ui.dp(context, radius)) : joined ? null : Ui.rounded(surface, Ui.dp(context, radius)),
                     Ui.rounded(Color.WHITE, Ui.dp(context, radius))));
             button.setContentDescription(direction == AudioManager.ADJUST_RAISE ? "Прибавить громкость"
                     : direction == AudioManager.ADJUST_LOWER ? "Убавить громкость"
@@ -315,11 +316,10 @@ final class BuiltInWidgets {
             button.setGravity(beside ? Gravity.START | Gravity.CENTER_VERTICAL : Gravity.CENTER);
             button.setPadding(Ui.dp(context, beside ? start : 10), 0, Ui.dp(context, 10), 0);
             int radius = Ui.dp(context, 24);
-            int surface = on ? context.getColor(R.color.tile_active) : offSurface;
             int textColor = context.getColor(on ? R.color.tile_active_content : R.color.neutral_text);
             int statusColor = context.getColor(on ? R.color.tile_active_content : R.color.neutral_muted);
             button.setBackground(new RippleDrawable(context.getColorStateList(R.color.neutral_ripple),
-                    Ui.rounded(surface, radius), Ui.rounded(Color.WHITE, radius)));
+                    on ? activeTile(context, radius) : Ui.rounded(offSurface, radius), Ui.rounded(Color.WHITE, radius)));
             button.setContentDescription(name + ": " + status);
             button.setOnClickListener(v -> {
                 if (!on && !off) return;
@@ -389,6 +389,13 @@ final class BuiltInWidgets {
         } catch (ReflectiveOperationException | RuntimeException e) {
             Toast.makeText(context, "Не удалось переключить точку доступа", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /** The background of a switched-on tile; the stroke keeps it apart from an opaque switched-off one. */
+    private static GradientDrawable activeTile(Context context, int radiusPx) {
+        GradientDrawable tile = Ui.rounded(context.getColor(R.color.tile_active), radiusPx);
+        tile.setStroke(Ui.dp(context, 2), context.getColor(R.color.tile_active_stroke));
+        return tile;
     }
 
     private static TextView tileText(Context context, String value, float sizeSp, int color) {
