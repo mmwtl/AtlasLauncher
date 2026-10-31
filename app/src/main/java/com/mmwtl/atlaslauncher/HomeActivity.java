@@ -129,6 +129,9 @@ public final class HomeActivity extends Activity {
     private static final String WIDGETS = "widgets";
     private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
     static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
+    // With this flag the night mode has its own wallpaper settings: the same keys with the NIGHT suffix.
+    static final String WALLPAPER_BY_MODE = "wallpaper_by_mode";
+    private static final String NIGHT = "_night";
     static final String WALLPAPER = "wallpaper";
     static final String VIDEO_WALLPAPER = "wallpaper_video";
     static final String SLIDESHOW = "wallpaper_slideshow";
@@ -348,12 +351,15 @@ public final class HomeActivity extends Activity {
         if (key == null) return;
         // Settings of the second and later built-in widgets of a kind end with the widget ID.
         switch (BuiltInWidgets.baseKey(key)) {
-            case VIDEO_WALLPAPER: case WALLPAPER:
-                if (!Objects.equals(shownWallpaper, prefs.getString(WALLPAPER, null))
-                        || !Objects.equals(shownVideo, prefs.getString(VIDEO_WALLPAPER, null))) showWallpaper();
+            case WALLPAPER_BY_MODE: switchWallpaperMode(); break;
+            case VIDEO_WALLPAPER: case WALLPAPER: case VIDEO_WALLPAPER + NIGHT: case WALLPAPER + NIGHT:
+                showChangedWallpaper();
                 scheduleSlideshow();
                 break;
-            case SLIDESHOW: case SLIDESHOW_IMAGES: case SLIDESHOW_UNIT: case SLIDESHOW_INTERVAL: scheduleSlideshow(); break;
+            case SLIDESHOW: case SLIDESHOW_IMAGES: case SLIDESHOW + NIGHT: case SLIDESHOW_IMAGES + NIGHT:
+            case SLIDESHOW_UNIT: case SLIDESHOW_INTERVAL:
+                scheduleSlideshow();
+                break;
             case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
             case MULTIPLE_PAGES:
                 currentPage = 0;
@@ -538,6 +544,7 @@ public final class HomeActivity extends Activity {
     // the HOME startup broadcast. The dock and the built-in widgets take their day or night colors on rebuild.
     @Override public void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
+        switchWallpaperMode();
         loadApps();
         showWidgets();
         // The open widget list is drawn in the old mode's colors; open it again in the new ones.
@@ -855,10 +862,26 @@ public final class HomeActivity extends Activity {
         return ContentResolver.SCHEME_ANDROID_RESOURCE.equals(Uri.parse(uri).getScheme());
     }
 
-    static List<String> slideshowImages(Context context) {
+    /** Whether the night wallpaper settings apply now. */
+    static boolean nightWallpaper(Context context) {
+        return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(WALLPAPER_BY_MODE, false)
+                && (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    static String modeKey(String key, boolean night) {
+        return night ? key + NIGHT : key;
+    }
+
+    private String modeKey(String key) {
+        return modeKey(key, nightWallpaper(this));
+    }
+
+    static List<String> slideshowImages(Context context, boolean night) {
         List<String> images = new ArrayList<>();
         try {
-            JSONArray saved = new JSONArray(context.getSharedPreferences(PREFS, MODE_PRIVATE).getString(SLIDESHOW_IMAGES, "[]"));
+            JSONArray saved = new JSONArray(context.getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getString(modeKey(SLIDESHOW_IMAGES, night), "[]"));
             for (int i = 0; i < saved.length(); i++) images.add(saved.getString(i));
         } catch (JSONException e) {
             Log.w("AtlasLauncher", "Cannot read slideshow images", e);
@@ -866,8 +889,9 @@ public final class HomeActivity extends Activity {
         return images;
     }
 
-    static void saveSlideshowImages(Context context, List<String> images) {
-        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(SLIDESHOW_IMAGES, new JSONArray(images).toString()).apply();
+    static void saveSlideshowImages(Context context, boolean night, List<String> images) {
+        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(modeKey(SLIDESHOW_IMAGES, night), new JSONArray(images).toString()).apply();
     }
 
     /** Replaces the timer and invalidates any image still loading with the previous settings. */
@@ -881,11 +905,12 @@ public final class HomeActivity extends Activity {
     /** Returns the time until the slideshow is due to change the wallpaper, or -1 if it is not. */
     private long slideshowDelay() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        if (prefs.getString(VIDEO_WALLPAPER, null) != null
-                || !prefs.getBoolean(SLIDESHOW, false) || slideshowImages(this).isEmpty()) return -1;
+        boolean night = nightWallpaper(this);
+        if (prefs.getString(modeKey(VIDEO_WALLPAPER, night), null) != null
+                || !prefs.getBoolean(modeKey(SLIDESHOW, night), false) || slideshowImages(this, night).isEmpty()) return -1;
         int unit = prefs.getInt(SLIDESHOW_UNIT, 0);
-        if (unit == 0) return prefs.getInt(SLIDESHOW_BOOT, -1) != bootCount() ? 0 : -1;
-        long elapsed = System.currentTimeMillis() - prefs.getLong(SLIDESHOW_CHANGED_AT, 0);
+        if (unit == 0) return prefs.getInt(modeKey(SLIDESHOW_BOOT, night), -1) != bootCount() ? 0 : -1;
+        long elapsed = System.currentTimeMillis() - prefs.getLong(modeKey(SLIDESHOW_CHANGED_AT, night), 0);
         // A clock set back after the last change makes the change due.
         return elapsed < 0 ? 0 : Math.max(0, slideshowInterval(prefs, unit) * (unit == 1 ? 60_000L : 3_600_000L) - elapsed);
     }
@@ -901,14 +926,18 @@ public final class HomeActivity extends Activity {
 
     /** Returns the slideshow images in showing order, starting after the current wallpaper. */
     private List<String> nextSlides() {
-        List<String> slides = slideshowImages(this);
-        Collections.rotate(slides, -(slides.indexOf(getSharedPreferences(PREFS, MODE_PRIVATE).getString(WALLPAPER, null)) + 1));
+        boolean night = nightWallpaper(this);
+        List<String> slides = slideshowImages(this, night);
+        Collections.rotate(slides, -(slides.indexOf(getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString(modeKey(WALLPAPER, night), null)) + 1));
         return slides;
     }
 
     private void saveSlide(String uri) {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(WALLPAPER, uri)
-                .putLong(SLIDESHOW_CHANGED_AT, System.currentTimeMillis()).putInt(SLIDESHOW_BOOT, bootCount()).apply();
+        boolean night = nightWallpaper(this);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(modeKey(WALLPAPER, night), uri)
+                .putLong(modeKey(SLIDESHOW_CHANGED_AT, night), System.currentTimeMillis())
+                .putInt(modeKey(SLIDESHOW_BOOT, night), bootCount()).apply();
     }
 
     /** Fades in the next readable slideshow image. */
@@ -1060,12 +1089,25 @@ public final class HomeActivity extends Activity {
         showWidgets();
     }
 
+    /** Shows the wallpaper of the mode just entered; a slide due in it comes at once, not after the old one. */
+    private void switchWallpaperMode() {
+        if (slideshowDelay() == 0) saveSlide(nextSlides().get(0));
+        showChangedWallpaper();
+        scheduleSlideshow();
+    }
+
+    private void showChangedWallpaper() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (!Objects.equals(shownWallpaper, prefs.getString(modeKey(WALLPAPER), null))
+                || !Objects.equals(shownVideo, prefs.getString(modeKey(VIDEO_WALLPAPER), null))) showWallpaper();
+    }
+
     private void showWallpaper() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         int generation = ++wallpaperGeneration;
         if (wallpaperView.getDrawable() instanceof Animatable) ((Animatable) wallpaperView.getDrawable()).stop();
-        shownWallpaper = prefs.getString(WALLPAPER, null);
-        shownVideo = prefs.getString(VIDEO_WALLPAPER, null);
+        shownWallpaper = prefs.getString(modeKey(WALLPAPER), null);
+        shownVideo = prefs.getString(modeKey(VIDEO_WALLPAPER), null);
         videoWallpaper.setVideo(shownVideo);
         if (shownVideo != null) {
             // The cached first frame stays until the video renders its own.
@@ -1112,11 +1154,22 @@ public final class HomeActivity extends Activity {
         return bitmap == null ? null : new BitmapDrawable(getResources(), bitmap);
     }
 
-    /** Runs on the wallpaper loader. Keeps only the cache of the given wallpaper, for a video its first frame. */
+    /** The copy of the other mode's wallpaper: the next boot may start in that mode. */
+    private File otherModeCache() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (!prefs.getBoolean(WALLPAPER_BY_MODE, false)) return null;
+        boolean night = !nightWallpaper(this);
+        String video = prefs.getString(modeKey(VIDEO_WALLPAPER, night), null);
+        String uri = video != null ? video : prefs.getString(modeKey(WALLPAPER, night), null);
+        return uri == null ? null : wallpaperCache(uri);
+    }
+
+    /** Runs on the wallpaper loader. Keeps only the caches of the given wallpaper, for a video its first frame, and of the other mode's. */
     private void cacheWallpaper(String uri, boolean video) {
         File cache = uri == null ? null : wallpaperCache(uri);
+        File other = otherModeCache();
         File[] files = getFilesDir().listFiles((dir, name) -> name.startsWith(WALLPAPER_CACHE));
-        if (files != null) for (File file : files) if (!file.equals(cache)) file.delete();
+        if (files != null) for (File file : files) if (!file.equals(cache) && !file.equals(other)) file.delete();
         if (cache == null || cache.exists()) return;
         Bitmap frame = video ? VideoWallpaperView.preview(this, Uri.parse(uri), 2048) : decodeWallpaper(this, Uri.parse(uri), 2048);
         if (frame == null) return;

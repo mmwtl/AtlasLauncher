@@ -63,6 +63,7 @@ public final class SettingsActivity extends ScaledActivity {
     private static final String EXTRA_PAGE = "page";
     private static final String EXTRA_WIDGET = "widget";
     private static final String TAB = "settings_tab";
+    private static final String EDIT_NIGHT = "edit_night";
     private static final int[] TAB_LABELS = {R.string.settings_tab_wallpaper, R.string.settings_tab_desktop,
             R.string.settings_tab_gestures, R.string.settings_tab_system};
     private static final String GIB_LAUNCHER = "com.salat.gbinder/com.salat.gbinder.AppLauncher";
@@ -81,8 +82,14 @@ public final class SettingsActivity extends ScaledActivity {
     private int wallpaperPreviewGeneration;
     private List<HomeActivity.AppEntry> apps;
     private LinearLayout wallpaperPresets;
+    private LinearLayout slidePresets;
     private Switch slideshowSwitch;
     private LinearLayout ownSlides;
+    private LinearLayout modeChoice;
+    private LinearLayout wallpaperCard;
+    private LinearLayout slideshowCard;
+    /** Whether the wallpaper tab edits the night settings; they may differ from the mode on screen. */
+    private boolean editNight;
     private LinearLayout redirectState;
     private Runnable connectivityChanged;
     /** The clock, volume or Wi-Fi/Bluetooth widget whose page is open. */
@@ -104,6 +111,9 @@ public final class SettingsActivity extends ScaledActivity {
         prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);
         int page = getIntent().getIntExtra(EXTRA_PAGE, PAGE_MAIN);
         widgetId = getIntent().getIntExtra(EXTRA_WIDGET, 0);
+        // A file picked after the mode switched, which recreates this activity, still goes to the mode being edited.
+        editNight = savedInstanceState != null ? savedInstanceState.getBoolean(EDIT_NIGHT)
+                : HomeActivity.nightWallpaper(this);
 
         LinearLayout root = column();
         root.setBackgroundColor(Ui.BACKGROUND);
@@ -130,6 +140,12 @@ public final class SettingsActivity extends ScaledActivity {
         }
         setContentView(root);
         Ui.applySystemBarInsets(root);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putBoolean(EDIT_NIGHT, editNight);
     }
 
     @Override
@@ -188,9 +204,28 @@ public final class SettingsActivity extends ScaledActivity {
     }
 
     private void buildWallpaperTab(LinearLayout page) {
+        LinearLayout modes = card(page, "День и ночь",
+                "Свой фон и сменяемый фон для дневного и ночного режима. Фон меняется вместе с режимом системы. "
+                        + "Частота смены общая для обоих режимов.");
+        toggle(modes, "Разные фоны днём и ночью", prefs.getBoolean(HomeActivity.WALLPAPER_BY_MODE, false), on -> {
+            SharedPreferences.Editor edit = prefs.edit().putBoolean(HomeActivity.WALLPAPER_BY_MODE, on);
+            // The first time the night starts as a copy of the current settings, so nothing is lost at dusk.
+            if (on && !prefs.contains(HomeActivity.modeKey(HomeActivity.SLIDESHOW, true))) {
+                for (String key : new String[]{HomeActivity.WALLPAPER, HomeActivity.VIDEO_WALLPAPER, HomeActivity.SLIDESHOW_IMAGES})
+                    edit.putString(HomeActivity.modeKey(key, true), prefs.getString(key, null));
+                edit.putBoolean(HomeActivity.modeKey(HomeActivity.SLIDESHOW, true), prefs.getBoolean(HomeActivity.SLIDESHOW, false));
+            }
+            edit.apply();
+            editNight = HomeActivity.nightWallpaper(this);
+            showEditedMode();
+        });
+        modeChoice = column();
+        modes.addView(modeChoice);
+
         LinearLayout wallpaper = card(page, "Фон рабочего стола",
                 "Изображение, GIF/WebP-анимация или видео. Видео повторяется без звука. "
                         + "Анимации воспроизводятся на Android 9 и новее. Фон заполняет экран с обрезкой по краям.");
+        wallpaperCard = wallpaper;
         wallpaperKind = label("");
         wallpaper.addView(wallpaperKind);
         wallpaperPreview = new ImageView(this);
@@ -208,16 +243,16 @@ public final class SettingsActivity extends ScaledActivity {
         action(wallpaper, "Выбрать изображение или анимацию", () -> pickMedia(PICK_WALLPAPER, false));
         action(wallpaper, "Выбрать видео", () -> pickMedia(PICK_VIDEO, false));
         action(wallpaper, "Вернуть стандартный фон", () -> chooseWallpaper(null));
-        showWallpaperPreview();
 
         LinearLayout slideshow = card(page, "Сменяемый фон",
                 "Новый фон проявляется плавно, поверх прежнего, чтобы не отвлекать в дороге.");
+        slideshowCard = slideshow;
         LinearLayout options = column();
-        slideshowSwitch = toggle(slideshow, "Менять фон", HomeActivity.SLIDESHOW, false, () -> {
-            boolean on = prefs.getBoolean(HomeActivity.SLIDESHOW, false);
+        slideshowSwitch = toggle(slideshow, "Менять фон", prefs.getBoolean(editKey(HomeActivity.SLIDESHOW), false), on -> {
+            prefs.edit().putBoolean(editKey(HomeActivity.SLIDESHOW), on).apply();
             options.setVisibility(on ? View.VISIBLE : View.GONE);
             if (on) {
-                prefs.edit().remove(HomeActivity.VIDEO_WALLPAPER).apply();
+                prefs.edit().remove(editKey(HomeActivity.VIDEO_WALLPAPER)).apply();
                 releaseUnusedFiles();
                 showWallpaperPreview();
             }
@@ -225,22 +260,19 @@ public final class SettingsActivity extends ScaledActivity {
         options.setVisibility(slideshowSwitch.isChecked() ? View.VISIBLE : View.GONE);
         slideshow.addView(options);
         options.addView(label("Изображения · отметьте фоны, которые будут сменять друг друга"));
-        LinearLayout presets = thumbnailRow(options);
-        List<String> slides = HomeActivity.slideshowImages(this);
+        slidePresets = thumbnailRow(options);
         for (int i = 0; i < HomeActivity.PRESET_WALLPAPERS.length; i++) {
             String uri = HomeActivity.presetUri(this, HomeActivity.PRESET_WALLPAPERS[i]);
-            ImageView thumbnail = thumbnail(presets, uri, HomeActivity.PRESET_NAMES[i]);
-            mark(thumbnail, slides.contains(uri));
+            ImageView thumbnail = thumbnail(slidePresets, uri, HomeActivity.PRESET_NAMES[i]);
             thumbnail.setOnClickListener(v -> {
-                List<String> current = HomeActivity.slideshowImages(this);
+                List<String> current = HomeActivity.slideshowImages(this, editNight);
                 if (!current.remove(uri)) current.add(uri);
-                HomeActivity.saveSlideshowImages(this, current);
+                HomeActivity.saveSlideshowImages(this, editNight, current);
                 mark(thumbnail, current.contains(uri));
             });
         }
         ownSlides = column();
         options.addView(ownSlides);
-        showOwnSlides();
         action(options, "Добавить свои изображения", () -> pickMedia(PICK_SLIDESHOW, true));
         options.addView(label("Как часто менять"));
         TextView interval = Ui.text(this, "", 14, Ui.TEXT);
@@ -271,6 +303,7 @@ public final class SettingsActivity extends ScaledActivity {
         options.addView(interval, margin(14, -2));
         options.addView(intervalSlider, margin(4, -2));
         showInterval.run();
+        showEditedMode();
     }
 
     private void buildDesktopTab(LinearLayout page) {
@@ -579,10 +612,39 @@ public final class SettingsActivity extends ScaledActivity {
 
     // ---- Фон ----
 
+    private String editKey(String key) {
+        return HomeActivity.modeKey(key, editNight);
+    }
+
+    /** Shows the settings of the mode being edited on the wallpaper tab. */
+    private void showEditedMode() {
+        boolean byMode = prefs.getBoolean(HomeActivity.WALLPAPER_BY_MODE, false);
+        modeChoice.removeAllViews();
+        if (byMode) {
+            modeChoice.addView(label("Какой режим настроить"));
+            choice(modeChoice, new String[]{"День", "Ночь"}, editNight ? 1 : 0, index -> {
+                editNight = index == 1;
+                showEditedMode();
+            });
+        }
+        // The cards are long: each one names the mode it changes.
+        String mode = !byMode ? "" : editNight ? " · ночь" : " · день";
+        ((TextView) wallpaperCard.getChildAt(0)).setText("Фон рабочего стола" + mode);
+        ((TextView) slideshowCard.getChildAt(0)).setText("Сменяемый фон" + mode);
+        slideshowSwitch.setChecked(prefs.getBoolean(editKey(HomeActivity.SLIDESHOW), false));
+        List<String> slides = HomeActivity.slideshowImages(this, editNight);
+        for (int i = 0; i < slidePresets.getChildCount(); i++) {
+            View thumbnail = slidePresets.getChildAt(i);
+            mark(thumbnail, slides.contains(thumbnail.getTag()));
+        }
+        showOwnSlides();
+        showWallpaperPreview();
+    }
+
     private void chooseWallpaper(String uri) {
-        SharedPreferences.Editor edit = prefs.edit().putBoolean(HomeActivity.SLIDESHOW, false)
-                .remove(HomeActivity.VIDEO_WALLPAPER);
-        (uri == null ? edit.remove(HomeActivity.WALLPAPER) : edit.putString(HomeActivity.WALLPAPER, uri)).apply();
+        SharedPreferences.Editor edit = prefs.edit().putBoolean(editKey(HomeActivity.SLIDESHOW), false)
+                .remove(editKey(HomeActivity.VIDEO_WALLPAPER));
+        (uri == null ? edit.remove(editKey(HomeActivity.WALLPAPER)) : edit.putString(editKey(HomeActivity.WALLPAPER), uri)).apply();
         slideshowSwitch.setChecked(false);
         releaseUnusedFiles();
         showWallpaperPreview();
@@ -590,9 +652,13 @@ public final class SettingsActivity extends ScaledActivity {
 
     /** Gives up access to picked files no background uses any more; Android keeps only so many grants. */
     private void releaseUnusedFiles() {
-        List<String> used = HomeActivity.slideshowImages(this);
-        used.add(prefs.getString(HomeActivity.WALLPAPER, null));
-        used.add(prefs.getString(HomeActivity.VIDEO_WALLPAPER, null));
+        List<String> used = new ArrayList<>();
+        // Both modes count: the night settings wait for their mode, and for the switch when it is off.
+        for (boolean night : new boolean[]{false, true}) {
+            used.addAll(HomeActivity.slideshowImages(this, night));
+            used.add(prefs.getString(HomeActivity.modeKey(HomeActivity.WALLPAPER, night), null));
+            used.add(prefs.getString(HomeActivity.modeKey(HomeActivity.VIDEO_WALLPAPER, night), null));
+        }
         for (UriPermission permission : getContentResolver().getPersistedUriPermissions()) {
             if (used.contains(permission.getUri().toString())) continue;
             try {
@@ -606,8 +672,8 @@ public final class SettingsActivity extends ScaledActivity {
 
     private void showWallpaperPreview() {
         int generation = ++wallpaperPreviewGeneration;
-        String saved = prefs.getString(HomeActivity.WALLPAPER, null);
-        String video = prefs.getString(HomeActivity.VIDEO_WALLPAPER, null);
+        String saved = prefs.getString(editKey(HomeActivity.WALLPAPER), null);
+        String video = prefs.getString(editKey(HomeActivity.VIDEO_WALLPAPER), null);
         wallpaperKind.setText(video == null ? "Изображение или анимация" : "Видео · повтор без звука");
         for (int i = 0; i < wallpaperPresets.getChildCount(); i++) {
             View thumbnail = wallpaperPresets.getChildAt(i);
@@ -628,7 +694,7 @@ public final class SettingsActivity extends ScaledActivity {
 
     private void showOwnSlides() {
         ownSlides.removeAllViews();
-        List<String> slides = HomeActivity.slideshowImages(this);
+        List<String> slides = HomeActivity.slideshowImages(this, editNight);
         if (slides.stream().allMatch(HomeActivity::isPresetUri)) return;
         ownSlides.addView(label("Свои изображения · нажмите, чтобы убрать"));
         LinearLayout own = thumbnailRow(ownSlides);
@@ -637,9 +703,9 @@ public final class SettingsActivity extends ScaledActivity {
             ImageView thumbnail = thumbnail(own, uri, "Своё изображение");
             mark(thumbnail, true);
             thumbnail.setOnClickListener(v -> {
-                List<String> current = HomeActivity.slideshowImages(this);
+                List<String> current = HomeActivity.slideshowImages(this, editNight);
                 current.remove(uri);
-                HomeActivity.saveSlideshowImages(this, current);
+                HomeActivity.saveSlideshowImages(this, editNight, current);
                 showOwnSlides();
                 // The wallpaper on screen keeps its image until the slideshow replaces it.
                 releaseUnusedFiles();
@@ -665,8 +731,8 @@ public final class SettingsActivity extends ScaledActivity {
             try {
                 getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 if (request == PICK_VIDEO) {
-                    prefs.edit().putString(HomeActivity.VIDEO_WALLPAPER, uri.toString())
-                            .putBoolean(HomeActivity.SLIDESHOW, false).apply();
+                    prefs.edit().putString(editKey(HomeActivity.VIDEO_WALLPAPER), uri.toString())
+                            .putBoolean(editKey(HomeActivity.SLIDESHOW), false).apply();
                     slideshowSwitch.setChecked(false);
                     releaseUnusedFiles();
                     showWallpaperPreview();
@@ -677,7 +743,7 @@ public final class SettingsActivity extends ScaledActivity {
         } else if (request == PICK_SLIDESHOW) {
             ClipData clip = data.getClipData();
             int count = clip != null ? clip.getItemCount() : data.getData() != null ? 1 : 0;
-            List<String> slides = HomeActivity.slideshowImages(this);
+            List<String> slides = HomeActivity.slideshowImages(this, editNight);
             boolean denied = false;
             for (int i = 0; i < count; i++) {
                 Uri uri = clip != null ? clip.getItemAt(i).getUri() : data.getData();
@@ -688,7 +754,7 @@ public final class SettingsActivity extends ScaledActivity {
                     denied = true;
                 }
             }
-            HomeActivity.saveSlideshowImages(this, slides);
+            HomeActivity.saveSlideshowImages(this, editNight, slides);
             if (denied) Toast.makeText(this, "Нет доступа к части изображений", Toast.LENGTH_SHORT).show();
             showOwnSlides();
         }
@@ -1021,6 +1087,13 @@ public final class SettingsActivity extends ScaledActivity {
 
     /** A segmented row; the index of the chosen option is saved under the key. */
     private void choice(LinearLayout parent, String key, String[] options, int defaultValue, Runnable changed) {
+        choice(parent, options, prefs.getInt(key, defaultValue), index -> {
+            prefs.edit().putInt(key, index).apply();
+            changed.run();
+        });
+    }
+
+    private void choice(LinearLayout parent, String[] options, int selected, Consumer<Integer> changed) {
         LinearLayout row = new LinearLayout(this);
         List<TextView> segments = new ArrayList<>();
         for (int i = 0; i < options.length; i++) {
@@ -1031,11 +1104,10 @@ public final class SettingsActivity extends ScaledActivity {
             segment.setPadding(dp(8), dp(11), dp(8), dp(11));
             segment.setClickable(true);
             segment.setOnClickListener(v -> {
-                prefs.edit().putInt(key, index).apply();
                 for (int j = 0; j < segments.size(); j++) Ui.setSegmentSelected(this, segments.get(j), j == index);
-                changed.run();
+                changed.accept(index);
             });
-            Ui.setSegmentSelected(this, segment, i == prefs.getInt(key, defaultValue));
+            Ui.setSegmentSelected(this, segment, i == selected);
             Ui.addSegment(row, segment);
             segments.add(segment);
         }
