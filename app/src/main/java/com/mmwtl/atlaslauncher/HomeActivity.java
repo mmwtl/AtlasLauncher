@@ -122,6 +122,8 @@ public final class HomeActivity extends Activity {
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
     static final int CLIMATE_PANEL_PX = 150;
     private static final int HIDDEN_CLIMATE_PANEL_PX = 24;
+    // OneOS flag for white status icons; with neither this nor LIGHT_STATUS_BAR they follow the system day/night mode.
+    private static final int DARK_STATUS_BAR = 0x4000;
     static final int MAX_ICON_DP = 160;
     private static final int WIDGET_PREVIEW_DP = 150;
     static final String PREFS = "home";
@@ -1280,8 +1282,7 @@ public final class HomeActivity extends Activity {
 
     private void updateStatusBarIcons() {
         if (animatedWallpaper()) {
-            View decor = getWindow().getDecorView();
-            decor.setSystemUiVisibility(decor.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            setStatusBarIcons(false);
             return;
         }
         WindowInsets insets = wallpaperView.getRootWindowInsets();
@@ -1304,9 +1305,13 @@ public final class HomeActivity extends Activity {
             if ((Color.luminance(pixel) + 0.05f) / 0.05f <= 6) darkPixels++;
         }
         boolean darkIcons = lightness / pixels.length > 0.75f && darkPixels < (int) (pixels.length * 0.025f);
+        setStatusBarIcons(darkIcons);
+    }
+
+    private void setStatusBarIcons(boolean dark) {
         View decor = getWindow().getDecorView();
-        int flags = decor.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-        decor.setSystemUiVisibility(darkIcons ? flags | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR : flags);
+        int flags = decor.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR & ~DARK_STATUS_BAR;
+        decor.setSystemUiVisibility(flags | (dark ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR : DARK_STATUS_BAR));
     }
 
     private void updateDock() {
