@@ -122,6 +122,8 @@ public final class HomeActivity extends Activity {
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
     static final int CLIMATE_PANEL_PX = 150;
     private static final int HIDDEN_CLIMATE_PANEL_PX = 24;
+    // Width of the screen edges where a swipe becomes the OneOS Back gesture; physical pixels, not dp.
+    private static final int BACK_SWIPE_EDGE_PX = 50;
     // OneOS flag for white status icons; with neither this nor LIGHT_STATUS_BAR they follow the system day/night mode.
     private static final int DARK_STATUS_BAR = 0x4000;
     static final int MAX_ICON_DP = 160;
@@ -1063,7 +1065,9 @@ public final class HomeActivity extends Activity {
             if (!editingWidgets) {
                 pressX = event.getRawX();
                 pressY = event.getRawY();
-                widgetRow.postDelayed(editByPress, editDelay());
+                // The OneOS edge swipe swallows the rest of this press, so its release could not cancel the timer.
+                if (pressX >= BACK_SWIPE_EDGE_PX && pressX <= getResources().getDisplayMetrics().widthPixels - BACK_SWIPE_EDGE_PX)
+                    widgetRow.postDelayed(editByPress, editDelay());
             }
         } else if (action != MotionEvent.ACTION_MOVE || Math.hypot(event.getRawX() - pressX,
                 event.getRawY() - pressY) > ViewConfiguration.get(this).getScaledTouchSlop()) {
