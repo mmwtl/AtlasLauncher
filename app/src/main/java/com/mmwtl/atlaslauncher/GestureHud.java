@@ -51,6 +51,7 @@ final class GestureHud {
     private ImageView icon;
     private TextView title;
     private TextView value;
+    private FrameLayout bar;
     private View fill;
     private ClipDrawable temperatureFill;
     private ClipDrawable brightnessFill;
@@ -80,6 +81,22 @@ final class GestureHud {
         present(MultiFingerGestures.Kind.FAN, title, text, fraction);
     }
 
+    /** A switch that a gesture has just flipped: no bar, as a state has no range. */
+    void showState(int iconRes, String titleText, String state) {
+        if (!Settings.canDrawOverlays(context)) {
+            return;
+        }
+        if (card == null) {
+            create();
+        }
+        icon.setImageResource(iconRes);
+        title.setText(titleText);
+        value.setText(state);
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 72);
+        bar.setVisibility(View.GONE);
+        reveal(Gravity.CENTER_HORIZONTAL);
+    }
+
     private void present(MultiFingerGestures.Kind kind, String titleText, String valueText, float fraction) {
         if (!Settings.canDrawOverlays(context)) {
             return;
@@ -87,6 +104,7 @@ final class GestureHud {
         if (card == null) {
             create();
         }
+        bar.setVisibility(View.VISIBLE);
         boolean temperature = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT
                 || kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT;
         icon.setImageResource(temperature ? R.drawable.ic_temperature
@@ -98,9 +116,11 @@ final class GestureHud {
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, Character.isLetter(valueText.charAt(0)) ? 72 : 104);
         fill.setBackground(temperature ? temperatureFill : brightnessFill);
         animateFill(fraction);
+        reveal(kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT ? Gravity.START
+                : kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT ? Gravity.END : Gravity.CENTER_HORIZONTAL);
+    }
 
-        int gravity = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT ? Gravity.START
-                : kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT ? Gravity.END : Gravity.CENTER_HORIZONTAL;
+    private void reveal(int gravity) {
         if (params.gravity != (gravity | Gravity.TOP) || card.getParent() == null) {
             params.gravity = gravity | Gravity.TOP;
             params.y = TOP_MARGIN;
@@ -158,7 +178,7 @@ final class GestureHud {
         valueParams.bottomMargin = dp(26);
         card.addView(value, valueParams);
 
-        FrameLayout bar = new FrameLayout(context);
+        bar = new FrameLayout(context);
         bar.setBackground(rounded(RAISED, dp(BAR_HEIGHT / 2)));
         // The fill reveals a fixed cold-to-warm gradient up to the current value.
         GradientDrawable gradient = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[] {COLD, HOT});

@@ -67,6 +67,21 @@ public final class SettingsActivity extends ScaledActivity {
     private static final int[] TAB_LABELS = {R.string.settings_tab_wallpaper, R.string.settings_tab_desktop,
             R.string.settings_tab_gestures, R.string.settings_tab_system};
     private static final String GIB_LAUNCHER = "com.salat.gbinder/com.salat.gbinder.AppLauncher";
+    /** Each entry: section title, then pairs of action and its name. */
+    private static final String[][] GESTURE_ACTIONS = {
+            {"Регулировка", "VOLUME", "Громкость", "TEMPERATURE_LEFT", "Температура водителя",
+                    "TEMPERATURE_RIGHT", "Температура пассажира", "BRIGHTNESS", "Яркость", "FAN", "Обдув"},
+            {"Система", GestureMap.NONE, "Ничего", GestureMap.HOME, "Главный экран", GestureMap.BACK, "Назад",
+                    GestureMap.ALL_APPS, "Все приложения", GestureMap.RECENTS, "Недавние приложения",
+                    GestureMap.NOTIFICATIONS, "Шторка", GestureMap.SCREENSHOT, "Снимок экрана",
+                    GestureMap.WIFI, "Wi-Fi вкл/выкл", GestureMap.BLUETOOTH, "Bluetooth вкл/выкл"},
+            {"Музыка", GestureMap.PLAY_PAUSE, "Пауза и продолжение", GestureMap.NEXT_TRACK, "Следующий трек",
+                    GestureMap.PREVIOUS_TRACK, "Предыдущий трек", GestureMap.MUTE, "Выключить звук"},
+            {"Климат", GestureMap.CLIMATE_SCREEN, "Экран климата", GestureMap.CLIMATE_PANEL, "Скрыть панель климата",
+                    GestureMap.CLIMATE_POWER, "Климат вкл/выкл", GestureMap.CLIMATE_AUTO, "AUTO вкл/выкл",
+                    GestureMap.AC, "Кондиционер вкл/выкл", GestureMap.RECIRCULATION, "Рециркуляция вкл/выкл",
+                    GestureMap.DEFROST_FRONT, "Обдув лобового стекла", GestureMap.DEFROST_REAR, "Обогрев заднего стекла"},
+    };
     private static final int PICK_WALLPAPER = 1;
     private static final int PICK_SLIDESHOW = 2;
     private static final int PICK_VIDEO = 3;
@@ -91,6 +106,7 @@ public final class SettingsActivity extends ScaledActivity {
     /** Whether the wallpaper tab edits the night settings; they may differ from the mode on screen. */
     private boolean editNight;
     private LinearLayout redirectState;
+    private LinearLayout gestureRows;
     private Runnable connectivityChanged;
     /** The clock, volume or Wi-Fi/Bluetooth widget whose page is open. */
     private int widgetId;
@@ -343,24 +359,32 @@ public final class SettingsActivity extends ScaledActivity {
 
     private void buildGesturesTab(LinearLayout page) {
         LinearLayout gestures = card(page, "Жесты",
-                "Два пальца вверх и вниз: громкость в центре экрана, температура у левого и правого края. "
-                        + "Три пальца вверх и вниз: яркость, влево и вправо: обдув (в AUTO — его профиль). Щипок четырьмя пальцами: главный экран. Четыре пальца вверх: как кнопка «Все приложения». Жест начинается между верхней и климатической панелями. "
-                        + "Температуре и яркости нужен GInputBridge. Касания в этой области проходят через "
-                        + "AtlasLauncher, а не через штатную службу жестов.");
+                "Работают поверх любых приложений. Жест начинается между верхней и климатической панелями. "
+                        + "Касания в этой области проходят через AtlasLauncher, а не через штатную службу жестов.");
         toggle(gestures, "Жесты несколькими пальцами", HomeActivity.GESTURES_ENABLED, false, () -> { });
         toggle(gestures, "Жесты важнее приложений", HomeActivity.GESTURES_PRIORITY, false, () -> { });
         gestures.addView(hint("Включено: касание несколькими пальцами сначала проверяется как жест, и приложение "
                 + "не сдвигается под ним. Масштаб и поворот в картах начнутся немного позже, до полусекунды. "
                 + "Выключено: приложение получает касание сразу, а при срабатывании жеста оно отменяется."));
-        gestures.addView(hint("Нужно разрешение «Поверх других приложений»: без него не будет карточек "
-                + "с температурой и яркостью, а жесты четырьмя пальцами не смогут открыть главный экран "
-                + "и приложения поверх другого приложения."));
+        gestures.addView(hint("Нужно разрешение «Поверх других приложений»: без него не будет шкалы и карточек "
+                + "со значениями, а жесты не смогут открывать экраны и приложения поверх другого приложения."));
         action(gestures, "Разрешить показ поверх приложений  ↗", () -> {
             try {
                 startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
             } catch (ActivityNotFoundException e) {
                 Toast.makeText(this, "Настройка разрешения недоступна", Toast.LENGTH_SHORT).show();
             }
+        });
+
+        LinearLayout map = card(page, "Что делают жесты",
+                "Нажмите на жест, чтобы выбрать действие. Регулировка, например громкость, занимает оба направления. "
+                        + "Жест без действия остаётся у приложения.");
+        gestureRows = column();
+        map.addView(gestureRows);
+        showGestureRows();
+        action(map, "Вернуть жесты по умолчанию", () -> {
+            prefs.edit().remove(HomeActivity.GESTURES_MAP).apply();
+            showGestureRows();
         });
 
         LinearLayout trigger = card(page, "Срабатывание жестов",
@@ -371,12 +395,21 @@ public final class SettingsActivity extends ScaledActivity {
 
         LinearLayout scale = card(page, "Шкала на весь экран",
                 "После срабатывания жеста значение задаёт положение пальцев: внизу минимум, вверху максимум, "
-                        + "у обдува — слева и справа. Значение сразу переходит туда, где пальцы, поэтому начинайте "
+                        + "при жесте вбок — слева и справа. Значение сразу переходит туда, где пальцы, поэтому начинайте "
                         + "жест примерно у нужного уровня. Выключенные регулировки меняются по шагам.");
         scaleToggle(scale, "Громкость", MultiFingerGestures.SCALE_VOLUME);
         scaleToggle(scale, "Температура", MultiFingerGestures.SCALE_TEMPERATURE);
         scaleToggle(scale, "Яркость", MultiFingerGestures.SCALE_BRIGHTNESS);
         scaleToggle(scale, "Обдув", MultiFingerGestures.SCALE_FAN);
+        toggle(scale, "Рисовать шкалу поверх экрана", HomeActivity.GESTURES_SCALE_OVERLAY, true, () -> { });
+        scale.addView(hint("Полупрозрачная шкала со значениями на весь экран, пока пальцы на нём."));
+
+        LinearLayout car = card(page, "Управление автомобилем",
+                "Температуре, яркости, обдуву и переключателям климата нужен доступ к автомобилю. Без GInputBridge "
+                        + "AtlasLauncher обращается к функциям ГУ сам. Громкость и остальные действия от этого не зависят.");
+        toggle(car, "Работать без GInputBridge", HomeActivity.GESTURES_DIRECT,
+                GestureFilterService.directByDefault(this), () -> { });
+        if (!DirectCar.available()) car.addView(hint("На этом устройстве нет функций ГУ: останется GInputBridge."));
     }
 
     private void scaleToggle(LinearLayout parent, String text, int bit) {
@@ -384,6 +417,125 @@ public final class SettingsActivity extends ScaledActivity {
             int kinds = prefs.getInt(HomeActivity.GESTURES_SCALE, 0);
             prefs.edit().putInt(HomeActivity.GESTURES_SCALE, checked ? kinds | bit : kinds & ~bit).apply();
         });
+    }
+
+    private GestureMap gestureMap() {
+        return GestureMap.parse(prefs.getString(HomeActivity.GESTURES_MAP, null));
+    }
+
+    /** Every gesture by finger count, as rows of one or two buttons with the current action. */
+    private void showGestureRows() {
+        gestureRows.removeAllViews();
+        GestureMap map = gestureMap();
+        gestureRows.addView(label("Два пальца"));
+        gestureRow(map, "В центре экрана", "↑", GestureMap.Gesture.TWO_CENTER_UP, "↓", GestureMap.Gesture.TWO_CENTER_DOWN);
+        gestureRow(map, "У левого края", "↑", GestureMap.Gesture.TWO_LEFT_UP, "↓", GestureMap.Gesture.TWO_LEFT_DOWN);
+        gestureRow(map, "У правого края", "↑", GestureMap.Gesture.TWO_RIGHT_UP, "↓", GestureMap.Gesture.TWO_RIGHT_DOWN);
+        gestureRow(map, "Вбок", "←", GestureMap.Gesture.TWO_SWIPE_LEFT, "→", GestureMap.Gesture.TWO_SWIPE_RIGHT);
+        gestureRows.addView(label("Три пальца"));
+        gestureRow(map, "Вверх и вниз", "↑", GestureMap.Gesture.THREE_UP, "↓", GestureMap.Gesture.THREE_DOWN);
+        gestureRow(map, "Вбок", "←", GestureMap.Gesture.THREE_LEFT, "→", GestureMap.Gesture.THREE_RIGHT);
+        gestureRow(map, "Касание", "", GestureMap.Gesture.THREE_TAP, null, null);
+        gestureRows.addView(label("Четыре пальца и больше"));
+        gestureRow(map, "Вверх и вниз", "↑", GestureMap.Gesture.FOUR_UP, "↓", GestureMap.Gesture.FOUR_DOWN);
+        gestureRow(map, "Вбок", "←", GestureMap.Gesture.FOUR_LEFT, "→", GestureMap.Gesture.FOUR_RIGHT);
+        gestureRow(map, "Свести и развести", "свести", GestureMap.Gesture.FOUR_PINCH, "развести", GestureMap.Gesture.FOUR_SPREAD);
+        gestureRow(map, "Касание", "", GestureMap.Gesture.FOUR_TAP, null, null);
+    }
+
+    private void gestureRow(GestureMap map, String title, String firstMark, GestureMap.Gesture first, String secondMark,
+            GestureMap.Gesture second) {
+        gestureRows.addView(Ui.text(this, title, 13, Ui.TEXT_SECONDARY), margin(10, -2));
+        LinearLayout row = new LinearLayout(this);
+        gestureButton(row, map, firstMark, first);
+        if (second != null) gestureButton(row, map, secondMark, second);
+        gestureRows.addView(row, margin(4, -2));
+    }
+
+    private void gestureButton(LinearLayout row, GestureMap map, String mark, GestureMap.Gesture gesture) {
+        String label = actionLabel(map.action(gesture));
+        Button button = Ui.button(this, mark.isEmpty() ? label : mark + "  " + label);
+        button.setSingleLine();
+        button.setEllipsize(TextUtils.TruncateAt.END);
+        button.setTextColor(map.bound(gesture) ? Ui.TEXT : Ui.TEXT_SECONDARY);
+        button.setOnClickListener(v -> chooseGestureAction(gesture));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1);
+        if (row.getChildCount() > 0) params.leftMargin = dp(6);
+        row.addView(button, params);
+    }
+
+    private String actionLabel(String action) {
+        if (action.startsWith(GestureMap.APP_PREFIX)) {
+            String component = action.substring(GestureMap.APP_PREFIX.length());
+            for (HomeActivity.AppEntry app : apps()) {
+                if (app.component.flattenToString().equals(component)) return app.label;
+            }
+            return "Приложение недоступно";
+        }
+        for (String[] section : GESTURE_ACTIONS) {
+            for (int i = 1; i < section.length; i += 2) {
+                if (section[i].equals(action)) return section[i + 1];
+            }
+        }
+        return "Ничего";
+    }
+
+    /** The action list, grouped; adjustments are offered only where the gesture can hold one. */
+    private void chooseGestureAction(GestureMap.Gesture gesture) {
+        LinearLayout list = column();
+        list.setPadding(dp(24), dp(8), dp(24), dp(16));
+        ScrollView scroller = new ScrollView(this);
+        scroller.addView(list);
+        String current = gestureMap().action(gesture);
+        AlertDialog[] dialog = new AlertDialog[1];
+        Consumer<String> choose = action -> {
+            dialog[0].dismiss();
+            setGestureAction(gesture, action);
+        };
+        for (String[] section : GESTURE_ACTIONS) {
+            boolean adjustments = GestureMap.kind(section[1]) != null;
+            if (adjustments && !gesture.takesAdjustment()) continue;
+            list.addView(label(section[0]));
+            for (int i = 1; i < section.length; i += 2) {
+                String action = section[i];
+                list.addView(actionOption(section[i + 1], action.equals(current), v -> choose.accept(action)), margin(6, -2));
+            }
+        }
+        list.addView(label("Приложение"));
+        boolean app = current.startsWith(GestureMap.APP_PREFIX);
+        list.addView(actionOption(app ? "Открыть: " + actionLabel(current) : "Открыть приложение…", app, v -> {
+            dialog[0].dismiss();
+            chooseGestureApp(gesture);
+        }), margin(6, -2));
+        dialog[0] = new AlertDialog.Builder(this).setTitle("Действие жеста").setView(scroller)
+                .setNegativeButton("Отмена", null).show();
+        sized(dialog[0]);
+    }
+
+    private Button actionOption(String text, boolean current, View.OnClickListener click) {
+        Button option = Ui.button(this, text);
+        option.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        if (current) {
+            option.setBackground(Ui.rounded(Ui.ACCENT, dp(8)));
+            option.setTextColor(Ui.ON_ACCENT);
+        }
+        option.setOnClickListener(click);
+        return option;
+    }
+
+    private void chooseGestureApp(GestureMap.Gesture gesture) {
+        List<HomeActivity.AppEntry> entries = apps();
+        String[] titles = new String[entries.size()];
+        for (int i = 0; i < titles.length; i++) titles[i] = entries.get(i).label;
+        show(new AlertDialog.Builder(this).setTitle("Открывать приложение").setItems(titles, (dialog, which) ->
+                setGestureAction(gesture, GestureMap.APP_PREFIX + entries.get(which).component.flattenToString())));
+    }
+
+    private void setGestureAction(GestureMap.Gesture gesture, String action) {
+        GestureMap map = gestureMap();
+        map.set(gesture, action);
+        prefs.edit().putString(HomeActivity.GESTURES_MAP, map.toString()).apply();
+        showGestureRows();
     }
 
     private void buildSystemTab(LinearLayout page) {

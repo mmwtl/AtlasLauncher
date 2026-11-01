@@ -169,6 +169,9 @@ public final class HomeActivity extends Activity {
     static final String GESTURES_TRIGGER = "gestures_trigger";
     // MultiFingerGestures.SCALE_ bits; "gestures_scale" was a boolean in test builds.
     static final String GESTURES_SCALE = "gestures_scale_kinds";
+    static final String GESTURES_SCALE_OVERLAY = "gestures_scale_overlay";
+    static final String GESTURES_MAP = "gestures_map";
+    static final String GESTURES_DIRECT = "gestures_direct";
     private static final String DOCK_VISIBLE = "dock_visible";
     private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     static final String DOCK_APPS = "dock_apps";
@@ -377,7 +380,8 @@ public final class HomeActivity extends Activity {
                 // The pin buttons are shown only while hiding is enabled.
                 if (editingWidgets) scheduleShowWidgets();
                 break;
-            case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: case GESTURES_SCALE: applyGestures(); break;
+            case GESTURES_ENABLED: case GESTURES_PRIORITY: case GESTURES_TRIGGER: case GESTURES_SCALE:
+            case GESTURES_SCALE_OVERLAY: case GESTURES_MAP: case GESTURES_DIRECT: applyGestures(); break;
             case FAVORITES: loadFavorites(prefs); showFavorites(); break;
             case DOCK_LABELS: case DOCK_APPS: case DRAWER_ICON_SIZE: scheduleShowWidgets(); break;
             case DOCK_OPACITY: updateDock(); break;
@@ -981,14 +985,17 @@ public final class HomeActivity extends Activity {
     }
 
     private void applyGestures() {
-        Intent service = new Intent(this, GestureFilterService.class).putExtra(GestureFilterService.EXTRA_PRIORITY,
-                getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_PRIORITY, false))
-                .putExtra(GestureFilterService.EXTRA_TRIGGER, getSharedPreferences(PREFS, MODE_PRIVATE)
-                        .getInt(GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL))
-                .putExtra(GestureFilterService.EXTRA_SCALE, getSharedPreferences(PREFS, MODE_PRIVATE)
-                        .getInt(GESTURES_SCALE, 0));
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        Intent service = new Intent(this, GestureFilterService.class)
+                .putExtra(GestureFilterService.EXTRA_PRIORITY, prefs.getBoolean(GESTURES_PRIORITY, false))
+                .putExtra(GestureFilterService.EXTRA_TRIGGER, prefs.getInt(GESTURES_TRIGGER, MultiFingerGestures.TRIGGER_NORMAL))
+                .putExtra(GestureFilterService.EXTRA_SCALE, prefs.getInt(GESTURES_SCALE, 0))
+                .putExtra(GestureFilterService.EXTRA_SCALE_OVERLAY, prefs.getBoolean(GESTURES_SCALE_OVERLAY, true))
+                .putExtra(GestureFilterService.EXTRA_MAP, prefs.getString(GESTURES_MAP, null))
+                .putExtra(GestureFilterService.EXTRA_DIRECT,
+                        prefs.getBoolean(GESTURES_DIRECT, GestureFilterService.directByDefault(this)));
         try {
-            if (getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(GESTURES_ENABLED, false)) startForegroundService(service);
+            if (prefs.getBoolean(GESTURES_ENABLED, false)) startForegroundService(service);
             else stopService(service);
         } catch (IllegalStateException | SecurityException e) {
             Log.w("AtlasLauncher", "Cannot change the gesture service", e);

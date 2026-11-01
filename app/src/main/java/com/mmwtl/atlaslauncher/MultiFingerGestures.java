@@ -1,22 +1,27 @@
 package com.mmwtl.atlaslauncher;
 
+import com.mmwtl.atlaslauncher.GestureMap.Gesture;
+
 /**
- * Recognises multi-finger swipes from pointer samples. Two fingers up and down adjust volume in
- * the centre of the screen and the driver or passenger temperature near the left or right edge;
- * three fingers anywhere adjust brightness up and down and the fan sideways. Four or more fingers pinched together go home, and
- * swiped up open all apps. Every finger has to travel the same way and the fingers have to keep
- * their spread, so pinch zoom, rotation and a zoom with one finger resting stay with the app.
+ * Recognises multi-finger gestures from pointer samples and reports what {@link GestureMap} binds
+ * to them. Two fingers swipe up and down in three zones of the screen (the centre and each edge)
+ * or sideways anywhere; three fingers swipe in four directions anywhere; four or more swipe,
+ * pinch and spread anywhere; three and four fingers also tap. Every finger has to travel the same
+ * way and the fingers have to keep their spread, so pinch zoom, rotation and a zoom with one finger
+ * resting stay with the app. A gesture nothing is bound to is not recognised at all, so the app
+ * keeps those touches.
  *
  * <p>Fingers land and lift one by one, so a two- or three-finger gesture waits until the finger
  * count has settled, a touch belongs to the most fingers it has had, and it makes at most one
  * gesture. Four or more fingers start at once, as nothing above them could be mistaken for them,
- * and a fifth finger keeps the progress already made. In scale mode (an option for each of
- * volume, temperature, brightness and fan) a two- or three-finger gesture starts the same way, but then the position of the fingers sets the value:
- * the area from bottom to top, or from left to right for the fan, spans the whole range. Has no
- * Android dependencies, so it runs in JVM tests.
+ * and a fifth finger keeps the progress already made. An adjustment moves step by step for as long
+ * as the fingers go on; in scale mode (an option for each adjustment) it starts the same way, but
+ * then the position of the fingers sets the value: the area from bottom to top, or from left to
+ * right on a sideways swipe, spans the whole range. A one-off action fires once. Has no Android
+ * dependencies, so it runs in JVM tests.
  */
 final class MultiFingerGestures {
-    enum Kind { VOLUME, TEMPERATURE_LEFT, TEMPERATURE_RIGHT, BRIGHTNESS, FAN, HOME, ALL_APPS }
+    enum Kind { VOLUME, TEMPERATURE_LEFT, TEMPERATURE_RIGHT, BRIGHTNESS, FAN }
 
     /** What the touch sequence is so far. */
     enum Decision {
@@ -32,8 +37,19 @@ final class MultiFingerGestures {
         /** {@code steps} is positive for a swipe up or right and negative for down or left. */
         void onSteps(Kind kind, int steps);
 
-        /** Scale mode: {@code level} is 0 for the minimum and 1 for the maximum. */
-        default void onLevel(Kind kind, float level) {
+        /**
+         * Scale mode: {@code level} is 0 for the minimum and 1 for the maximum, {@code sideways}
+         * tells the axis and {@code cross} is where the fingers are on the other axis, in pixels.
+         */
+        default void onLevel(Kind kind, float level, boolean sideways, float cross) {
+        }
+
+        /** A one-off action from {@link GestureMap}. */
+        default void onAction(String action) {
+        }
+
+        /** The last finger of a touch that made a gesture is up. */
+        default void onEnd() {
         }
     }
 
@@ -53,6 +69,11 @@ final class MultiFingerGestures {
     static final long SETTLE_MS = 200;
     /** Spread change that is always tolerated; beyond it, it must stay under half the travel. */
     static final int SPREAD_TOLERANCE_PX = 40;
+    /** Travel along an axis with nothing bound after which the touch stops being a candidate. */
+    static final int UNBOUND_TRAVEL_PX = 60;
+    /** Tap: from the first finger down to the last finger up, with no finger moving further. */
+    static final long TAP_MAX_MS = 400;
+    static final int TAP_SLOP_PX = 30;
     /** Trigger levels for {@link #setTrigger}: how much travel a gesture needs before it acts. */
     static final int TRIGGER_EARLY = 0;
     static final int TRIGGER_NORMAL = 1;
@@ -61,7 +82,8 @@ final class MultiFingerGestures {
     private static final float[] FIRST_STEP_FACTORS = {1f, 1.25f, 1.5f};
     // A pinch has brought the fingers to this share of their starting spread.
     private static final float[] PINCH_RATIOS = {0.8f, 0.75f, 0.6f};
-    private static final int[] ALL_APPS_SWIPES_PX = {120, 150, 180};
+    // Travel of a swipe that fires a one-off action.
+    private static final int[] SWIPES_PX = {120, 150, 180};
     /** Scale mode: the fingers reach the minimum or maximum this far from the edge of the area. */
     static final int SCALE_MARGIN_PX = 150;
     /** Bits for {@link #setScale}: which adjustments use scale mode. */
@@ -74,9 +96,10 @@ final class MultiFingerGestures {
     private final int top;
     private final int bottom;
     private final Listener listener;
+    private GestureMap map = new GestureMap();
     private float firstStepFactor = FIRST_STEP_FACTORS[TRIGGER_NORMAL];
     private float pinchRatio = PINCH_RATIOS[TRIGGER_NORMAL];
-    private int allAppsSwipePx = ALL_APPS_SWIPES_PX[TRIGGER_NORMAL];
+    private int swipePx = SWIPES_PX[TRIGGER_NORMAL];
     private int scaleKinds;
     private float[] xs = new float[0];
     private float[] ys = new float[0];
@@ -84,12 +107,20 @@ final class MultiFingerGestures {
     private float[] fingerAnchorYs = new float[0];
     private int count;
     private int maxCount;
-    private Kind kind;
-    // Four or more fingers: a one-off pinch or swipe up, decided while they move.
+    // Two or three fingers that may yet make a gesture.
+    private boolean following;
+    // Four or more fingers: a one-off pinch, spread or swipe, decided while they move.
     private boolean manyFingers;
     private boolean claimed;
     private boolean stepped;
+    // The adjustment and axis in progress; until the first step they follow the fingers.
+    private Kind kind;
+    private boolean sideways;
+    // Which zone both of two fingers landed in, or -1 when they are in different ones.
+    private int zone;
     private long settleUntil;
+    private long downTime;
+    private boolean moved;
     private float anchorX;
     private float anchorY;
     private float startX;
@@ -108,12 +139,16 @@ final class MultiFingerGestures {
     synchronized void setTrigger(int level) {
         firstStepFactor = FIRST_STEP_FACTORS[level];
         pinchRatio = PINCH_RATIOS[level];
-        allAppsSwipePx = ALL_APPS_SWIPES_PX[level];
+        swipePx = SWIPES_PX[level];
     }
 
     /** A combination of the {@code SCALE_} bits. */
     synchronized void setScale(int kinds) {
         scaleKinds = kinds;
+    }
+
+    synchronized void setMap(GestureMap map) {
+        this.map = map;
     }
 
     /**
@@ -126,13 +161,31 @@ final class MultiFingerGestures {
         if (action == ACTION_DOWN) {
             claimed = false;
             maxCount = 0;
+            downTime = time;
+            moved = false;
         }
         if (action == ACTION_UP || action == ACTION_CANCEL) {
+            if (action == ACTION_UP) {
+                tap(time);
+            }
             setPointers(0, null, null, null, -1, time);
+            if (claimed) {
+                listener.onEnd();
+            }
         } else {
             setPointers(pointerCount, ids, x, y, action == ACTION_POINTER_UP ? actionId : -1, time);
         }
-        return claimed ? Decision.CLAIMED : kind != null || manyFingers ? Decision.UNDECIDED : Decision.PASS;
+        return claimed ? Decision.CLAIMED : following || manyFingers ? Decision.UNDECIDED : Decision.PASS;
+    }
+
+    private void tap(long time) {
+        if (claimed || moved || maxCount < 3 || time - downTime > TAP_MAX_MS) {
+            return;
+        }
+        Gesture gesture = maxCount == 3 ? Gesture.THREE_TAP : Gesture.FOUR_TAP;
+        if (map.bound(gesture)) {
+            fire(gesture);
+        }
     }
 
     private void setPointers(int pointerCount, int[] ids, float[] x, float[] y, int skippedId, long time) {
@@ -140,6 +193,7 @@ final class MultiFingerGestures {
         boolean wasMany = manyFingers;
         float pinched = wasMany ? spread() / startSpread : 1;
         float risen = wasMany ? startY - mean(ys) : 0;
+        float shifted = wasMany ? mean(xs) - startX : 0;
         if (xs.length < pointerCount) {
             xs = new float[pointerCount];
             ys = new float[pointerCount];
@@ -159,18 +213,25 @@ final class MultiFingerGestures {
         if (count != previous) {
             start(time);
             if (wasMany && manyFingers) {
-                // Four and five fingers alike: carry the pinch or swipe over to the new set of fingers.
+                // Four and five fingers alike: carry the gesture over to the new set of fingers.
                 startSpread = spread() / pinched;
                 startY += risen;
+                startX -= shifted;
                 for (int i = 0; i < count; i++) {
                     fingerAnchorYs[i] += risen;
+                    fingerAnchorXs[i] -= shifted;
                 }
             }
-        } else if ((kind != null || manyFingers) && time >= settleUntil) {
-            if (manyFingers) {
-                followMany();
-            } else {
-                follow();
+        } else {
+            for (int i = 0; i < count; i++) {
+                moved |= Math.hypot(xs[i] - fingerAnchorXs[i], ys[i] - fingerAnchorYs[i]) > TAP_SLOP_PX;
+            }
+            if ((following || manyFingers) && time >= settleUntil) {
+                if (manyFingers) {
+                    followMany();
+                } else {
+                    follow();
+                }
             }
         }
     }
@@ -178,24 +239,34 @@ final class MultiFingerGestures {
     /** The finger count changed: begin a new gesture, or none if the fingers do not fit one. */
     private void start(long time) {
         kind = null;
+        following = false;
         manyFingers = false;
         maxCount = Math.max(maxCount, count);
         // One gesture per touch, and only with as many fingers as the touch has had (4 and 5 alike).
         if (!claimed && Math.min(count, 4) == Math.min(maxCount, 4)) {
             if (count >= 4) {
-                manyFingers = true;
+                manyFingers = anyBound(Gesture.FOUR_UP, Gesture.FOUR_DOWN, Gesture.FOUR_RIGHT, Gesture.FOUR_LEFT,
+                        Gesture.FOUR_PINCH, Gesture.FOUR_SPREAD, Gesture.FOUR_TAP);
             } else if (count == 3) {
-                kind = Kind.BRIGHTNESS;
+                following = anyBound(Gesture.THREE_UP, Gesture.THREE_DOWN, Gesture.THREE_RIGHT, Gesture.THREE_LEFT,
+                        Gesture.THREE_TAP);
             } else if (count == 2) {
-                int zone = zone(xs[0]);
-                if (zone == zone(xs[1])) {
-                    kind = zone == 0 ? Kind.TEMPERATURE_LEFT : zone == 1 ? Kind.VOLUME : Kind.TEMPERATURE_RIGHT;
-                }
+                zone = zone(xs[0]) == zone(xs[1]) ? zone(xs[0]) : -1;
+                following = anyBound(gesture(false, 1), gesture(false, -1), gesture(true, 1), gesture(true, -1));
             }
         }
         stepped = false;
         settleUntil = manyFingers ? time : time + SETTLE_MS;
         anchor();
+    }
+
+    private boolean anyBound(Gesture... gestures) {
+        for (Gesture gesture : gestures) {
+            if (map.bound(gesture)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void anchor() {
@@ -215,40 +286,86 @@ final class MultiFingerGestures {
         System.arraycopy(ys, 0, fingerAnchorYs, 0, count);
     }
 
-    private void followMany() {
-        float spread = spread();
-        float rise = startY - mean(ys);
-        if (spread < startSpread * pinchRatio) {
-            finish(Kind.HOME);
-        } else if (rise >= allAppsSwipePx
-                && Math.abs(spread - startSpread) <= Math.max(SPREAD_TOLERANCE_PX, rise / 2)
-                && everyFingerMoved(false, 1, allAppsSwipePx / 2f)) {
-            finish(Kind.ALL_APPS);
-        } else if (spread > startSpread / pinchRatio || -rise > allAppsSwipePx / 2f
-                || Math.abs(mean(xs) - startX) > allAppsSwipePx) {
-            // Spreading, moving down or sideways: not ours.
-            manyFingers = false;
+    /** The gesture of two or three fingers going this way; +1 is right or up. Null if there is none. */
+    private Gesture gesture(boolean side, int direction) {
+        boolean positive = direction > 0;
+        if (count == 3) {
+            return side ? (positive ? Gesture.THREE_RIGHT : Gesture.THREE_LEFT)
+                    : positive ? Gesture.THREE_UP : Gesture.THREE_DOWN;
+        }
+        if (side) {
+            return positive ? Gesture.TWO_SWIPE_RIGHT : Gesture.TWO_SWIPE_LEFT;
+        }
+        switch (zone) {
+            case 0: return positive ? Gesture.TWO_LEFT_UP : Gesture.TWO_LEFT_DOWN;
+            case 1: return positive ? Gesture.TWO_CENTER_UP : Gesture.TWO_CENTER_DOWN;
+            case 2: return positive ? Gesture.TWO_RIGHT_UP : Gesture.TWO_RIGHT_DOWN;
+            default: return null;
         }
     }
 
-    private void finish(Kind done) {
+    private void followMany() {
+        float spread = spread();
+        float rise = startY - mean(ys);
+        float shift = mean(xs) - startX;
+        if (spread < startSpread * pinchRatio || spread > startSpread / pinchRatio) {
+            // Moving apart or together decides it, whatever the middle of the hand does.
+            Gesture gesture = spread < startSpread ? Gesture.FOUR_PINCH : Gesture.FOUR_SPREAD;
+            if (map.bound(gesture)) {
+                fire(gesture);
+            } else {
+                manyFingers = false;
+            }
+            return;
+        }
+        boolean side = Math.abs(shift) > Math.abs(rise);
+        int direction = (side ? shift : rise) > 0 ? 1 : -1;
+        Gesture gesture = side ? (direction > 0 ? Gesture.FOUR_RIGHT : Gesture.FOUR_LEFT)
+                : direction > 0 ? Gesture.FOUR_UP : Gesture.FOUR_DOWN;
+        float travel = Math.max(Math.abs(shift), Math.abs(rise));
+        if (!map.bound(gesture)) {
+            // Moving where nothing is bound: not ours. Sideways drifts more before it counts.
+            if (travel > (side ? swipePx : swipePx / 2f)) {
+                manyFingers = false;
+            }
+        } else if (travel >= swipePx && Math.abs(spread - startSpread) <= Math.max(SPREAD_TOLERANCE_PX, travel / 2)
+                && everyFingerMoved(side, direction, swipePx / 2f)) {
+            fire(gesture);
+        }
+    }
+
+    private void fire(Gesture gesture) {
+        following = false;
         manyFingers = false;
         claimed = true;
-        listener.onSteps(done, 1);
+        listener.onAction(map.action(gesture));
     }
 
     private void follow() {
         float dx = mean(xs) - anchorX;
         float dy = mean(ys) - anchorY;
-        // Three fingers choose their axis with the first step: up and down is brightness, sideways the fan.
-        if (count == 3 && !stepped) {
-            kind = Math.abs(dx) > Math.abs(dy) ? Kind.FAN : Kind.BRIGHTNESS;
+        if (!stepped) {
+            // Fingers choose their axis with the first step: up and down or sideways.
+            sideways = Math.abs(dx) > Math.abs(dy);
+            int way = (sideways ? dx : -dy) > 0 ? 1 : -1;
+            Gesture gesture = gesture(sideways, way);
+            if (!map.bound(gesture)) {
+                // A drag along an axis with nothing bound is not ours; it stays ignored until the finger count changes.
+                if (!map.bound(gesture(sideways, -way)) && Math.abs(sideways ? dx : dy) > UNBOUND_TRAVEL_PX) {
+                    following = false;
+                }
+                return;
+            }
+            kind = GestureMap.kind(map.action(gesture));
+            if (kind == null) {
+                followOneOff(gesture, way, Math.abs(sideways ? dx : dy));
+                return;
+            }
         }
-        boolean sideways = kind == Kind.FAN;
         boolean scale = (scaleKinds & scaleBit(kind)) != 0;
         if (scale && stepped) {
             // The gesture is already the fingers' own: they only move along the scale now.
-            listener.onLevel(kind, level(sideways));
+            reportLevel();
             return;
         }
         // Positive along the axis is up or right.
@@ -258,14 +375,11 @@ final class MultiFingerGestures {
                 : kind == Kind.FAN ? FAN_STEP_PX : TEMPERATURE_STEP_PX;
         // A drag mostly across the axis is not ours; it stays ignored until the finger count changes.
         if (Math.abs(across) > stepPx && Math.abs(across) > Math.abs(along)) {
-            kind = null;
+            following = false;
             return;
         }
-        // Fingers moving apart or together are a zoom, whatever their middle does.
-        float travel = sideways ? mean(xs) - startX : mean(ys) - startY;
-        float spreadChange = Math.abs(spread() - startSpread);
-        if (spreadChange > SPREAD_TOLERANCE_PX && spreadChange > Math.abs(travel) / 2) {
-            kind = null;
+        if (zoomed()) {
+            following = false;
             return;
         }
         float needed = stepped ? stepPx : stepPx * firstStepFactor;
@@ -284,10 +398,29 @@ final class MultiFingerGestures {
         stepped = true;
         claimed = true;
         if (scale) {
-            listener.onLevel(kind, level(sideways));
+            reportLevel();
         } else {
             listener.onSteps(kind, steps);
         }
+    }
+
+    private void followOneOff(Gesture gesture, int direction, float travel) {
+        if (zoomed()) {
+            following = false;
+        } else if (travel >= swipePx && everyFingerMoved(sideways, direction, swipePx / 2f)) {
+            fire(gesture);
+        }
+    }
+
+    /** Fingers moving apart or together are a zoom, whatever their middle does. */
+    private boolean zoomed() {
+        float travel = sideways ? mean(xs) - startX : mean(ys) - startY;
+        float spreadChange = Math.abs(spread() - startSpread);
+        return spreadChange > SPREAD_TOLERANCE_PX && spreadChange > Math.abs(travel) / 2;
+    }
+
+    private void reportLevel() {
+        listener.onLevel(kind, level(sideways), sideways, sideways ? mean(ys) : mean(xs));
     }
 
     private static int scaleBit(Kind kind) {

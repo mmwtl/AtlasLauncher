@@ -22,6 +22,8 @@
         <package android:name="com.autolink.diminteraction" />
         <!-- Power service: screen and cluster brightness levels. -->
         <package android:name="com.autolink.powerservice" />
+        <!-- GInputBridge, for choosing how gestures reach the car. -->
+        <package android:name="com.salat.gbinder" />
         <!-- Widget layouts and view IDs: fixed-size OEM widgets, the media widget's source switch. -->
         <intent>
             <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
