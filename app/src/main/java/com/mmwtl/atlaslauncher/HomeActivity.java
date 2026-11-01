@@ -630,6 +630,11 @@ public final class HomeActivity extends Activity {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
                 updateStatusBarIcons();
         });
+        // At boot HOME may be laid out before the status bar window exists: its height arrives later as an inset.
+        wallpaperView.setOnApplyWindowInsetsListener((v, insets) -> {
+            updateStatusBarIcons();
+            return insets;
+        });
         backdrop.addView(wallpaperView, new FrameLayout.LayoutParams(-1, -1));
         showWallpaper();
         setContentView(backdrop);
