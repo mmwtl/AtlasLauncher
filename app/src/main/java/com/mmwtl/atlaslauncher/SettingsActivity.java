@@ -71,7 +71,7 @@ public final class SettingsActivity extends ScaledActivity {
     private static final String[][] GESTURE_ACTIONS = {
             {"Регулировка", "VOLUME", "Громкость", "TEMPERATURE_LEFT", "Температура водителя",
                     "TEMPERATURE_RIGHT", "Температура пассажира", "BRIGHTNESS", "Яркость", "FAN", "Обдув"},
-            {"Система", GestureMap.NONE, "Ничего", GestureMap.HOME, "Главный экран", GestureMap.BACK, "Назад",
+            {"Система", GestureMap.HOME, "Главный экран", GestureMap.BACK, "Назад",
                     GestureMap.ALL_APPS, "Все приложения", GestureMap.RECENTS, "Недавние приложения",
                     GestureMap.NOTIFICATIONS, "Шторка", GestureMap.SCREENSHOT, "Снимок экрана",
                     GestureMap.WIFI, "Wi-Fi вкл/выкл", GestureMap.BLUETOOTH, "Bluetooth вкл/выкл"},
@@ -518,6 +518,9 @@ public final class SettingsActivity extends ScaledActivity {
             dialog[0].dismiss();
             setGestureAction(gesture, action);
         };
+        // First, apart from the sections: removing a binding must be easy to find.
+        list.addView(actionOption("Ничего — жест остаётся у приложения", GestureMap.NONE.equals(current),
+                v -> choose.accept(GestureMap.NONE)), margin(6, -2));
         for (String[] section : GESTURE_ACTIONS) {
             boolean adjustments = GestureMap.kind(section[1]) != null;
             if (adjustments && !gesture.takesAdjustment()) continue;
