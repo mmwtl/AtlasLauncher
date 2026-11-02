@@ -1,6 +1,7 @@
 package com.mmwtl.atlaslauncher;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
@@ -29,6 +30,14 @@ final class GestureScale {
     private static final int SCRIM = Color.argb(90, 8, 10, 14);
     private static final int CARD = Color.argb(225, 28, 30, 34);
     private static final int MUTED = Color.rgb(200, 204, 208);
+    // Day: a light veil with dark marks and text, and deeper fill colors that still read on it.
+    private static final int DAY_SCRIM = Color.argb(110, 245, 246, 248);
+    private static final int DAY_CARD = Color.argb(235, 237, 238, 240);
+    private static final int DAY_INK = Color.rgb(32, 33, 36);
+    private static final int DAY_MUTED = Color.rgb(95, 99, 104);
+    private static final int BLUE_DEEP = Color.rgb(20, 105, 205);
+    private static final int AMBER_DEEP = Color.rgb(205, 125, 10);
+    private static final int TEAL_DEEP = Color.rgb(10, 130, 122);
     private static final int COLD = Color.rgb(46, 150, 246);
     private static final int HOT = Color.rgb(240, 110, 60);
     private static final int BLUE = Color.rgb(46, 150, 246);
@@ -145,6 +154,11 @@ final class GestureScale {
         private boolean railAtEnd;
         private int lowColor;
         private int highColor;
+        // White marks and text at night, dark ones in the day.
+        private int ink;
+        private int scrim;
+        private int cardColor;
+        private int muted;
         private Shader fillShader;
         private Shader railShader;
         private Drawable iconDrawable;
@@ -172,6 +186,19 @@ final class GestureScale {
                     : kind == MultiFingerGestures.Kind.FAN ? TEAL : BLUE;
             highColor = temperature ? HOT : kind == MultiFingerGestures.Kind.BRIGHTNESS ? AMBER_LIGHT
                     : kind == MultiFingerGestures.Kind.FAN ? TEAL_LIGHT : BLUE_LIGHT;
+            boolean night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                    == Configuration.UI_MODE_NIGHT_YES;
+            if (!night && !temperature) {
+                // The light ends would fade into the veil: a deeper low end, the old low end on top.
+                highColor = lowColor;
+                lowColor = kind == MultiFingerGestures.Kind.BRIGHTNESS ? AMBER_DEEP
+                        : kind == MultiFingerGestures.Kind.FAN ? TEAL_DEEP : BLUE_DEEP;
+            }
+            ink = night ? Color.WHITE : DAY_INK;
+            scrim = night ? SCRIM : DAY_SCRIM;
+            cardColor = night ? CARD : DAY_CARD;
+            muted = night ? MUTED : DAY_MUTED;
+            if (iconDrawable != null) iconDrawable.setTint(ink);
             // Built from the colors and direction on the next frame.
             fillShader = null;
             railShader = null;
@@ -180,7 +207,9 @@ final class GestureScale {
         void update(int icon, String title, String value, float fraction, String[] marks) {
             if (icon != iconRes) {
                 iconRes = icon;
-                iconDrawable = context.getDrawable(icon);
+                iconDrawable = context.getDrawable(icon).mutate();
+                // The icons are drawn light for the night mode.
+                iconDrawable.setTint(ink);
             }
             this.title = title;
             this.value = value;
@@ -225,7 +254,7 @@ final class GestureScale {
             getLocationOnScreen(location);
             canvas.translate(-location[0], -location[1]);
             advance();
-            canvas.drawColor(SCRIM);
+            canvas.drawColor(scrim);
             if (fillShader == null) {
                 fillShader = gradient(FILL_ALPHA);
                 railShader = gradient(255);
@@ -249,7 +278,7 @@ final class GestureScale {
             canvas.drawRect(rect, paint);
             paint.setShader(null);
             // The edge of the fill, where the fingers are.
-            paint.setColor(Color.argb(210, 255, 255, 255));
+            paint.setColor(alpha(ink, 210));
             float half = dp(2);
             if (sideways) {
                 rect.set(level - half, top, level + half, bottom);
@@ -263,7 +292,7 @@ final class GestureScale {
             float half = dp(5);
             float start = position(0);
             float end = position(1);
-            paint.setColor(Color.argb(70, 255, 255, 255));
+            paint.setColor(alpha(ink, 70));
             railRect(rail - half, rail + half, start, end);
             canvas.drawRoundRect(rect, half, half, paint);
             paint.setShader(railShader);
@@ -278,7 +307,7 @@ final class GestureScale {
             for (int i = 0; i < marks.length; i++) {
                 float at = marks.length == 1 ? start : position(i / (marks.length - 1f));
                 boolean labelled = marks[i] != null;
-                paint.setColor(labelled ? Color.argb(235, 255, 255, 255) : Color.argb(130, 255, 255, 255));
+                paint.setColor(alpha(ink, labelled ? 235 : 130));
                 float reach = dp(labelled ? 26 : 14);
                 float from = rail + inward * dp(10);
                 railRect(Math.min(from, from + inward * reach), Math.max(from, from + inward * reach),
@@ -289,7 +318,7 @@ final class GestureScale {
                 }
             }
 
-            paint.setColor(Color.WHITE);
+            paint.setColor(ink);
             float radius = dp(20);
             canvas.drawCircle(sideways ? level : rail, sideways ? rail : level, radius, paint);
             paint.setShader(railShader);
@@ -309,7 +338,7 @@ final class GestureScale {
         }
 
         private void drawMarkLabel(Canvas canvas, String label, float across, float along, int inward) {
-            textPaint.setColor(Color.argb(235, 255, 255, 255));
+            textPaint.setColor(alpha(ink, 235));
             float baselineShift = (textPaint.ascent() + textPaint.descent()) / 2;
             if (sideways) {
                 textPaint.setTextAlign(Paint.Align.CENTER);
@@ -351,7 +380,7 @@ final class GestureScale {
                 left = railAtEnd ? rail - clear - width : rail + clear;
                 cardTop = Math.max(top + dp(24), Math.min(bottom - dp(24) - height, level - height / 2));
             }
-            paint.setColor(CARD);
+            paint.setColor(cardColor);
             rect.set(left, cardTop, left + width, cardTop + height);
             canvas.drawRoundRect(rect, dp(28), dp(28), paint);
 
@@ -362,13 +391,17 @@ final class GestureScale {
                 iconDrawable.draw(canvas);
             }
             textPaint.setTextSize(sp(26));
-            textPaint.setColor(MUTED);
+            textPaint.setColor(muted);
             canvas.drawText(title, left + padding + iconSize + dp(12), rowCenter - (titleAscent + titleDescent) / 2,
                     textPaint);
             textPaint.setTextSize(valueTextSize());
-            textPaint.setColor(Color.WHITE);
+            textPaint.setColor(ink);
             canvas.drawText(value, left + padding, cardTop + padding * 0.75f + titleHeight + dp(6) - valueAscent,
                     textPaint);
+        }
+
+        private int alpha(int color, int alpha) {
+            return Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color));
         }
 
         /** A word, such as a fan profile, is smaller than a number. */
