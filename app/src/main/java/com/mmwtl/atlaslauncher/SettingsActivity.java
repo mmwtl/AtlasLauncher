@@ -107,6 +107,8 @@ public final class SettingsActivity extends ScaledActivity {
     private boolean editNight;
     private LinearLayout redirectState;
     private LinearLayout gestureRows;
+    // Index of the finger count shown in the gesture table: two, three, four.
+    private int gestureFingers;
     private Runnable connectivityChanged;
     /** The clock, volume or Wi-Fi/Bluetooth widget whose page is open. */
     private int widgetId;
@@ -423,45 +425,69 @@ public final class SettingsActivity extends ScaledActivity {
         return GestureMap.parse(prefs.getString(HomeActivity.GESTURES_MAP, null));
     }
 
-    /** Every gesture by finger count, as rows of one or two buttons with the current action. */
+    /** The gestures of the chosen finger count, a row each; an adjustment holds both directions in one row. */
     private void showGestureRows() {
         gestureRows.removeAllViews();
         GestureMap map = gestureMap();
-        gestureRows.addView(label("Два пальца"));
-        gestureRow(map, "В центре экрана", "↑", GestureMap.Gesture.TWO_CENTER_UP, "↓", GestureMap.Gesture.TWO_CENTER_DOWN);
-        gestureRow(map, "У левого края", "↑", GestureMap.Gesture.TWO_LEFT_UP, "↓", GestureMap.Gesture.TWO_LEFT_DOWN);
-        gestureRow(map, "У правого края", "↑", GestureMap.Gesture.TWO_RIGHT_UP, "↓", GestureMap.Gesture.TWO_RIGHT_DOWN);
-        gestureRow(map, "Вбок", "←", GestureMap.Gesture.TWO_SWIPE_LEFT, "→", GestureMap.Gesture.TWO_SWIPE_RIGHT);
-        gestureRows.addView(label("Три пальца"));
-        gestureRow(map, "Вверх и вниз", "↑", GestureMap.Gesture.THREE_UP, "↓", GestureMap.Gesture.THREE_DOWN);
-        gestureRow(map, "Вбок", "←", GestureMap.Gesture.THREE_LEFT, "→", GestureMap.Gesture.THREE_RIGHT);
-        gestureRow(map, "Касание", "", GestureMap.Gesture.THREE_TAP, null, null);
-        gestureRows.addView(label("Четыре пальца и больше"));
-        gestureRow(map, "Вверх и вниз", "↑", GestureMap.Gesture.FOUR_UP, "↓", GestureMap.Gesture.FOUR_DOWN);
-        gestureRow(map, "Вбок", "←", GestureMap.Gesture.FOUR_LEFT, "→", GestureMap.Gesture.FOUR_RIGHT);
-        gestureRow(map, "Свести и развести", "свести", GestureMap.Gesture.FOUR_PINCH, "развести", GestureMap.Gesture.FOUR_SPREAD);
-        gestureRow(map, "Касание", "", GestureMap.Gesture.FOUR_TAP, null, null);
+        choice(gestureRows, new String[]{"Два пальца", "Три пальца", "Четыре пальца"}, gestureFingers, index -> {
+            gestureFingers = index;
+            showGestureRows();
+        });
+        if (gestureFingers == 0) {
+            gesturePair(map, "В центре экрана  ↑↓", "В центре экрана  ↑", GestureMap.Gesture.TWO_CENTER_UP,
+                    "В центре экрана  ↓", GestureMap.Gesture.TWO_CENTER_DOWN);
+            gesturePair(map, "У левого края  ↑↓", "У левого края  ↑", GestureMap.Gesture.TWO_LEFT_UP,
+                    "У левого края  ↓", GestureMap.Gesture.TWO_LEFT_DOWN);
+            gesturePair(map, "У правого края  ↑↓", "У правого края  ↑", GestureMap.Gesture.TWO_RIGHT_UP,
+                    "У правого края  ↓", GestureMap.Gesture.TWO_RIGHT_DOWN);
+            gesturePair(map, "Вбок  ←→", "Влево  ←", GestureMap.Gesture.TWO_SWIPE_LEFT,
+                    "Вправо  →", GestureMap.Gesture.TWO_SWIPE_RIGHT);
+        } else if (gestureFingers == 1) {
+            gesturePair(map, "Вверх и вниз  ↑↓", "Вверх  ↑", GestureMap.Gesture.THREE_UP,
+                    "Вниз  ↓", GestureMap.Gesture.THREE_DOWN);
+            gesturePair(map, "Вбок  ←→", "Влево  ←", GestureMap.Gesture.THREE_LEFT,
+                    "Вправо  →", GestureMap.Gesture.THREE_RIGHT);
+            gestureRow(map, "Касание", GestureMap.Gesture.THREE_TAP);
+        } else {
+            gesturePair(map, "Вверх и вниз  ↑↓", "Вверх  ↑", GestureMap.Gesture.FOUR_UP,
+                    "Вниз  ↓", GestureMap.Gesture.FOUR_DOWN);
+            gesturePair(map, "Вбок  ←→", "Влево  ←", GestureMap.Gesture.FOUR_LEFT,
+                    "Вправо  →", GestureMap.Gesture.FOUR_RIGHT);
+            gestureRow(map, "Свести", GestureMap.Gesture.FOUR_PINCH);
+            gestureRow(map, "Развести", GestureMap.Gesture.FOUR_SPREAD);
+            gestureRow(map, "Касание", GestureMap.Gesture.FOUR_TAP);
+        }
     }
 
-    private void gestureRow(GestureMap map, String title, String firstMark, GestureMap.Gesture first, String secondMark,
-            GestureMap.Gesture second) {
-        gestureRows.addView(Ui.text(this, title, 13, Ui.TEXT_SECONDARY), margin(10, -2));
+    /** Opposite directions: one row while an adjustment takes both, a row each otherwise. */
+    private void gesturePair(GestureMap map, String bothTitle, String firstTitle, GestureMap.Gesture first,
+            String secondTitle, GestureMap.Gesture second) {
+        String action = map.action(first);
+        if (GestureMap.kind(action) != null && action.equals(map.action(second))) {
+            gestureRow(map, bothTitle, first);
+        } else {
+            gestureRow(map, firstTitle, first);
+            gestureRow(map, secondTitle, second);
+        }
+    }
+
+    private void gestureRow(GestureMap map, String title, GestureMap.Gesture gesture) {
         LinearLayout row = new LinearLayout(this);
-        gestureButton(row, map, firstMark, first);
-        if (second != null) gestureButton(row, map, secondMark, second);
-        gestureRows.addView(row, margin(4, -2));
-    }
-
-    private void gestureButton(LinearLayout row, GestureMap map, String mark, GestureMap.Gesture gesture) {
-        String label = actionLabel(map.action(gesture));
-        Button button = Ui.button(this, mark.isEmpty() ? label : mark + "  " + label);
-        button.setSingleLine();
-        button.setEllipsize(TextUtils.TruncateAt.END);
-        button.setTextColor(map.bound(gesture) ? Ui.TEXT : Ui.TEXT_SECONDARY);
-        button.setOnClickListener(v -> chooseGestureAction(gesture));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1);
-        if (row.getChildCount() > 0) params.leftMargin = dp(6);
-        row.addView(button, params);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+        row.setBackground(Ui.rounded(Ui.SURFACE_RAISED, dp(8)));
+        row.setOnClickListener(v -> chooseGestureAction(gesture));
+        row.addView(Ui.text(this, title, 15, Ui.TEXT), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView value = Ui.text(this, actionLabel(map.action(gesture)) + "  ›", 15,
+                map.bound(gesture) ? Ui.ACCENT : Ui.TEXT_SECONDARY);
+        value.setSingleLine();
+        value.setEllipsize(TextUtils.TruncateAt.END);
+        // A long app name must not squeeze out the gesture.
+        value.setMaxWidth(dp(280));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
+        params.leftMargin = dp(12);
+        row.addView(value, params);
+        gestureRows.addView(row, margin(6, -2));
     }
 
     private String actionLabel(String action) {
