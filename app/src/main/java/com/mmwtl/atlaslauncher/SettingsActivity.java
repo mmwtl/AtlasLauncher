@@ -240,28 +240,6 @@ public final class SettingsActivity extends ScaledActivity {
         modeChoice = column();
         modes.addView(modeChoice);
 
-        LinearLayout wallpaper = card(page, "Фон рабочего стола",
-                "Изображение, GIF/WebP-анимация или видео. Видео повторяется без звука. "
-                        + "Анимации воспроизводятся на Android 9 и новее. Фон заполняет экран с обрезкой по краям.");
-        wallpaperCard = wallpaper;
-        wallpaperKind = label("");
-        wallpaper.addView(wallpaperKind);
-        wallpaperPreview = new ImageView(this);
-        wallpaperPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        wallpaperPreview.setBackground(Ui.rounded(Ui.SURFACE_RAISED, dp(8)));
-        wallpaperPreview.setClipToOutline(true);
-        wallpaper.addView(wallpaperPreview, margin(12, dp(180)));
-        wallpaper.addView(label("Встроенные фоны · листайте в сторону"));
-        wallpaperPresets = thumbnailRow(wallpaper);
-        for (int i = 0; i < HomeActivity.PRESET_WALLPAPERS.length; i++) {
-            String uri = HomeActivity.presetUri(this, HomeActivity.PRESET_WALLPAPERS[i]);
-            thumbnail(wallpaperPresets, uri, HomeActivity.PRESET_NAMES[i]).setOnClickListener(v ->
-                    chooseWallpaper(uri));
-        }
-        action(wallpaper, "Выбрать изображение или анимацию", () -> pickMedia(PICK_WALLPAPER, false));
-        action(wallpaper, "Выбрать видео", () -> pickMedia(PICK_VIDEO, false));
-        action(wallpaper, "Вернуть стандартный фон", () -> chooseWallpaper(null));
-
         LinearLayout slideshow = card(page, "Сменяемый фон",
                 "Новый фон проявляется плавно, поверх прежнего, чтобы не отвлекать в дороге.");
         slideshowCard = slideshow;
@@ -269,6 +247,8 @@ public final class SettingsActivity extends ScaledActivity {
         slideshowSwitch = toggle(slideshow, "Менять фон", prefs.getBoolean(editKey(HomeActivity.SLIDESHOW), false), on -> {
             prefs.edit().putBoolean(editKey(HomeActivity.SLIDESHOW), on).apply();
             options.setVisibility(on ? View.VISIBLE : View.GONE);
+            // A changing background replaces the single one: its card would only distract.
+            wallpaperCard.setVisibility(on ? View.GONE : View.VISIBLE);
             if (on) {
                 prefs.edit().remove(editKey(HomeActivity.VIDEO_WALLPAPER)).apply();
                 releaseUnusedFiles();
@@ -321,6 +301,30 @@ public final class SettingsActivity extends ScaledActivity {
         options.addView(interval, margin(14, -2));
         options.addView(intervalSlider, margin(4, -2));
         showInterval.run();
+
+        LinearLayout wallpaper = card(page, "Фон рабочего стола",
+                "Изображение, GIF/WebP-анимация или видео. Видео повторяется без звука. "
+                        + "Анимации воспроизводятся на Android 9 и новее. Фон заполняет экран с обрезкой по краям.");
+        wallpaperCard = wallpaper;
+        wallpaperKind = label("");
+        wallpaper.addView(wallpaperKind);
+        wallpaperPreview = new ImageView(this);
+        wallpaperPreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        wallpaperPreview.setBackground(Ui.rounded(Ui.SURFACE_RAISED, dp(8)));
+        wallpaperPreview.setClipToOutline(true);
+        wallpaper.addView(wallpaperPreview, margin(12, dp(180)));
+        wallpaper.addView(label("Встроенные фоны · листайте в сторону"));
+        wallpaperPresets = thumbnailRow(wallpaper);
+        for (int i = 0; i < HomeActivity.PRESET_WALLPAPERS.length; i++) {
+            String uri = HomeActivity.presetUri(this, HomeActivity.PRESET_WALLPAPERS[i]);
+            thumbnail(wallpaperPresets, uri, HomeActivity.PRESET_NAMES[i]).setOnClickListener(v ->
+                    chooseWallpaper(uri));
+        }
+        action(wallpaper, "Выбрать изображение или анимацию", () -> pickMedia(PICK_WALLPAPER, false));
+        action(wallpaper, "Выбрать видео", () -> pickMedia(PICK_VIDEO, false));
+        action(wallpaper, "Вернуть стандартный фон", () -> chooseWallpaper(null));
+
+        wallpaperCard.setVisibility(slideshowSwitch.isChecked() ? View.GONE : View.VISIBLE);
         showEditedMode();
     }
 
