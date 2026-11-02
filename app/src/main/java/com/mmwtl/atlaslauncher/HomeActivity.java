@@ -157,11 +157,19 @@ public final class HomeActivity extends Activity {
             R.drawable.wallpaper_car_sedan, R.drawable.wallpaper_red_carbon,
             R.drawable.wallpaper_blue_trails, R.drawable.wallpaper_teal_glass,
             R.drawable.wallpaper_mountain_road, R.drawable.wallpaper_night_city,
-            R.drawable.wallpaper_dark_marble, R.drawable.wallpaper_mountain_sunset
+            R.drawable.wallpaper_dark_marble, R.drawable.wallpaper_mountain_sunset,
+            R.drawable.wallpaper_day_alpine_lake, R.drawable.wallpaper_day_coast,
+            R.drawable.wallpaper_day_hills, R.drawable.wallpaper_day_dunes,
+            R.drawable.wallpaper_day_forest_lake, R.drawable.wallpaper_day_lavender,
+            R.drawable.wallpaper_day_sports_car, R.drawable.wallpaper_day_mountain_road,
+            R.drawable.wallpaper_day_beach, R.drawable.wallpaper_day_glass
     };
     static final String[] PRESET_NAMES = {"Внедорожник", "Огни дороги", "Графит", "Звёздная ночь",
             "Седан", "Красный карбон", "Синий поток", "Бирюза", "Горная дорога",
-            "Ночной город", "Тёмный мрамор", "Горный закат"};
+            "Ночной город", "Тёмный мрамор", "Горный закат",
+            "Альпийское озеро", "Морское побережье", "Зелёные холмы", "Светлые дюны",
+            "Лесное озеро", "Лаванда", "Спорткар у моря", "Дорога в горах",
+            "Морской берег", "Светлое стекло"};
     static final String CLIMATE_PANEL_HIDDEN = "climate_panel_hidden";
     static final String CLUSTER_BRIGHTNESS = "cluster_brightness_follows_screen";
     static final String GESTURES_ENABLED = "gestures_enabled";
