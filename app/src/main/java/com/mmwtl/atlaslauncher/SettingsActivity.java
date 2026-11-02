@@ -11,6 +11,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.UriPermission;
 import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -42,10 +43,12 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONException;
 
+import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -1141,35 +1144,59 @@ public final class SettingsActivity extends ScaledActivity {
         onChanged.run();
     }
 
+    /** Every package with an Activity we may start, not only those in the catalog: OEM screens often have no launcher icon. */
     private void chooseActivityPackage(Consumer<ComponentName> chosen) {
-        List<String> packages = new ArrayList<>();
-        List<String> titles = new ArrayList<>();
-        for (HomeActivity.AppEntry app : apps()) {
-            String name = app.component.getPackageName();
-            if (packages.contains(name)) continue;
-            packages.add(name);
-            titles.add(app.label + "\n" + name);
-        }
-        show(new AlertDialog.Builder(this).setTitle("Выберите приложение")
-                .setItems(titles.toArray(new String[0]), (dialog, which) -> choosePackageActivity(packages.get(which), chosen)));
+        PackageManager pm = getPackageManager();
+        imageLoader.execute(() -> {
+            List<String[]> found = new ArrayList<>();
+            for (ApplicationInfo app : pm.getInstalledApplications(0)) {
+                List<ActivityInfo> activities = launchableActivities(app.packageName);
+                if (activities != null && !activities.isEmpty()) {
+                    String label = app.loadLabel(pm).toString().trim();
+                    found.add(new String[] {label.isEmpty() ? app.packageName : label, app.packageName});
+                }
+            }
+            Collator collator = Collator.getInstance(Locale.getDefault());
+            Collections.sort(found, (a, b) -> collator.compare(a[0], b[0]));
+            runOnUiThread(() -> {
+                if (isDestroyed()) return;
+                String[] titles = new String[found.size()];
+                for (int i = 0; i < titles.length; i++) titles[i] = found.get(i)[0] + "\n" + found.get(i)[1];
+                show(new AlertDialog.Builder(this).setTitle("Выберите приложение")
+                        .setItems(titles, (dialog, which) -> choosePackageActivity(found.get(which)[1], chosen)));
+            });
+        });
     }
 
+    /** Exported, enabled Activities that need no permission we lack; null if the package is gone. */
     @SuppressWarnings("deprecation")
-    private void choosePackageActivity(String packageName, Consumer<ComponentName> chosen) {
-        List<ComponentName> components = new ArrayList<>();
-        List<String> titles = new ArrayList<>();
+    private List<ActivityInfo> launchableActivities(String packageName) {
+        List<ActivityInfo> launchable = new ArrayList<>();
         try {
             ActivityInfo[] activities = getPackageManager().getPackageInfo(packageName, PackageManager.GET_ACTIVITIES).activities;
             if (activities != null) for (ActivityInfo activity : activities) {
                 if (!activity.exported || !activity.enabled || !activity.applicationInfo.enabled) continue;
                 if (activity.permission != null && checkSelfPermission(activity.permission) != PackageManager.PERMISSION_GRANTED) continue;
-                ComponentName component = new ComponentName(packageName, activity.name);
-                components.add(component);
-                titles.add(activity.loadLabel(getPackageManager()) + "\n" + activity.name);
+                launchable.add(activity);
             }
         } catch (PackageManager.NameNotFoundException e) {
+            return null;
+        }
+        return launchable;
+    }
+
+    private void choosePackageActivity(String packageName, Consumer<ComponentName> chosen) {
+        List<ComponentName> components = new ArrayList<>();
+        List<String> titles = new ArrayList<>();
+        List<ActivityInfo> activities = launchableActivities(packageName);
+        if (activities == null) {
             Toast.makeText(this, "Приложение больше не установлено", Toast.LENGTH_SHORT).show();
             return;
+        }
+        for (ActivityInfo activity : activities) {
+            ComponentName component = new ComponentName(packageName, activity.name);
+            components.add(component);
+            titles.add(activity.loadLabel(getPackageManager()) + "\n" + activity.name);
         }
         if (components.isEmpty()) {
             Toast.makeText(this, "Нет доступных для внешнего запуска Activity", Toast.LENGTH_LONG).show();
