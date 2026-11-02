@@ -144,7 +144,8 @@ public final class GestureFilterService extends Service {
 
                 @Override
                 public void onEnd() {
-                    main.post(scale::finish);
+                    // Through the queue the values go through, so no value shown late brings the scale back.
+                    actions.post(() -> main.post(scale::finish));
                 }
             });
     // GInputBridge subscriptions live in its memory only, so they are repeated.

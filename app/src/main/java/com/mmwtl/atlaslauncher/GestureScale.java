@@ -84,7 +84,6 @@ final class GestureScale {
             float fraction, String[] marks) {
         if (view == null) {
             view = new ScaleView(context);
-            view.begin(kind, sideways, cross, fraction);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -100,13 +99,15 @@ final class GestureScale {
             hidden = true;
             windows.addView(view, params);
         }
-        view.update(icon, title, value, fraction, marks);
         // Only once: fingers report far more often than this takes, and restarting it would keep it near zero.
         if (hidden) {
             hidden = false;
+            // A new gesture, even while the last one's scale is still fading: its own kind and direction.
+            view.begin(kind, sideways, cross, fraction);
             view.animate().cancel();
             view.animate().alpha(1).setDuration(FADE_IN_MS).start();
         }
+        view.update(icon, title, value, fraction, marks);
         main.removeCallbacks(hide);
         main.postDelayed(hide, SAFETY_HIDE_MS);
     }
@@ -171,6 +172,9 @@ final class GestureScale {
                     : kind == MultiFingerGestures.Kind.FAN ? TEAL : BLUE;
             highColor = temperature ? HOT : kind == MultiFingerGestures.Kind.BRIGHTNESS ? AMBER_LIGHT
                     : kind == MultiFingerGestures.Kind.FAN ? TEAL_LIGHT : BLUE_LIGHT;
+            // Built from the colors and direction on the next frame.
+            fillShader = null;
+            railShader = null;
         }
 
         void update(int icon, String title, String value, float fraction, String[] marks) {

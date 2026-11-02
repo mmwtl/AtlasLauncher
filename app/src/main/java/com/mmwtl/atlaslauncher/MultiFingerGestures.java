@@ -164,10 +164,11 @@ final class MultiFingerGestures {
             downTime = time;
             moved = false;
         }
+        if (action == ACTION_POINTER_UP) {
+            // At the first finger up, not the last: by the last one the app has had its own touch end and clicked.
+            tap(time);
+        }
         if (action == ACTION_UP || action == ACTION_CANCEL) {
-            if (action == ACTION_UP) {
-                tap(time);
-            }
             setPointers(0, null, null, null, -1, time);
             if (claimed) {
                 listener.onEnd();

@@ -537,6 +537,18 @@ public class MultiFingerGesturesTest {
     }
 
     @Test
+    public void tapIsClaimedAtTheFirstFingerUp() {
+        bind(GestureMap.Gesture.THREE_TAP, GestureMap.PLAY_PAUSE);
+        fingersDown(500, 900, 900, 900, 700, 1300);
+        // The app must get a cancel here, before its touch ends with the last finger and clicks.
+        assertEquals(Decision.CLAIMED, send(POINTER_UP, 2, 500, 900, 900, 900, 700, 1300));
+        assertEquals(List.of("PLAY_PAUSE"), events);
+        send(POINTER_UP, 1, 500, 900, 900, 900);
+        send(UP, 0, 500, 900);
+        assertEquals(List.of("PLAY_PAUSE"), events);
+    }
+
+    @Test
     public void tapWorksAgainInTheNextTouch() {
         bind(GestureMap.Gesture.THREE_TAP, GestureMap.PLAY_PAUSE);
         tapWith(500, 900, 900, 900, 700, 1300);
