@@ -2,6 +2,8 @@ package com.mmwtl.atlaslauncher;
 
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
@@ -29,10 +31,7 @@ import java.util.Locale;
  * main thread.
  */
 final class GestureHud {
-    private static final int SURFACE = Color.rgb(35, 37, 40);
-    private static final int RAISED = Color.rgb(64, 67, 71);
-    private static final int TEXT = Color.rgb(241, 242, 244);
-    private static final int MUTED = Color.rgb(196, 199, 202);
+    // Surface, outline, bar and text follow the day or night mode, as the dock and built-in widgets do.
     private static final int ACCENT = Color.rgb(46, 150, 246);
     private static final int COLD = Color.rgb(46, 150, 246);
     private static final int HOT = Color.rgb(240, 110, 60);
@@ -58,6 +57,8 @@ final class GestureHud {
     private float fillFraction;
     private ValueAnimator fillAnimator;
     private WindowManager.LayoutParams params;
+    // The mode the card was built in.
+    private boolean night;
 
     GestureHud(Context context) {
         this.context = context;
@@ -86,9 +87,7 @@ final class GestureHud {
         if (!Settings.canDrawOverlays(context)) {
             return;
         }
-        if (card == null) {
-            create();
-        }
+        prepare();
         icon.setImageResource(iconRes);
         title.setText(titleText);
         value.setText(state);
@@ -101,9 +100,7 @@ final class GestureHud {
         if (!Settings.canDrawOverlays(context)) {
             return;
         }
-        if (card == null) {
-            create();
-        }
+        prepare();
         bar.setVisibility(View.VISIBLE);
         boolean temperature = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT
                 || kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT;
@@ -118,6 +115,18 @@ final class GestureHud {
         animateFill(fraction);
         reveal(kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT ? Gravity.START
                 : kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT ? Gravity.END : Gravity.CENTER_HORIZONTAL);
+    }
+
+    /** Builds the card, again after the day or night mode has changed. */
+    private void prepare() {
+        boolean nightNow = (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+        if (card != null && nightNow == night) {
+            return;
+        }
+        dismiss();
+        night = nightNow;
+        create();
     }
 
     private void reveal(int gravity) {
@@ -146,11 +155,14 @@ final class GestureHud {
     }
 
     private void create() {
+        int surface = context.getColor(R.color.neutral_surface);
+        int raised = night ? context.getColor(R.color.neutral_raised) : context.getColor(R.color.tile_off);
+        int text = context.getColor(R.color.neutral_text);
         card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(36), dp(30), dp(36), dp(36));
-        GradientDrawable background = rounded(SURFACE, dp(36));
-        background.setStroke(dp(1), RAISED);
+        GradientDrawable background = rounded(surface, dp(36));
+        background.setStroke(dp(1), raised);
         card.setBackground(background);
         card.setElevation(dp(12));
         card.setAlpha(0);
@@ -158,9 +170,11 @@ final class GestureHud {
         LinearLayout header = new LinearLayout(context);
         header.setGravity(Gravity.CENTER_VERTICAL);
         icon = new ImageView(context);
+        // The icons are drawn light for the night mode.
+        icon.setImageTintList(ColorStateList.valueOf(text));
         header.addView(icon, new LinearLayout.LayoutParams(dp(38), dp(38)));
         title = new TextView(context);
-        title.setTextColor(MUTED);
+        title.setTextColor(context.getColor(R.color.neutral_muted));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
         title.setTypeface(null, Typeface.BOLD);
         title.setPadding(dp(14), 0, 0, 0);
@@ -168,7 +182,7 @@ final class GestureHud {
         card.addView(header);
 
         value = new TextView(context);
-        value.setTextColor(TEXT);
+        value.setTextColor(text);
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 104);
         value.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         value.setIncludeFontPadding(false);
@@ -179,7 +193,7 @@ final class GestureHud {
         card.addView(value, valueParams);
 
         bar = new FrameLayout(context);
-        bar.setBackground(rounded(RAISED, dp(BAR_HEIGHT / 2)));
+        bar.setBackground(rounded(raised, dp(BAR_HEIGHT / 2)));
         // The fill reveals a fixed cold-to-warm gradient up to the current value.
         GradientDrawable gradient = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[] {COLD, HOT});
         gradient.setCornerRadius(dp(BAR_HEIGHT / 2));
