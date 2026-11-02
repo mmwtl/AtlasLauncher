@@ -498,6 +498,9 @@ public final class SettingsActivity extends ScaledActivity {
             }
             return "Приложение недоступно";
         }
+        if (action.startsWith(GestureMap.ACTIVITY_PREFIX)) {
+            return activityLabel(action.substring(GestureMap.ACTIVITY_PREFIX.length()));
+        }
         for (String[] section : GESTURE_ACTIONS) {
             for (int i = 1; i < section.length; i += 2) {
                 if (section[i].equals(action)) return section[i + 1];
@@ -535,6 +538,17 @@ public final class SettingsActivity extends ScaledActivity {
         list.addView(actionOption(app ? "Открыть: " + actionLabel(current) : "Открыть приложение…", app, v -> {
             dialog[0].dismiss();
             chooseGestureApp(gesture);
+        }), margin(6, -2));
+        boolean activity = current.startsWith(GestureMap.ACTIVITY_PREFIX);
+        Consumer<ComponentName> setActivity = component ->
+                setGestureAction(gesture, GestureMap.ACTIVITY_PREFIX + component.flattenToString());
+        list.addView(actionOption(activity ? "Activity: " + actionLabel(current) : "Activity приложения…", activity, v -> {
+            dialog[0].dismiss();
+            chooseActivityPackage(setActivity);
+        }), margin(6, -2));
+        list.addView(actionOption("Указать Activity вручную…", false, v -> {
+            dialog[0].dismiss();
+            enterActivity(activity ? current.substring(GestureMap.ACTIVITY_PREFIX.length()) : "", setActivity);
         }), margin(6, -2));
         dialog[0] = new AlertDialog.Builder(this).setTitle("Действие жеста").setView(scroller)
                 .setNegativeButton("Отмена", null).show();
@@ -1081,6 +1095,11 @@ public final class SettingsActivity extends ScaledActivity {
     private String drawerActionLabel(String target) {
         if (target.isEmpty()) return "встроенный каталог";
         if (target.equals(GIB_LAUNCHER)) return "GLauncher (GIB)";
+        return activityLabel(target);
+    }
+
+    /** "App · Activity" of a flattened component, or the component itself when it is not installed. */
+    private String activityLabel(String target) {
         ComponentName component = ComponentName.unflattenFromString(target);
         if (component == null) return target;
         PackageManager pm = getPackageManager();
@@ -1105,14 +1124,20 @@ public final class SettingsActivity extends ScaledActivity {
                         prefs.edit().putString(HomeActivity.DRAWER_ACTIVITY, GIB_LAUNCHER).apply();
                         onChanged.run();
                     } else if (which == 2) {
-                        chooseActivityPackage(onChanged);
+                        chooseActivityPackage(component -> saveDrawerActivity(component, onChanged));
                     } else {
-                        enterDrawerActivity(onChanged);
+                        enterActivity(prefs.getString(HomeActivity.DRAWER_ACTIVITY, ""),
+                                component -> saveDrawerActivity(component, onChanged));
                     }
                 }));
     }
 
-    private void chooseActivityPackage(Runnable onChanged) {
+    private void saveDrawerActivity(ComponentName component, Runnable onChanged) {
+        prefs.edit().putString(HomeActivity.DRAWER_ACTIVITY, component.flattenToString()).apply();
+        onChanged.run();
+    }
+
+    private void chooseActivityPackage(Consumer<ComponentName> chosen) {
         List<String> packages = new ArrayList<>();
         List<String> titles = new ArrayList<>();
         for (HomeActivity.AppEntry app : apps()) {
@@ -1122,11 +1147,11 @@ public final class SettingsActivity extends ScaledActivity {
             titles.add(app.label + "\n" + name);
         }
         show(new AlertDialog.Builder(this).setTitle("Выберите приложение")
-                .setItems(titles.toArray(new String[0]), (dialog, which) -> choosePackageActivity(packages.get(which), onChanged)));
+                .setItems(titles.toArray(new String[0]), (dialog, which) -> choosePackageActivity(packages.get(which), chosen)));
     }
 
     @SuppressWarnings("deprecation")
-    private void choosePackageActivity(String packageName, Runnable onChanged) {
+    private void choosePackageActivity(String packageName, Consumer<ComponentName> chosen) {
         List<ComponentName> components = new ArrayList<>();
         List<String> titles = new ArrayList<>();
         try {
@@ -1147,17 +1172,14 @@ public final class SettingsActivity extends ScaledActivity {
             return;
         }
         show(new AlertDialog.Builder(this).setTitle("Activity для запуска")
-                .setItems(titles.toArray(new String[0]), (dialog, which) -> {
-                    prefs.edit().putString(HomeActivity.DRAWER_ACTIVITY, components.get(which).flattenToString()).apply();
-                    onChanged.run();
-                }));
+                .setItems(titles.toArray(new String[0]), (dialog, which) -> chosen.accept(components.get(which))));
     }
 
-    private void enterDrawerActivity(Runnable onChanged) {
+    private void enterActivity(String current, Consumer<ComponentName> chosen) {
         EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setHint("package.name/.ActivityName");
-        input.setText(prefs.getString(HomeActivity.DRAWER_ACTIVITY, ""));
+        input.setText(current);
         input.setPadding(dp(24), dp(16), dp(24), dp(16));
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Activity для запуска")
                 .setMessage("Укажите пакет и класс Activity через /. Приложение должно разрешать её внешний запуск.")
@@ -1168,8 +1190,7 @@ public final class SettingsActivity extends ScaledActivity {
                 input.setError("Формат: package.name/.ActivityName");
                 return;
             }
-            prefs.edit().putString(HomeActivity.DRAWER_ACTIVITY, component.flattenToString()).apply();
-            onChanged.run();
+            chosen.accept(component);
             dialog.dismiss();
         }));
         dialog.show();

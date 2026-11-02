@@ -74,8 +74,10 @@ public class GestureMapTest {
         GestureMap map = new GestureMap();
         map.set(Gesture.TWO_SWIPE_LEFT, GestureMap.APP_PREFIX + "com.example/.Main");
         map.set(Gesture.FOUR_PINCH, GestureMap.NONE);
+        map.set(Gesture.THREE_TAP, GestureMap.ACTIVITY_PREFIX + "com.example/.Settings");
         GestureMap read = GestureMap.parse(map.toString());
         assertEquals("app:com.example/.Main", read.action(Gesture.TWO_SWIPE_LEFT));
+        assertEquals("activity:com.example/.Settings", read.action(Gesture.THREE_TAP));
         assertFalse(read.bound(Gesture.FOUR_PINCH));
         assertEquals("VOLUME", read.action(Gesture.TWO_CENTER_UP));
     }

@@ -57,6 +57,8 @@ final class GestureMap {
     static final String BLUETOOTH = "BLUETOOTH";
     /** Followed by the flattened component of the activity to open. */
     static final String APP_PREFIX = "app:";
+    /** Followed by the flattened component of any exported activity, opened without the launcher category. */
+    static final String ACTIVITY_PREFIX = "activity:";
 
     private final Map<Gesture, String> actions = new EnumMap<>(Gesture.class);
 

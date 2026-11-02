@@ -58,7 +58,11 @@ final class GestureActions {
     /** Returns false for an action that is not one of these. */
     boolean run(String action) {
         if (action.startsWith(GestureMap.APP_PREFIX)) {
-            openApp(action.substring(GestureMap.APP_PREFIX.length()));
+            open(action.substring(GestureMap.APP_PREFIX.length()), true);
+            return true;
+        }
+        if (action.startsWith(GestureMap.ACTIVITY_PREFIX)) {
+            open(action.substring(GestureMap.ACTIVITY_PREFIX.length()), false);
             return true;
         }
         switch (action) {
@@ -125,10 +129,12 @@ final class GestureActions {
         }
     }
 
-    private void openApp(String flattened) {
+    /** An app from the catalog, or with {@code launcher} false any activity, as the "All apps" button opens one. */
+    private void open(String flattened, boolean launcher) {
         ComponentName component = ComponentName.unflattenFromString(flattened);
-        Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(component)
+        Intent intent = new Intent(Intent.ACTION_MAIN).setComponent(component)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        if (launcher) intent.addCategory(Intent.CATEGORY_LAUNCHER);
         main.post(() -> {
             try {
                 // As for the catalog: focus may be on the display the climate panel moved Launcher3 to.
@@ -136,7 +142,7 @@ final class GestureActions {
                         ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle());
             } catch (ActivityNotFoundException | SecurityException | NullPointerException error) {
                 Log.w(TAG, "Cannot open " + flattened, error);
-                Toast.makeText(context, "Приложение недоступно", Toast.LENGTH_SHORT).show();
+                Toast.makeText(context, launcher ? "Приложение недоступно" : "Activity недоступна", Toast.LENGTH_SHORT).show();
             }
         });
     }
