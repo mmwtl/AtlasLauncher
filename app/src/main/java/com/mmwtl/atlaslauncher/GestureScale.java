@@ -19,20 +19,20 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 
+import java.util.Locale;
+
 /**
  * Translucent scale over the whole screen for an adjustment in scale mode. The screen itself is the
  * scale: its positions are the ones the fingers set the value with, so the tinted part ends right
- * under them. A rail with the marks and the current value stands on the side away from the fingers.
- * Goes away with the last finger. Needs the "display over other apps" permission; touches go through
- * it. Must be used on the main thread.
+ * under them. A strip of marks along the edge away from the fingers grows near the fingers, and the
+ * value in large type rides along the level beside it. Goes away with the last finger. Needs the
+ * "display over other apps" permission; touches go through it. Must be used on the main thread.
  */
 final class GestureScale {
-    private static final int SCRIM = Color.argb(90, 8, 10, 14);
-    private static final int CARD = Color.argb(225, 28, 30, 34);
+    private static final int SCRIM = Color.argb(68, 8, 10, 14);
     private static final int MUTED = Color.rgb(200, 204, 208);
     // Day: a light veil with dark marks and text, and deeper fill colors that still read on it.
-    private static final int DAY_SCRIM = Color.argb(110, 245, 246, 248);
-    private static final int DAY_CARD = Color.argb(235, 237, 238, 240);
+    private static final int DAY_SCRIM = Color.argb(82, 245, 246, 248);
     private static final int DAY_INK = Color.rgb(32, 33, 36);
     private static final int DAY_MUTED = Color.rgb(95, 99, 104);
     private static final int BLUE_DEEP = Color.rgb(20, 105, 205);
@@ -46,8 +46,15 @@ final class GestureScale {
     private static final int AMBER_LIGHT = Color.rgb(255, 232, 160);
     private static final int TEAL = Color.rgb(40, 180, 170);
     private static final int TEAL_LIGHT = Color.rgb(140, 235, 215);
-    private static final int FILL_ALPHA = 85;
-    private static final int RAIL_INSET_DP = 130;
+    // Sizes below are in UNITS of the screen width, so the scale keeps its proportions on any screen.
+    private static final int UNITS = 360;
+    // Marks: they start this far from the screen edge and grow by up to MARK_GROWTH near the level.
+    private static final float MARK_INSET = 12;
+    private static final float MARK_GROWTH = 46;
+    // How far from the level the marks still grow, roughly.
+    private static final float MARK_SPREAD = 30;
+    // The value stands this far from the screen edge, clear of the grown marks.
+    private static final float VALUE_INSET = 78;
     private static final long FADE_IN_MS = 120;
     private static final long FADE_OUT_MS = 220;
     // How fast the drawn value catches up with the fingers: it closes 63% of the gap in this time.
@@ -85,7 +92,7 @@ final class GestureScale {
      * Shows a value on the scale.
      *
      * @param sideways the scale runs from left to right rather than from bottom to top
-     * @param cross    where the fingers are on the other axis, which picks the side of the rail
+     * @param cross    where the fingers are on the other axis, which picks the side of the marks
      * @param fraction the value's place on the scale, 0 to 1
      * @param marks    one entry per mark from minimum to maximum; null for a mark without a label
      */
@@ -148,19 +155,19 @@ final class GestureScale {
     private final class ScaleView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Typeface light = Typeface.create("sans-serif-light", Typeface.NORMAL);
         private final RectF rect = new RectF();
         private final int[] location = new int[2];
         private boolean sideways;
-        private boolean railAtEnd;
+        // The marks run along the right edge, or the bottom one when sideways, rather than the opposite one.
+        private boolean marksAtEnd;
+        private boolean night;
         private int lowColor;
         private int highColor;
         // White marks and text at night, dark ones in the day.
         private int ink;
         private int scrim;
-        private int cardColor;
         private int muted;
-        private Shader fillShader;
-        private Shader railShader;
         private Drawable iconDrawable;
         private int iconRes;
         private String title = "";
@@ -177,7 +184,7 @@ final class GestureScale {
         void begin(MultiFingerGestures.Kind kind, boolean sideways, float cross, float fraction) {
             this.sideways = sideways;
             // The side away from the fingers; they stay where they started on this axis more or less.
-            railAtEnd = cross < (sideways ? (top + bottom) / 2f : screenWidth / 2f);
+            marksAtEnd = cross < (sideways ? (top + bottom) / 2f : screenWidth / 2f);
             shown = fraction;
             target = fraction;
             boolean temperature = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT
@@ -186,7 +193,7 @@ final class GestureScale {
                     : kind == MultiFingerGestures.Kind.FAN ? TEAL : BLUE;
             highColor = temperature ? HOT : kind == MultiFingerGestures.Kind.BRIGHTNESS ? AMBER_LIGHT
                     : kind == MultiFingerGestures.Kind.FAN ? TEAL_LIGHT : BLUE_LIGHT;
-            boolean night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+            night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                     == Configuration.UI_MODE_NIGHT_YES;
             if (!night && !temperature) {
                 // The light ends would fade into the veil: a deeper low end, the old low end on top.
@@ -196,22 +203,15 @@ final class GestureScale {
             }
             ink = night ? Color.WHITE : DAY_INK;
             scrim = night ? SCRIM : DAY_SCRIM;
-            cardColor = night ? CARD : DAY_CARD;
             muted = night ? MUTED : DAY_MUTED;
-            if (iconDrawable != null) iconDrawable.setTint(ink);
-            // Built from the colors and direction on the next frame.
-            fillShader = null;
-            railShader = null;
         }
 
         void update(int icon, String title, String value, float fraction, String[] marks) {
             if (icon != iconRes) {
                 iconRes = icon;
                 iconDrawable = context.getDrawable(icon).mutate();
-                // The icons are drawn light for the night mode.
-                iconDrawable.setTint(ink);
             }
-            this.title = title;
+            this.title = title.toUpperCase(Locale.ROOT);
             this.value = value;
             this.marks = marks;
             target = fraction;
@@ -242,179 +242,190 @@ final class GestureScale {
             return start + fraction * (end - start);
         }
 
-        private Shader gradient(int alpha) {
-            int low = Color.argb(alpha, Color.red(lowColor), Color.green(lowColor), Color.blue(lowColor));
-            int high = Color.argb(alpha, Color.red(highColor), Color.green(highColor), Color.blue(highColor));
-            return sideways ? new LinearGradient(position(0), 0, position(1), 0, low, high, Shader.TileMode.CLAMP)
-                    : new LinearGradient(0, position(0), 0, position(1), low, high, Shader.TileMode.CLAMP);
-        }
-
         @Override
         protected void onDraw(Canvas canvas) {
             getLocationOnScreen(location);
             canvas.translate(-location[0], -location[1]);
             advance();
             canvas.drawColor(scrim);
-            if (fillShader == null) {
-                fillShader = gradient(FILL_ALPHA);
-                railShader = gradient(255);
-            }
             float level = position(shown);
-            drawFill(canvas, level);
-            float rail = sideways ? (railAtEnd ? bottom - dp(RAIL_INSET_DP) * 2 : top + dp(RAIL_INSET_DP) * 2)
-                    : railAtEnd ? screenWidth - dp(RAIL_INSET_DP) : dp(RAIL_INSET_DP);
-            drawRail(canvas, rail, level);
-            drawCard(canvas, rail, level);
+            // The color of the value where the fingers are.
+            int color = mix(lowColor, highColor, shown);
+            int accent = night ? mix(color, Color.WHITE, 0.5f) : mix(color, Color.BLACK, 0.2f);
+            drawFill(canvas, level, color);
+            drawMarks(canvas, level, accent);
+            drawValue(canvas, level, color);
         }
 
-        private void drawFill(Canvas canvas, float level) {
+        /** Brightest at the level and fading toward the minimum, with a glow on the other side of the edge. */
+        private void drawFill(Canvas canvas, float level, int color) {
+            // Toward the minimum: down the screen, or left when sideways.
+            float minimum = sideways ? 0 : bottom;
+            float glow = sideways ? level + u(40) : level - u(40);
             paint.setStyle(Paint.Style.FILL);
-            paint.setShader(fillShader);
-            if (sideways) {
-                rect.set(0, top, level, bottom);
-            } else {
-                rect.set(0, level, screenWidth, bottom);
-            }
+            // A shader is drawn at the alpha of the paint's color, which the marks leave low.
+            paint.setColor(Color.BLACK);
+            paint.setShader(sideways
+                    ? new LinearGradient(level, 0, minimum, 0, new int[] {alpha(color, night ? 128 : 107),
+                            alpha(color, 51), alpha(lowColor, 10)}, new float[] {0, 0.35f, 1}, Shader.TileMode.CLAMP)
+                    : new LinearGradient(0, level, 0, minimum, new int[] {alpha(color, night ? 128 : 107),
+                            alpha(color, 51), alpha(lowColor, 10)}, new float[] {0, 0.35f, 1}, Shader.TileMode.CLAMP));
+            alongRect(level, minimum);
+            canvas.drawRect(rect, paint);
+            int glowColor = alpha(color, night ? 97 : 77);
+            paint.setShader(sideways
+                    ? new LinearGradient(glow, 0, level, 0, alpha(color, 0), glowColor, Shader.TileMode.CLAMP)
+                    : new LinearGradient(0, glow, 0, level, alpha(color, 0), glowColor, Shader.TileMode.CLAMP));
+            alongRect(glow, level);
             canvas.drawRect(rect, paint);
             paint.setShader(null);
             // The edge of the fill, where the fingers are.
-            paint.setColor(alpha(ink, 210));
-            float half = dp(2);
-            if (sideways) {
-                rect.set(level - half, top, level + half, bottom);
-            } else {
-                rect.set(0, level - half, screenWidth, level + half);
-            }
+            paint.setColor(alpha(night ? mix(color, Color.WHITE, 0.6f) : mix(color, Color.BLACK, 0.15f), 242));
+            float half = u(1.6f) / 2;
+            alongRect(level - half, level + half);
             canvas.drawRect(rect, paint);
         }
 
-        private void drawRail(Canvas canvas, float rail, float level) {
-            float half = dp(5);
-            float start = position(0);
-            float end = position(1);
-            paint.setColor(alpha(ink, 70));
-            railRect(rail - half, rail + half, start, end);
-            canvas.drawRoundRect(rect, half, half, paint);
-            paint.setShader(railShader);
-            railRect(rail - half, rail + half, start, level);
-            canvas.drawRoundRect(rect, half, half, paint);
-            paint.setShader(null);
-
-            // Labels and long marks point to the middle of the screen, away from the screen edge.
-            int inward = railAtEnd ? -1 : 1;
-            textPaint.setTypeface(Typeface.DEFAULT_BOLD);
-            textPaint.setTextSize(sp(22));
-            for (int i = 0; i < marks.length; i++) {
-                float at = marks.length == 1 ? start : position(i / (marks.length - 1f));
-                boolean labelled = marks[i] != null;
-                paint.setColor(alpha(ink, labelled ? 235 : 130));
-                float reach = dp(labelled ? 26 : 14);
-                float from = rail + inward * dp(10);
-                railRect(Math.min(from, from + inward * reach), Math.max(from, from + inward * reach),
-                        at - dp(labelled ? 2 : 1), at + dp(labelled ? 2 : 1));
-                canvas.drawRect(rect, paint);
-                if (labelled) {
-                    drawMarkLabel(canvas, marks[i], from + inward * (reach + dp(10)), at, inward);
-                }
+        /** A band across the whole gesture area between two positions along the scale. */
+        private void alongRect(float a, float b) {
+            if (sideways) {
+                rect.set(Math.min(a, b), top, Math.max(a, b), bottom);
+            } else {
+                rect.set(0, Math.min(a, b), screenWidth, Math.max(a, b));
             }
-
-            paint.setColor(ink);
-            float radius = dp(20);
-            canvas.drawCircle(sideways ? level : rail, sideways ? rail : level, radius, paint);
-            paint.setShader(railShader);
-            canvas.drawCircle(sideways ? level : rail, sideways ? rail : level, radius - dp(6), paint);
-            paint.setShader(null);
         }
 
-        /** A rectangle given across and along the rail, whichever way the rail runs. */
-        private void railRect(float acrossLow, float acrossHigh, float alongA, float alongB) {
-            float alongLow = Math.min(alongA, alongB);
-            float alongHigh = Math.max(alongA, alongB);
+        /** A mark for every step along the edge: the ones near the level grow and take the scale's color. */
+        private void drawMarks(Canvas canvas, float level, int accent) {
+            // The screen edge the marks stand on, and which way is inward from it.
+            float edge = sideways ? (marksAtEnd ? bottom : top) : marksAtEnd ? screenWidth : 0;
+            int inward = marksAtEnd ? -1 : 1;
+            float from = edge + inward * u(MARK_INSET);
+            textPaint.setTypeface(Typeface.DEFAULT);
+            textPaint.setLetterSpacing(0);
+            for (int i = 0; i < marks.length; i++) {
+                float at = marks.length == 1 ? position(0) : position(i / (marks.length - 1f));
+                boolean labelled = marks[i] != null;
+                float distance = Math.abs(at - level) / u(MARK_SPREAD);
+                float near = (float) Math.exp(-distance * distance);
+                float reach = u(labelled ? 12 : 6) + u(MARK_GROWTH) * near;
+                paint.setColor(near > 0.5f ? alpha(accent, Math.round(255 * (0.4f + 0.6f * near)))
+                        : alpha(ink, Math.round(255 * (0.22f + 0.5f * near))));
+                float half = u(labelled ? 1.6f : 1) / 2;
+                markRect(from, from + inward * reach, at - half, at + half);
+                canvas.drawRect(rect, paint);
+                // The large value names the level; only the marks away from it are labelled.
+                if (labelled && Math.abs(at - level) > u(MARK_GROWTH)) {
+                    float far = Math.abs(at - level) / u(80);
+                    textPaint.setTextSize(u(10) + u(4) * (float) Math.exp(-far * far));
+                    textPaint.setColor(muted);
+                    drawMarkLabel(canvas, marks[i], from + inward * (reach + u(5)), at, inward);
+                }
+            }
+        }
+
+        /** A rectangle given across and along the scale, whichever way the scale runs. */
+        private void markRect(float acrossA, float acrossB, float alongA, float alongB) {
+            float acrossLow = Math.min(acrossA, acrossB);
+            float acrossHigh = Math.max(acrossA, acrossB);
             if (sideways) {
-                rect.set(alongLow, acrossLow, alongHigh, acrossHigh);
+                rect.set(alongA, acrossLow, alongB, acrossHigh);
             } else {
-                rect.set(acrossLow, alongLow, acrossHigh, alongHigh);
+                rect.set(acrossLow, alongA, acrossHigh, alongB);
             }
         }
 
         private void drawMarkLabel(Canvas canvas, String label, float across, float along, int inward) {
-            textPaint.setColor(alpha(ink, 235));
-            float baselineShift = (textPaint.ascent() + textPaint.descent()) / 2;
             if (sideways) {
                 textPaint.setTextAlign(Paint.Align.CENTER);
                 canvas.drawText(label, along, inward > 0 ? across - textPaint.ascent() : across - textPaint.descent(),
                         textPaint);
             } else {
                 textPaint.setTextAlign(inward > 0 ? Paint.Align.LEFT : Paint.Align.RIGHT);
-                canvas.drawText(label, across, along - baselineShift, textPaint);
+                canvas.drawText(label, across, along - (textPaint.ascent() + textPaint.descent()) / 2, textPaint);
             }
         }
 
-        /** The value and what it is, beside the rail and level with the fingers. */
-        private void drawCard(Canvas canvas, float rail, float level) {
-            float padding = dp(28);
-            float iconSize = dp(34);
-            textPaint.setTextAlign(Paint.Align.LEFT);
-            textPaint.setTypeface(Typeface.DEFAULT_BOLD);
-            textPaint.setTextSize(sp(26));
-            float titleWidth = iconSize + dp(12) + textPaint.measureText(title);
-            float titleHeight = Math.max(iconSize, textPaint.descent() - textPaint.ascent());
-            float titleAscent = textPaint.ascent();
-            float titleDescent = textPaint.descent();
+        /** The value in large type beside the marks, with the icon and what it is above it, next to the level. */
+        private void drawValue(Canvas canvas, float level, int color) {
+            textPaint.setTypeface(light);
+            textPaint.setLetterSpacing(0);
             textPaint.setTextSize(valueTextSize());
             float valueWidth = textPaint.measureText(value);
-            float valueAscent = textPaint.ascent();
-            float valueHeight = textPaint.descent() - valueAscent;
-            float width = Math.max(titleWidth, valueWidth) + padding * 2;
-            float height = titleHeight + dp(6) + valueHeight + padding * 1.5f;
+            // The height of a digit, about; the ascent of the font is taller than any of them.
+            float valueHeight = textPaint.getTextSize() * 0.72f;
+            textPaint.setTypeface(Typeface.DEFAULT_BOLD);
+            textPaint.setTextSize(u(11));
+            textPaint.setLetterSpacing(0.14f);
+            float iconSize = u(14);
+            float titleGap = u(5);
+            float titleWidth = iconSize + titleGap + textPaint.measureText(title);
+            float titleHeight = Math.max(iconSize, -textPaint.ascent());
+            float blockWidth = Math.max(valueWidth, titleWidth);
+            float blockHeight = titleHeight + u(7) + valueHeight;
+            float gap = u(12);
 
-            float left;
-            float cardTop;
+            // The block's edge toward the marks, along the line it is aligned to, and its baseline.
+            boolean alignEnd;
+            float x;
+            float baseline;
             if (sideways) {
-                // Above a rail in the lower half, below one in the upper half.
-                float clear = dp(92);
-                cardTop = railAtEnd ? rail - clear - height : rail + clear;
-                left = Math.max(dp(24), Math.min(screenWidth - dp(24) - width, level - width / 2));
+                baseline = marksAtEnd ? bottom - u(VALUE_INSET) : top + u(VALUE_INSET) + blockHeight;
+                // Before the level when there is room, after it otherwise.
+                alignEnd = level - gap - blockWidth > 0;
+                x = alignEnd ? level - gap : level + gap;
             } else {
-                float clear = dp(150);
-                left = railAtEnd ? rail - clear - width : rail + clear;
-                cardTop = Math.max(top + dp(24), Math.min(bottom - dp(24) - height, level - height / 2));
+                alignEnd = marksAtEnd;
+                x = marksAtEnd ? screenWidth - u(VALUE_INSET) : u(VALUE_INSET);
+                // Above the level when there is room, below it otherwise.
+                baseline = level - top > blockHeight + gap * 2 ? level - gap : level + gap + blockHeight;
             }
-            paint.setColor(cardColor);
-            rect.set(left, cardTop, left + width, cardTop + height);
-            canvas.drawRoundRect(rect, dp(28), dp(28), paint);
 
-            float rowCenter = cardTop + padding * 0.75f + titleHeight / 2;
+            textPaint.setTextAlign(alignEnd ? Paint.Align.RIGHT : Paint.Align.LEFT);
+            int titleColor = night ? mix(color, Color.WHITE, 0.55f) : mix(color, Color.BLACK, 0.35f);
+            float titleBaseline = baseline - valueHeight - u(7);
+            float titleStart = alignEnd ? x - titleWidth : x;
             if (iconDrawable != null) {
-                iconDrawable.setBounds(Math.round(left + padding), Math.round(rowCenter - iconSize / 2),
-                        Math.round(left + padding + iconSize), Math.round(rowCenter + iconSize / 2));
+                float iconTop = titleBaseline + (textPaint.ascent() - iconSize) / 2;
+                iconDrawable.setTint(titleColor);
+                iconDrawable.setBounds(Math.round(titleStart), Math.round(iconTop), Math.round(titleStart + iconSize),
+                        Math.round(iconTop + iconSize));
                 iconDrawable.draw(canvas);
             }
-            textPaint.setTextSize(sp(26));
-            textPaint.setColor(muted);
-            canvas.drawText(title, left + padding + iconSize + dp(12), rowCenter - (titleAscent + titleDescent) / 2,
-                    textPaint);
+            textPaint.setColor(titleColor);
+            textPaint.setTextAlign(Paint.Align.LEFT);
+            canvas.drawText(title, titleStart + iconSize + titleGap, titleBaseline, textPaint);
+
+            textPaint.setTypeface(light);
+            textPaint.setLetterSpacing(0);
             textPaint.setTextSize(valueTextSize());
+            textPaint.setTextAlign(alignEnd ? Paint.Align.RIGHT : Paint.Align.LEFT);
             textPaint.setColor(ink);
-            canvas.drawText(value, left + padding, cardTop + padding * 0.75f + titleHeight + dp(6) - valueAscent,
-                    textPaint);
+            if (night) {
+                // Keeps the thin digits apart from a bright wallpaper.
+                textPaint.setShadowLayer(u(9), 0, 0, Color.argb(90, 0, 0, 0));
+            }
+            canvas.drawText(value, x, baseline, textPaint);
+            textPaint.clearShadowLayer();
         }
 
         private int alpha(int color, int alpha) {
             return Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color));
         }
 
+        private int mix(int a, int b, float f) {
+            return Color.rgb(Math.round(Color.red(a) + (Color.red(b) - Color.red(a)) * f),
+                    Math.round(Color.green(a) + (Color.green(b) - Color.green(a)) * f),
+                    Math.round(Color.blue(a) + (Color.blue(b) - Color.blue(a)) * f));
+        }
+
         /** A word, such as a fan profile, is smaller than a number. */
         private float valueTextSize() {
-            return sp(!value.isEmpty() && Character.isLetter(value.charAt(0)) ? 58 : 84);
+            return u(!value.isEmpty() && Character.isLetter(value.charAt(0)) ? 56 : 84);
         }
 
-        private float dp(int value) {
-            return value * getResources().getDisplayMetrics().density;
-        }
-
-        private float sp(int value) {
-            return value * getResources().getDisplayMetrics().scaledDensity;
+        private float u(float units) {
+            return units * screenWidth / UNITS;
         }
     }
 }
