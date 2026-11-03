@@ -15,14 +15,13 @@ import android.net.Uri;
 import android.net.wifi.WifiManager;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 import android.util.Log;
 import android.view.Display;
 import android.view.KeyEvent;
 import android.widget.Toast;
 
 /**
- * One-off gesture actions that do not touch the car: opening things, media keys, radios and keys
+ * One-off gesture actions that do not touch the car: opening things, media, radios and keys
  * for the system. Runs on the gesture service's action thread. Opening an activity from the
  * background takes the "display over other apps" permission on Android 11.
  */
@@ -41,6 +40,8 @@ final class GestureActions {
     private static final Uri CLIMATE = Uri.parse("content://com.geely.hvac/hvac/query");
     private static final ComponentName RECENTS = new ComponentName("com.geely.recents",
             "com.geely.recents.RecentsCsdActivity");
+    private static final String MEDIA_WIDGET = "com.mmwtl.atlasmediawidget";
+    private static final String MEDIA_COMMAND = MEDIA_WIDGET + ".action.MEDIA_COMMAND";
 
     private final Context context;
     private final Keys keys;
@@ -85,13 +86,13 @@ final class GestureActions {
                 keys.send(KeyEvent.KEYCODE_SYSRQ);
                 return true;
             case GestureMap.PLAY_PAUSE:
-                mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
+                mediaCommand("PLAY_PAUSE");
                 return true;
             case GestureMap.NEXT_TRACK:
-                mediaKey(KeyEvent.KEYCODE_MEDIA_NEXT);
+                mediaCommand("NEXT");
                 return true;
             case GestureMap.PREVIOUS_TRACK:
-                mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+                mediaCommand("PREVIOUS");
                 return true;
             case GestureMap.MUTE:
                 audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE,
@@ -159,10 +160,13 @@ final class GestureActions {
         });
     }
 
-    private void mediaKey(int keyCode) {
-        long now = SystemClock.uptimeMillis();
-        audio.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0));
-        audio.dispatchMediaKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0));
+    /**
+     * Media keys do not reach the OneOS sources, so playback goes through the Atlas Media Widget's
+     * bridge. The widget acts only while its service is up; otherwise the command is dropped.
+     */
+    private void mediaCommand(String command) {
+        context.sendBroadcast(new Intent(MEDIA_COMMAND).setPackage(MEDIA_WIDGET)
+                .putExtra("command", command));
     }
 
     /** The provider answers 0 while the screen is open and 1 otherwise. */
