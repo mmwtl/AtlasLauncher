@@ -216,7 +216,7 @@ final class GestureHud {
         glyph.setVisibility(View.GONE);
         // The icons fill about 60% of their height: the glyph matches the capitals of a 72sp word.
         LinearLayout.LayoutParams glyphParams = new LinearLayout.LayoutParams(-2, dp(92));
-        glyphParams.rightMargin = dp(22);
+        glyphParams.rightMargin = dp(32);
         row.addView(glyph, glyphParams);
         row.addView(value);
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-2, -2);
