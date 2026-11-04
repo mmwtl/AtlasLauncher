@@ -50,6 +50,8 @@ final class GestureHud {
     private ImageView icon;
     private TextView title;
     private TextView value;
+    // Before the value for an action rather than a state, such as a media command.
+    private ImageView glyph;
     private FrameLayout bar;
     private View fill;
     private ClipDrawable temperatureFill;
@@ -92,6 +94,24 @@ final class GestureHud {
         title.setText(titleText);
         value.setText(state);
         value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 72);
+        glyph.setVisibility(View.GONE);
+        bar.setVisibility(View.GONE);
+        reveal(Gravity.CENTER_HORIZONTAL);
+    }
+
+    /** An action rather than a state, such as a media command: a large icon before its name. */
+    void showAction(int iconRes, String titleText, int glyphRes, String text) {
+        if (!Settings.canDrawOverlays(context)) {
+            return;
+        }
+        prepare();
+        icon.setImageResource(iconRes);
+        title.setText(titleText);
+        glyph.setImageResource(glyphRes);
+        value.setText(text);
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 72);
+        value.setVisibility(View.VISIBLE);
+        glyph.setVisibility(View.VISIBLE);
         bar.setVisibility(View.GONE);
         reveal(Gravity.CENTER_HORIZONTAL);
     }
@@ -101,6 +121,7 @@ final class GestureHud {
             return;
         }
         prepare();
+        glyph.setVisibility(View.GONE);
         bar.setVisibility(View.VISIBLE);
         boolean temperature = kind == MultiFingerGestures.Kind.TEMPERATURE_LEFT
                 || kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT;
@@ -187,10 +208,21 @@ final class GestureHud {
         value.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         value.setIncludeFontPadding(false);
         value.setSingleLine();
-        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(-2, -2);
-        valueParams.topMargin = dp(14);
-        valueParams.bottomMargin = dp(26);
-        card.addView(value, valueParams);
+        LinearLayout row = new LinearLayout(context);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        glyph = new ImageView(context);
+        glyph.setImageTintList(ColorStateList.valueOf(text));
+        glyph.setAdjustViewBounds(true);
+        glyph.setVisibility(View.GONE);
+        // The icons fill about 60% of their height: the glyph matches the capitals of a 72sp word.
+        LinearLayout.LayoutParams glyphParams = new LinearLayout.LayoutParams(-2, dp(92));
+        glyphParams.rightMargin = dp(22);
+        row.addView(glyph, glyphParams);
+        row.addView(value);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-2, -2);
+        rowParams.topMargin = dp(14);
+        rowParams.bottomMargin = dp(26);
+        card.addView(row, rowParams);
 
         bar = new FrameLayout(context);
         bar.setBackground(rounded(raised, dp(BAR_HEIGHT / 2)));

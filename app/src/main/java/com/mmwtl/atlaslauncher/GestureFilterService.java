@@ -221,8 +221,17 @@ public final class GestureFilterService extends Service {
         audio = getSystemService(AudioManager.class);
         hud = new GestureHud(this);
         scale = new GestureScale(this, SCREEN_WIDTH, REGION.top, REGION.bottom, MultiFingerGestures.SCALE_MARGIN_PX);
-        oneOffActions = new GestureActions(this, filter::sendKey,
-                (icon, title, state) -> main.post(() -> hud.showState(icon, title, state)));
+        oneOffActions = new GestureActions(this, filter::sendKey, new GestureActions.Feedback() {
+            @Override
+            public void show(int icon, String title, String state) {
+                main.post(() -> hud.showState(icon, title, state));
+            }
+
+            @Override
+            public void showAction(int icon, String title, int glyph, String text) {
+                main.post(() -> hud.showAction(icon, title, glyph, text));
+            }
+        });
         IntentFilter replies = new IntentFilter();
         replies.addAction(GIB + ".PROPERTY_FLOAT_RESULT");
         replies.addAction(GIB + ".PROPERTY_FLOAT_CHANGED");

@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="13dp"
+    android:height="24dp"
+    android:viewportWidth="13"
+    android:viewportHeight="24">
+    <!-- No side margins, so the glyph lines up with text in the gesture card. -->
+    <group android:translateX="-6">
+        <path android:fillColor="#F1F2F4" android:pathData="M6,18l8.5,-6L6,6v12zM16,6v12h2V6h-2z" />
+    </group>
+</vector>
