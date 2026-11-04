@@ -93,7 +93,8 @@ final class GestureHud {
         icon.setImageResource(iconRes);
         title.setText(titleText);
         value.setText(state);
-        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 72);
+        // "Нет данных" is too wide for the card at the size of "Вкл".
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, state.length() > 8 ? 56 : 72);
         glyph.setVisibility(View.GONE);
         bar.setVisibility(View.GONE);
         reveal(Gravity.CENTER_HORIZONTAL);

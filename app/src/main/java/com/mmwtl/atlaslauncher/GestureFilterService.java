@@ -412,22 +412,22 @@ public final class GestureFilterService extends Service {
             }
             switch (action) {
                 case GestureMap.CLIMATE_POWER:
-                    toggle(CLIMATE_POWER, "Климат", "Вкл", "Выкл");
+                    toggle(CLIMATE_POWER, R.drawable.ic_power, "Климат", "Вкл", "Выкл");
                     break;
                 case GestureMap.CLIMATE_AUTO:
-                    toggle(CLIMATE_AUTO_SWITCH, "Климат AUTO", "Вкл", "Выкл");
+                    toggle(CLIMATE_AUTO_SWITCH, R.drawable.ic_fan, "Климат AUTO", "Вкл", "Выкл");
                     break;
                 case GestureMap.AC:
-                    toggle(AC, "Кондиционер", "Вкл", "Выкл");
+                    toggle(AC, R.drawable.ic_ac, "Кондиционер", "Вкл", "Выкл");
                     break;
                 case GestureMap.RECIRCULATION:
-                    toggle(RECIRCULATION, "Рециркуляция", "Вкл", "Выкл");
+                    toggle(RECIRCULATION, R.drawable.ic_recirculation, "Рециркуляция", "Вкл", "Выкл");
                     break;
                 case GestureMap.DEFROST_FRONT:
-                    toggle(DEFROST_FRONT, "Обдув стекла", "Вкл", "Выкл");
+                    toggle(DEFROST_FRONT, R.drawable.ic_defrost_front, "Обдув стекла", "Вкл", "Выкл");
                     break;
                 case GestureMap.DEFROST_REAR:
-                    toggle(DEFROST_REAR, "Обогрев заднего стекла", "Вкл", "Выкл");
+                    toggle(DEFROST_REAR, R.drawable.ic_defrost_rear, "Обогрев заднего стекла", "Вкл", "Выкл");
                     break;
                 default:
                     Log.w(TAG, "Unknown action " + action);
@@ -436,20 +436,24 @@ public final class GestureFilterService extends Service {
         });
     }
 
-    /** Flips a climate switch from its last known state; no state yet means ask and skip. */
-    private void toggle(int[] function, String title, String onText, String offText) {
+    /**
+     * Flips a climate switch from its last known state. With no state yet it asks for one and
+     * skips the gesture, saying so, or the gesture would seem to do nothing.
+     */
+    private void toggle(int[] function, int icon, String title, String onText, String offText) {
         readFresh();
         String key = function[0] + "_" + function[1];
         Integer current = gibInts.get(key);
         if (current == null) {
             refreshGib();
+            main.post(() -> hud.showState(icon, title, "Нет данных"));
             return;
         }
         boolean on = current != function[2];
         int next = on ? function[2] : function[3];
         gibInts.put(key, next);
         sendInt(function[0], function[1], next);
-        main.post(() -> hud.showState(R.drawable.ic_fan, title, on ? onText : offText));
+        main.post(() -> hud.showState(icon, title, on ? onText : offText));
     }
 
     /** Scale mode: sets the value at {@code level} of its range, 0 to 1. */
