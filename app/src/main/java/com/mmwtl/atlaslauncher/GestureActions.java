@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.ActivityOptions;
 import android.bluetooth.BluetoothAdapter;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -88,16 +89,13 @@ final class GestureActions {
                 keys.send(KeyEvent.KEYCODE_SYSRQ);
                 return true;
             case GestureMap.PLAY_PAUSE:
-                // Whether it pauses or plays, guessed from whether any music sounds now.
-                boolean playing = audio.isMusicActive();
-                mediaCommand("PLAY_PAUSE", playing ? R.drawable.ic_pause : R.drawable.ic_play,
-                        playing ? "Пауза" : "Пуск");
+                mediaCommand("PLAY_PAUSE");
                 return true;
             case GestureMap.NEXT_TRACK:
-                mediaCommand("NEXT", R.drawable.ic_skip_next, "Далее");
+                mediaCommand("NEXT");
                 return true;
             case GestureMap.PREVIOUS_TRACK:
-                mediaCommand("PREVIOUS", R.drawable.ic_skip_previous, "Назад");
+                mediaCommand("PREVIOUS");
                 return true;
             case GestureMap.MUTE:
                 audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_TOGGLE_MUTE,
@@ -171,13 +169,29 @@ final class GestureActions {
 
     /**
      * Media keys do not reach the OneOS sources, so playback goes through the Atlas Media Widget's
-     * bridge. The widget acts only while its service is up; otherwise the command is dropped, so
-     * the card confirms the gesture, not the result.
+     * bridge. The widget acts only while its service is up; otherwise the command is dropped.
+     * It answers with what it sent, PLAY_PAUSE resolved to PLAY or PAUSE from its own state, and
+     * with nothing for a dropped command; the card shows that answer.
      */
-    private void mediaCommand(String command, int glyph, String text) {
-        context.sendBroadcast(new Intent(MEDIA_COMMAND).setPackage(MEDIA_WIDGET)
-                .putExtra("command", command));
-        feedback.showAction(R.drawable.ic_music, "Музыка", glyph, text);
+    private void mediaCommand(String command) {
+        context.sendOrderedBroadcast(new Intent(MEDIA_COMMAND).setPackage(MEDIA_WIDGET)
+                .putExtra("command", command), null, new BroadcastReceiver() {
+                    @Override
+                    public void onReceive(Context context, Intent intent) {
+                        String sent = getResultData();
+                        if ("PLAY".equals(sent)) {
+                            feedback.showAction(R.drawable.ic_music, "Музыка", R.drawable.ic_play, "Пуск");
+                        } else if ("PAUSE".equals(sent)) {
+                            feedback.showAction(R.drawable.ic_music, "Музыка", R.drawable.ic_pause, "Пауза");
+                        } else if ("NEXT".equals(sent)) {
+                            feedback.showAction(R.drawable.ic_music, "Музыка", R.drawable.ic_skip_next, "Далее");
+                        } else if ("PREVIOUS".equals(sent)) {
+                            feedback.showAction(R.drawable.ic_music, "Музыка", R.drawable.ic_skip_previous, "Назад");
+                        } else {
+                            feedback.show(R.drawable.ic_music, "Музыка", "Недоступно");
+                        }
+                    }
+                }, main, 0, null, null);
     }
 
     /** The provider answers 0 while the screen is open and 1 otherwise. */
