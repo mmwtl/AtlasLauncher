@@ -2650,6 +2650,9 @@ public final class HomeActivity extends Activity {
                 deferredViews = views;
                 return;
             }
+            // An update still waiting for the release is older than this one.
+            updateDeferred = false;
+            deferredViews = null;
             super.updateAppWidget(views);
         }
 
