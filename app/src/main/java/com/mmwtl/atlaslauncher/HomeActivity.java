@@ -359,7 +359,7 @@ public final class HomeActivity extends Activity {
         }
     };
     private final Runnable renderWidgets = this::showWidgets;
-    private final Runnable slideshowStep = this::advanceSlideshow;
+    private final Runnable slideshowStep = () -> advanceSlideshow(true);
     private final Runnable editByPress = this::startEditingByPress;
     // Settings only write the prefs; HOME applies each change, also while it is hidden under them.
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
@@ -474,8 +474,6 @@ public final class HomeActivity extends Activity {
         connectivity.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
         connectivity.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
         registerReceiver(connectivityReceiver, connectivity);
-        // HOME is not drawn yet, so a due slideshow change here is never seen.
-        if (slideshowDelay() == 0) saveSlide(nextSlides().get(0));
         buildHome();
         getSharedPreferences(PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefsListener);
         if (state == null && getIntent().getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false))
@@ -504,7 +502,9 @@ public final class HomeActivity extends Activity {
         super.onStart();
         homeVisible = true;
         setWallpaperPlaying(true);
-        scheduleSlideshow();
+        // HOME is not drawn yet, so a due slideshow change here is never seen.
+        if (slideshowDelay() == 0) advanceSlideshow(false);
+        else scheduleSlideshow();
         widgetHost.startListening();
     }
 
@@ -961,10 +961,12 @@ public final class HomeActivity extends Activity {
                 .putInt(modeKey(SLIDESHOW_BOOT, night), bootCount()).apply();
     }
 
-    /** Fades in the next readable slideshow image. */
-    private void advanceSlideshow() {
+    /** Shows the next readable slideshow image, fading it in if asked; with none the current wallpaper stays. */
+    private void advanceSlideshow(boolean crossfade) {
         if (isDestroyed() || slideshowDelay() != 0) return;
-        int generation = slideshowGeneration;
+        // Replaces the timer and any image still loading for the previous mode or settings.
+        wallpaperView.removeCallbacks(slideshowStep);
+        int generation = ++slideshowGeneration;
         List<String> slides = nextSlides();
         wallpaperLoader.execute(() -> {
             for (String slide : slides) {
@@ -973,13 +975,25 @@ public final class HomeActivity extends Activity {
                 runOnUiThread(() -> {
                     // HOME or the settings may have changed while the image loaded.
                     if (isDestroyed() || generation != slideshowGeneration) return;
-                    crossfadeWallpaper(image);
+                    // The wallpaper still loading, say since HOME started, is older than the slide.
+                    wallpaperGeneration++;
+                    // The mode just left may have shown a video; the one entered has none while its slideshow runs.
+                    if (shownVideo != null) {
+                        shownVideo = null;
+                        videoWallpaper.setVideo(null);
+                    }
+                    if (crossfade) crossfadeWallpaper(image);
+                    else applyWallpaper(image);
+                    // Set first, so saving the slide does not load it again.
                     shownWallpaper = slide;
                     saveSlide(slide);
                     wallpaperLoader.execute(() -> cacheWallpaper(isPresetUri(slide) ? null : slide, false));
                 });
                 return;
             }
+            runOnUiThread(() -> {
+                if (!isDestroyed() && generation == slideshowGeneration) showChangedWallpaper();
+            });
         });
     }
 
@@ -1117,7 +1131,10 @@ public final class HomeActivity extends Activity {
 
     /** Shows the wallpaper of the mode just entered; a slide due in it comes at once, not after the old one. */
     private void switchWallpaperMode() {
-        if (slideshowDelay() == 0) saveSlide(nextSlides().get(0));
+        if (slideshowDelay() == 0) {
+            advanceSlideshow(false);
+            return;
+        }
         showChangedWallpaper();
         scheduleSlideshow();
     }
