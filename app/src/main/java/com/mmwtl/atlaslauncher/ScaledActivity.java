@@ -16,7 +16,8 @@ abstract class ScaledActivity extends Activity {
 
     @Override
     protected void attachBaseContext(Context newBase) {
-        super.attachBaseContext(scaledContext(newBase));
+        // The scaled configuration copies every field, the theme fixed in the settings included.
+        super.attachBaseContext(scaledContext(ThemeMode.apply(newBase)));
     }
 
     static int configuredScaleTenths(Context context) {

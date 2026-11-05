@@ -70,6 +70,10 @@ public final class AllAppsActivity extends Activity {
         context.startActivity(new Intent(context, AllAppsActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), options);
     }
 
+    @Override protected void attachBaseContext(Context base) {
+        super.attachBaseContext(ThemeMode.apply(base));
+    }
+
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         shown = true;

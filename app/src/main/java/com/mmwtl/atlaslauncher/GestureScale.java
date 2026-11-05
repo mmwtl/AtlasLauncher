@@ -1,7 +1,6 @@
 package com.mmwtl.atlaslauncher;
 
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
@@ -193,8 +192,7 @@ final class GestureScale {
                     : kind == MultiFingerGestures.Kind.FAN ? TEAL : BLUE;
             highColor = temperature ? HOT : kind == MultiFingerGestures.Kind.BRIGHTNESS ? AMBER_LIGHT
                     : kind == MultiFingerGestures.Kind.FAN ? TEAL_LIGHT : BLUE_LIGHT;
-            night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                    == Configuration.UI_MODE_NIGHT_YES;
+            night = ThemeMode.isNight(getContext());
             if (!night && !temperature) {
                 // The light ends would fade into the veil: a deeper low end, the old low end on top.
                 highColor = lowColor;

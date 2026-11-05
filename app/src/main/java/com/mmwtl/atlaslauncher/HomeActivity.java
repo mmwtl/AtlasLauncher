@@ -367,6 +367,8 @@ public final class HomeActivity extends Activity {
         // Settings of the second and later built-in widgets of a kind end with the widget ID.
         switch (BuiltInWidgets.baseKey(key)) {
             case WALLPAPER_BY_MODE: switchWallpaperMode(); break;
+            // The theme is set on the resources when the activity starts.
+            case ThemeMode.KEY: recreate(); break;
             case VIDEO_WALLPAPER: case WALLPAPER: case VIDEO_WALLPAPER + NIGHT: case WALLPAPER + NIGHT:
                 showChangedWallpaper();
                 scheduleSlideshow();
@@ -428,6 +430,10 @@ public final class HomeActivity extends Activity {
             updateDesktopConnectivity();
         }
     };
+
+    @Override protected void attachBaseContext(Context base) {
+        super.attachBaseContext(ThemeMode.apply(base));
+    }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -560,6 +566,8 @@ public final class HomeActivity extends Activity {
     // the HOME startup broadcast. The dock and the built-in widgets take their day or night colors on rebuild.
     @Override public void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
+        // A theme fixed in the settings stays put; only the system mode has changed.
+        if (ThemeMode.get(this) != ThemeMode.AUTO) return;
         switchWallpaperMode();
         loadApps();
         showWidgets();
@@ -886,8 +894,7 @@ public final class HomeActivity extends Activity {
     /** Whether the night wallpaper settings apply now. */
     static boolean nightWallpaper(Context context) {
         return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(WALLPAPER_BY_MODE, false)
-                && (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                == Configuration.UI_MODE_NIGHT_YES;
+                && ThemeMode.isNight(context);
     }
 
     static String modeKey(String key, boolean night) {

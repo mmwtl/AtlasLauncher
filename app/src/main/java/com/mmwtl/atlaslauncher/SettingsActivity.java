@@ -226,7 +226,8 @@ public final class SettingsActivity extends ScaledActivity {
 
     private void buildWallpaperTab(LinearLayout page) {
         LinearLayout modes = card(page, "День и ночь",
-                "Свой фон и сменяемый фон для дневного и ночного режима. Фон меняется вместе с режимом системы. "
+                "Свой фон и сменяемый фон для дневного и ночного режима. Фон меняется вместе с темой лаунчера "
+                        + "(вкладка «Рабочий стол»). "
                         + "Частота смены общая для обоих режимов.");
         toggle(modes, "Разные фоны днём и ночью", prefs.getBoolean(HomeActivity.WALLPAPER_BY_MODE, false), on -> {
             SharedPreferences.Editor edit = prefs.edit().putBoolean(HomeActivity.WALLPAPER_BY_MODE, on);
@@ -332,6 +333,12 @@ public final class SettingsActivity extends ScaledActivity {
     }
 
     private void buildDesktopTab(LinearLayout page) {
+        LinearLayout theme = card(page, "Тема",
+                "Дневная или ночная тема дока, встроенных виджетов, каталога приложений и подсказок жестов. "
+                        + "«Авто» переключает её вместе с режимом системы. Другие виджеты выбирают тему в своих настройках.");
+        // The theme is set on the resources when an activity starts; this one shows it right away too.
+        choice(theme, ThemeMode.KEY, new String[]{"Авто", "День", "Ночь"}, ThemeMode.AUTO, this::recreate);
+
         LinearLayout desktops = card(page, "Рабочие столы",
                 "Листайте столы свайпом и переносите виджеты к краю экрана. При выключении останется только "
                         + "основной стол. Виджеты на остальных сохранятся и появятся после включения.");

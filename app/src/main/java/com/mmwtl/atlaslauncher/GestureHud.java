@@ -3,7 +3,6 @@ package com.mmwtl.atlaslauncher;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.ColorStateList;
-import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
@@ -42,7 +41,9 @@ final class GestureHud {
     private static final int TOP_MARGIN = 112;
     private static final long VISIBLE_MS = 1500;
 
-    private final Context context;
+    private final Context base;
+    // The base context in the theme the card was built in.
+    private Context context;
     private final WindowManager windows;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable hide = this::fadeOut;
@@ -63,6 +64,7 @@ final class GestureHud {
     private boolean night;
 
     GestureHud(Context context) {
+        base = context;
         this.context = context;
         windows = context.getSystemService(WindowManager.class);
     }
@@ -139,15 +141,16 @@ final class GestureHud {
                 : kind == MultiFingerGestures.Kind.TEMPERATURE_RIGHT ? Gravity.END : Gravity.CENTER_HORIZONTAL);
     }
 
-    /** Builds the card, again after the day or night mode has changed. */
+    /** Builds the card, again after the day or night theme has changed. */
     private void prepare() {
-        boolean nightNow = (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                == Configuration.UI_MODE_NIGHT_YES;
+        boolean nightNow = ThemeMode.isNight(base);
         if (card != null && nightNow == night) {
             return;
         }
         dismiss();
         night = nightNow;
+        // The service's own resources follow the head unit; a theme fixed in the settings overrides them.
+        context = ThemeMode.withNight(base, night);
         create();
     }
 
