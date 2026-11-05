@@ -226,6 +226,8 @@ public final class HomeActivity extends Activity {
     private final Map<ComponentName, Point> fixedLayouts = new HashMap<>();
     private AppWidgetManager widgetManager;
     private AppWidgetHost widgetHost;
+    // The view the host made last: createView registers it before it fetches the widget's views.
+    private AppWidgetHostView createdWidgetView;
     private Dialog widgetPicker;
     private LinearLayout favoriteRow;
     private FrameLayout widgetRow;
@@ -444,7 +446,8 @@ public final class HomeActivity extends Activity {
         widgetManager = AppWidgetManager.getInstance(this);
         widgetHost = new AppWidgetHost(this, HOST_ID) {
             @Override protected AppWidgetHostView onCreateView(Context context, int id, AppWidgetProviderInfo info) {
-                return new FittedWidgetView(context);
+                createdWidgetView = new FittedWidgetView(context);
+                return createdWidgetView;
             }
         };
         if (state != null) {
@@ -1869,7 +1872,15 @@ public final class HomeActivity extends Activity {
                 hostView = BuiltInWidgets.createConnectivity(this, placement);
                 hostView.setTag(placement.id);
             } else {
-                AppWidgetHostView widgetView = widgetHost.createView(this, placement.id, info);
+                AppWidgetHostView widgetView;
+                try {
+                    widgetView = widgetHost.createView(this, placement.id, info);
+                } catch (RuntimeException e) {
+                    // Views too large for a binder transaction would crash every start. The host has
+                    // already registered the empty view, so the widget's next full update fills it.
+                    Log.w("AtlasLauncher", "Cannot load widget " + placement.id, e);
+                    widgetView = createdWidgetView;
+                }
                 widgetView.setAppWidget(placement.id, info);
                 hostView = widgetView;
             }
