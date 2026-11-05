@@ -566,8 +566,15 @@ public final class HomeActivity extends Activity {
     // the HOME startup broadcast. The dock and the built-in widgets take their day or night colors on rebuild.
     @Override public void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
-        // A theme fixed in the settings stays put; only the system mode has changed.
-        if (ThemeMode.get(this) != ThemeMode.AUTO) return;
+        int theme = ThemeMode.get(this);
+        if (theme != ThemeMode.AUTO) {
+            // Android rebases the resources on the new system mode and drops the fixed night qualifier, so the
+            // next rebuild would take the system colors. Starting again puts the fixed theme back.
+            boolean night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                    == Configuration.UI_MODE_NIGHT_YES;
+            if (night != (theme == ThemeMode.NIGHT)) recreate();
+            return;
+        }
         switchWallpaperMode();
         loadApps();
         showWidgets();
