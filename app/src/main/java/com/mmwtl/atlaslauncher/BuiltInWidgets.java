@@ -205,8 +205,9 @@ final class BuiltInWidgets {
         view.setTextColor(night ? prefs.getInt(key(TEXT_COLOR_NIGHT, placement.id), Color.WHITE)
                 : prefs.getInt(key(TEXT_COLOR_DAY, placement.id), Color.BLACK));
         view.setBackground(Ui.rounded(surface(context, R.color.tile_off, prefs, TEXT_OPACITY, placement.id), Ui.dp(context, 24)));
-        int padding = Ui.dp(context, 12);
-        view.setPadding(padding, padding, padding, padding);
+        // Text shrinks to the space inside the padding; the font's own extra spacing would leave even less.
+        view.setIncludeFontPadding(false);
+        view.setPadding(Ui.dp(context, 12), Ui.dp(context, 2), Ui.dp(context, 12), Ui.dp(context, 2));
     }
 
     static float clockTimeWidth(Context context, TextClock clock, TextClock period) {
