@@ -116,7 +116,8 @@ public final class HomeActivity extends Activity {
     private static final int DOCK_WIDGET_ID = -3;
     private static final int VOLUME_WIDGET_ID = -4;
     private static final int CONNECTIVITY_WIDGET_ID = -5;
-    // Clocks, volume and Wi-Fi/Bluetooth may be added again: the n-th copy of a kind gets ID kind - 10 * n.
+    private static final int TEXT_WIDGET_ID = -6;
+    // Clocks, volume, Wi-Fi/Bluetooth and text may be added again: the n-th copy of a kind gets ID kind - 10 * n.
     static final int BUILT_IN_STEP = 10;
     static final int WIDGET_CELL_DP = 96;
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
@@ -407,6 +408,10 @@ public final class HomeActivity extends Activity {
             case BuiltInWidgets.CONNECTIVITY_WIFI: case BuiltInWidgets.CONNECTIVITY_BLUETOOTH: case BuiltInWidgets.CONNECTIVITY_HOTSPOT:
             case BuiltInWidgets.CONNECTIVITY_STYLE: case BuiltInWidgets.CONNECTIVITY_OPACITY:
                 updateDesktopConnectivity(); break;
+            case BuiltInWidgets.TEXT_CONTENT: case BuiltInWidgets.TEXT_FONT: case BuiltInWidgets.TEXT_WEIGHT:
+            case BuiltInWidgets.TEXT_SIZE: case BuiltInWidgets.TEXT_COLOR_DAY: case BuiltInWidgets.TEXT_COLOR_NIGHT:
+            case BuiltInWidgets.TEXT_OPACITY:
+                updateDesktopBuiltIns(TEXT_WIDGET_ID); break;
         }
     };
     private final BroadcastReceiver packageReceiver = new BroadcastReceiver() {
@@ -1431,7 +1436,7 @@ public final class HomeActivity extends Activity {
         WidgetGrid cells = widgetGrid();
         Bitmap[] previews = new Bitmap[providers.size()];
         BaseAdapter adapter = new BaseAdapter() {
-            @Override public int getCount() { return providers.size() + 4; }
+            @Override public int getCount() { return providers.size() + 5; }
             @Override public Object getItem(int position) { return position; }
             @Override public long getItemId(int position) { return position; }
             @Override public View getView(int position, View old, ViewGroup parent) {
@@ -1439,10 +1444,11 @@ public final class HomeActivity extends Activity {
                 if (position == 1) return widgetPreviewTile(dockPreview(), "Док приложений", "AtlasLauncher");
                 if (position == 2) return widgetPreviewTile(volumePreview(), "Громкость", "AtlasLauncher");
                 if (position == 3) return widgetPreviewTile(connectivityPreview(), "Wi-Fi и Bluetooth", "AtlasLauncher");
-                AppWidgetProviderInfo provider = providers.get(position - 4);
+                if (position == 4) return widgetPreviewTile(textPreview(), "Текст", "AtlasLauncher");
+                AppWidgetProviderInfo provider = providers.get(position - 5);
                 ImageView image = new ImageView(HomeActivity.this);
                 image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                image.setImageBitmap(previews[position - 4]);
+                image.setImageBitmap(previews[position - 5]);
                 String details = provider.provider.getPackageName();
                 try {
                     CharSequence appLabel = pm.getApplicationLabel(pm.getApplicationInfo(details, 0));
@@ -1466,7 +1472,8 @@ public final class HomeActivity extends Activity {
             else if (position == 1) addDockWidget();
             else if (position == 2) addButtonsWidget(VOLUME_WIDGET_ID, 3, "Недостаточно места для громкости");
             else if (position == 3) addButtonsWidget(CONNECTIVITY_WIDGET_ID, 4, "Недостаточно места для Wi-Fi и Bluetooth");
-            else addProviderWidget(providers.get(position - 4));
+            else if (position == 4) addButtonsWidget(TEXT_WIDGET_ID, 3, "Недостаточно места для текста");
+            else addProviderWidget(providers.get(position - 5));
         });
         // Preview images can be large bitmaps, so decode and downscale them off the UI thread.
         ExecutorService loader = Executors.newSingleThreadExecutor();
@@ -1589,6 +1596,13 @@ public final class HomeActivity extends Activity {
         return buttonsPreview(BuiltInWidgets.createConnectivity(this, new WidgetPlacement(newBuiltInId(CONNECTIVITY_WIDGET_ID), 0, 0, 240, 80)));
     }
 
+    private View textPreview() {
+        View text = BuiltInWidgets.createText(this, new WidgetPlacement(newBuiltInId(TEXT_WIDGET_ID), 0, 0, 240, 80));
+        FrameLayout frame = new FrameLayout(this);
+        frame.addView(text, new FrameLayout.LayoutParams(-1, dp(80), Gravity.CENTER));
+        return frame;
+    }
+
     private View buttonsPreview(View view) {
         LinearLayout panel = (LinearLayout) view;
         // The tile itself picks the widget.
@@ -1708,7 +1722,7 @@ public final class HomeActivity extends Activity {
         showWidgets();
     }
 
-    /** Adds a one-row widget of built-in buttons: volume or Wi-Fi/Bluetooth. */
+    /** Adds a one-row built-in widget: volume, Wi-Fi/Bluetooth or text. */
     private void addButtonsWidget(int kind, int columns, String noRoom) {
         WidgetGrid grid = widgetGrid();
         if (grid == null) return;
@@ -1802,7 +1816,9 @@ public final class HomeActivity extends Activity {
             boolean dockWidget = placement.id == DOCK_WIDGET_ID;
             boolean volumeWidget = isBuiltIn(placement.id, VOLUME_WIDGET_ID);
             boolean connectivityWidget = isBuiltIn(placement.id, CONNECTIVITY_WIDGET_ID);
-            boolean buttonsWidget = volumeWidget || connectivityWidget;
+            boolean textWidget = isBuiltIn(placement.id, TEXT_WIDGET_ID);
+            // A text widget takes the place of a row of buttons: one row and as little as one cell.
+            boolean buttonsWidget = volumeWidget || connectivityWidget || textWidget;
             boolean builtIn = clockWidget || dockWidget || buttonsWidget;
             AppWidgetProviderInfo info = builtIn ? null : fitFixedWidget(widgetManager.getAppWidgetInfo(placement.id));
             if (!builtIn && info == null) {
@@ -1818,7 +1834,7 @@ public final class HomeActivity extends Activity {
             int oldWidth = placement.width, oldHeight = placement.height;
             if (placement.width == 0 || placement.height == 0) {
                 placement.width = Math.min(availableWidth, clockWidget ? 4 * WIDGET_CELL_DP
-                        : dockWidget || volumeWidget ? 3 * WIDGET_CELL_DP
+                        : dockWidget || volumeWidget || textWidget ? 3 * WIDGET_CELL_DP
                         : connectivityWidget ? 4 * WIDGET_CELL_DP
                         : pxToDp(Math.max(info.minWidth, info.minResizeWidth)) + padding.x);
                 placement.height = Math.min(availableHeight, clockWidget ? 2 * WIDGET_CELL_DP
@@ -1872,6 +1888,9 @@ public final class HomeActivity extends Activity {
                 hostView.setTag(placement.id);
             } else if (connectivityWidget) {
                 hostView = BuiltInWidgets.createConnectivity(this, placement);
+                hostView.setTag(placement.id);
+            } else if (textWidget) {
+                hostView = BuiltInWidgets.createText(this, placement);
                 hostView.setTag(placement.id);
             } else {
                 AppWidgetHostView widgetView;
@@ -2179,11 +2198,12 @@ public final class HomeActivity extends Activity {
         }
     }
 
-    /** Rebuilds a clock, volume or Wi-Fi/Bluetooth widget for its settings and size. */
+    /** Rebuilds a clock, volume, Wi-Fi/Bluetooth or text widget for its settings and size. */
     private void updateBuiltIn(View view, WidgetPlacement placement) {
         if (isBuiltIn(placement.id, CLOCK_WIDGET_ID)) BuiltInWidgets.updateClock(this, view, placement);
         else if (isBuiltIn(placement.id, VOLUME_WIDGET_ID)) BuiltInWidgets.updateVolume(this, view, placement);
         else if (isBuiltIn(placement.id, CONNECTIVITY_WIDGET_ID)) BuiltInWidgets.updateConnectivity(this, view, placement);
+        else if (isBuiltIn(placement.id, TEXT_WIDGET_ID)) BuiltInWidgets.updateText(this, view, placement);
     }
 
     private static boolean isBuiltIn(int id, int kind) {
@@ -2282,6 +2302,7 @@ public final class HomeActivity extends Activity {
         String title = isBuiltIn(placement.id, CLOCK_WIDGET_ID) ? "часы" : placement.id == DOCK_WIDGET_ID
                 ? "док приложений" : isBuiltIn(placement.id, VOLUME_WIDGET_ID) ? "громкость"
                 : isBuiltIn(placement.id, CONNECTIVITY_WIDGET_ID) ? "Wi-Fi и Bluetooth"
+                : isBuiltIn(placement.id, TEXT_WIDGET_ID) ? "текст"
                 : String.valueOf(info.loadLabel(getPackageManager()));
         dragSurface.setContentDescription("Перетащить " + title);
         dragSurface.setOnTouchListener(widgetTouch(container, hostView, placement, info, false));
@@ -2295,6 +2316,7 @@ public final class HomeActivity extends Activity {
                 else if (isBuiltIn(placement.id, VOLUME_WIDGET_ID)) SettingsActivity.open(this, SettingsActivity.PAGE_VOLUME, placement.id);
                 else if (isBuiltIn(placement.id, CONNECTIVITY_WIDGET_ID))
                     SettingsActivity.open(this, SettingsActivity.PAGE_CONNECTIVITY, placement.id);
+                else if (isBuiltIn(placement.id, TEXT_WIDGET_ID)) SettingsActivity.open(this, SettingsActivity.PAGE_TEXT, placement.id);
                 else reconfigureWidget(placement);
             });
             container.addView(settings, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.LEFT));

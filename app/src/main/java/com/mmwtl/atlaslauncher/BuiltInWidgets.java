@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
@@ -25,6 +26,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -37,7 +39,7 @@ import android.widget.Toast;
 import java.lang.reflect.Proxy;
 import java.util.concurrent.Executor;
 
-/** The clock, volume and Wi-Fi/Bluetooth/hotspot widgets built into HOME; settings show them as previews. */
+/** The clock, volume, Wi-Fi/Bluetooth/hotspot and text widgets built into HOME; settings show them as previews. */
 final class BuiltInWidgets {
     private static final int TEXT = Color.rgb(250, 252, 255);
     private static final int MUTED = Color.rgb(188, 204, 224);
@@ -45,6 +47,16 @@ final class BuiltInWidgets {
     static final String CLOCK_WEIGHT = "clock_weight";
     static final String CLOCK_FONT = "clock_font";
     static final String CLOCK_DATE = "clock_date";
+    static final String TEXT_CONTENT = "text_content";
+    static final String TEXT_FONT = "text_font";
+    static final String TEXT_WEIGHT = "text_weight";
+    static final String TEXT_SIZE = "text_size";
+    static final String TEXT_COLOR_DAY = "text_color_day";
+    static final String TEXT_COLOR_NIGHT = "text_color_night";
+    static final String TEXT_OPACITY = "text_opacity";
+    static final String TEXT_DEFAULT = "Текст";
+    static final int TEXT_DEFAULT_SIZE = 32;
+    private static final int TEXT_MIN_SIZE = 8;
     static final String VOLUME_MUTE = "volume_mute";
     static final String VOLUME_ICONS = "volume_icons";
     static final String VOLUME_JOINED = "volume_joined";
@@ -147,12 +159,7 @@ final class BuiltInWidgets {
             boolean periodVisible = format == 2 || (format == 0 && !android.text.format.DateFormat.is24HourFormat(context));
             timeLine.getChildAt(1).setVisibility(periodVisible ? View.VISIBLE : View.GONE);
         }
-        String[] fonts = {"sans-serif", "serif", "monospace"};
-        int font = Math.max(0, Math.min(2, prefs.getInt(key(CLOCK_FONT, placement.id), 0)));
-        int weight = Math.max(0, Math.min(2, prefs.getInt(key(CLOCK_WEIGHT, placement.id), 0)));
-        Typeface face = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                ? Typeface.create(Typeface.create(fonts[font], Typeface.NORMAL), weight == 0 ? 300 : weight == 1 ? 400 : 700, false)
-                : Typeface.create(weight == 0 && font == 0 ? "sans-serif-light" : fonts[font], weight == 2 ? Typeface.BOLD : Typeface.NORMAL);
+        Typeface face = typeface(prefs.getInt(key(CLOCK_FONT, placement.id), 0), prefs.getInt(key(CLOCK_WEIGHT, placement.id), 0));
         clock.setTypeface(face);
         ((TextClock) timeLine.getChildAt(1)).setTypeface(face);
         date.setTypeface(face);
@@ -165,6 +172,42 @@ final class BuiltInWidgets {
             clock.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, clock.getTextSize() * scale);
             period.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, period.getTextSize() * scale);
         }
+    }
+
+    /** Font of the clock and text widgets: sans-serif, serif or monospace; thin, regular or bold. */
+    static Typeface typeface(int font, int weight) {
+        String[] fonts = {"sans-serif", "serif", "monospace"};
+        font = Math.max(0, Math.min(2, font));
+        weight = Math.max(0, Math.min(2, weight));
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? Typeface.create(Typeface.create(fonts[font], Typeface.NORMAL), weight == 0 ? 300 : weight == 1 ? 400 : 700, false)
+                : Typeface.create(weight == 0 && font == 0 ? "sans-serif-light" : fonts[font], weight == 2 ? Typeface.BOLD : Typeface.NORMAL);
+    }
+
+    static View createText(Context context, HomeActivity.WidgetPlacement placement) {
+        TextView view = new TextView(context);
+        view.setGravity(Gravity.CENTER);
+        updateText(context, view, placement);
+        return view;
+    }
+
+    /** The text color follows the day or night resources of the context, like the card under it. */
+    static void updateText(Context context, View hostView, HomeActivity.WidgetPlacement placement) {
+        TextView view = (TextView) hostView;
+        SharedPreferences prefs = context.getSharedPreferences(HomeActivity.PREFS, Context.MODE_PRIVATE);
+        boolean night = (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+        view.setText(prefs.getString(key(TEXT_CONTENT, placement.id), TEXT_DEFAULT));
+        view.setTypeface(typeface(prefs.getInt(key(TEXT_FONT, placement.id), 0), prefs.getInt(key(TEXT_WEIGHT, placement.id), 1)));
+        // The chosen size is the largest one: text that does not fit a small widget shrinks to fit it.
+        view.setAutoSizeTextTypeUniformWithConfiguration(TEXT_MIN_SIZE,
+                Math.max(TEXT_MIN_SIZE, prefs.getInt(key(TEXT_SIZE, placement.id), TEXT_DEFAULT_SIZE)), 1, TypedValue.COMPLEX_UNIT_SP);
+        view.setTextColor(night ? prefs.getInt(key(TEXT_COLOR_NIGHT, placement.id), Color.WHITE)
+                : prefs.getInt(key(TEXT_COLOR_DAY, placement.id), Color.BLACK));
+        view.setBackground(Ui.rounded(surface(context, R.color.tile_off, prefs, TEXT_OPACITY, placement.id), Ui.dp(context, 24)));
+        // Text shrinks to the space inside the padding; the font's own extra spacing would leave even less.
+        view.setIncludeFontPadding(false);
+        view.setPadding(Ui.dp(context, 12), Ui.dp(context, 2), Ui.dp(context, 12), Ui.dp(context, 2));
     }
 
     static float clockTimeWidth(Context context, TextClock clock, TextClock period) {
