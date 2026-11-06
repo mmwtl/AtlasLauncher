@@ -34,6 +34,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -128,6 +129,9 @@ public final class GestureFilterService extends Service {
     private static final long HOLD_MAX_MS = 500;
     // Within this time of a change the car may not report it yet, so a direct read could undo steps.
     private static final long DIRECT_SETTLE_MS = 1500;
+    // The car applies every value it gets in turn, slowly: a drag across the scale would play back long after the
+    // fingers lift. So a gesture's car values wait until the fingers pause this long or lift, and only the last goes.
+    private static final long CAR_WRITE_DELAY_MS = 400;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean priority;
@@ -152,7 +156,10 @@ public final class GestureFilterService extends Service {
                 @Override
                 public void onEnd() {
                     // Through the queue the values go through, so no value shown late brings the scale back.
-                    actions.post(() -> main.post(scale::finish));
+                    actions.post(() -> {
+                        flushCarWrites();
+                        main.post(scale::finish);
+                    });
                 }
             });
     // GInputBridge subscriptions live in its memory only, so they are repeated.
@@ -204,6 +211,9 @@ public final class GestureFilterService extends Service {
     // Null while car values go through the bridge. Action thread, apart from the check in the receiver.
     private volatile DirectCar car;
     private long lastCarChange;
+    // Car values waiting for the fingers to pause or lift, by property. Action thread.
+    private final Map<String, Runnable> carWrites = new LinkedHashMap<>();
+    private final Runnable flushCarWrites = this::flushCarWrites;
     // The volume the scale last set and when, for the car may not have stored it yet. Action thread.
     private int scaleVolume;
     private long lastVolumeChange;
@@ -584,13 +594,32 @@ public final class GestureFilterService extends Service {
         }
         // The bridge reports the real value back and corrects this guess.
         gibValues.put(key, target);
+        writeCar(key, () -> {
+            DirectCar direct = car;
+            if (direct != null) {
+                direct.setFloat(id, area, target);
+            } else {
+                sendGib("SET_FLOAT_PROPERTY", id, area, target);
+            }
+        });
+    }
+
+    /** Keeps {@code write} as the property's next car value, sent once the fingers pause or lift. */
+    private void writeCar(String key, Runnable write) {
+        // Counts as a change already, so a direct read does not undo the value before it is sent.
         lastCarChange = SystemClock.uptimeMillis();
-        DirectCar direct = car;
-        if (direct != null) {
-            direct.setFloat(id, area, target);
-        } else {
-            sendGib("SET_FLOAT_PROPERTY", id, area, target);
+        carWrites.put(key, write);
+        actions.removeCallbacks(flushCarWrites);
+        actions.postDelayed(flushCarWrites, CAR_WRITE_DELAY_MS);
+    }
+
+    private void flushCarWrites() {
+        actions.removeCallbacks(flushCarWrites);
+        for (Runnable write : carWrites.values()) {
+            write.run();
         }
+        carWrites.clear();
+        lastCarChange = SystemClock.uptimeMillis();
     }
 
     private void sendInt(int id, int area, int value) {
@@ -649,7 +678,7 @@ public final class GestureFilterService extends Service {
             }
             if (next != index) {
                 gibInts.put(key, FAN_PROFILES[next]);
-                sendInt(AUTO_FAN_SETTING, FAN_ZONE, FAN_PROFILES[next]);
+                writeCar(key, () -> sendInt(AUTO_FAN_SETTING, FAN_ZONE, FAN_PROFILES[next]));
             }
             return;
         }
@@ -665,8 +694,9 @@ public final class GestureFilterService extends Service {
             main.post(() -> hud.showFan("Обдув", String.valueOf(next), (next - 1f) / (FAN_LEVELS - 1)));
         }
         if (next != speedLevel) {
-            gibInts.put(FAN_SPEED + "_" + FAN_ZONE, FAN_SPEED_LEVEL_1 + next - 1);
-            sendInt(FAN_SPEED, FAN_ZONE, FAN_SPEED_LEVEL_1 + next - 1);
+            String key = FAN_SPEED + "_" + FAN_ZONE;
+            gibInts.put(key, FAN_SPEED_LEVEL_1 + next - 1);
+            writeCar(key, () -> sendInt(FAN_SPEED, FAN_ZONE, FAN_SPEED_LEVEL_1 + next - 1));
         }
     }
 
