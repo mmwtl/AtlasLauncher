@@ -39,7 +39,8 @@ final class GestureMap {
     static final String BACK = "BACK";
     static final String ALL_APPS = "ALL_APPS";
     static final String RECENTS = "RECENTS";
-    static final String NOTIFICATIONS = "NOTIFICATIONS";
+    // The notification shade opened by a key does not open on OneOS; a saved binding falls back to the default.
+    private static final String REMOVED_NOTIFICATIONS = "NOTIFICATIONS";
     static final String SCREENSHOT = "SCREENSHOT";
     static final String PLAY_PAUSE = "PLAY_PAUSE";
     static final String NEXT_TRACK = "NEXT_TRACK";
@@ -84,7 +85,7 @@ final class GestureMap {
         if (saved == null) return map;
         for (String line : saved.split("\n")) {
             int separator = line.indexOf('=');
-            if (separator <= 0) continue;
+            if (separator <= 0 || line.substring(separator + 1).equals(REMOVED_NOTIFICATIONS)) continue;
             try {
                 map.actions.put(Gesture.valueOf(line.substring(0, separator)), line.substring(separator + 1));
             } catch (IllegalArgumentException unknown) {
