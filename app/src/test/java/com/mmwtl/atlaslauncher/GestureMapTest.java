@@ -91,6 +91,13 @@ public class GestureMapTest {
     }
 
     @Test
+    public void removedNotificationsActionFallsBackToTheDefault() {
+        GestureMap read = GestureMap.parse("FOUR_DOWN=NOTIFICATIONS\nFOUR_UP=NOTIFICATIONS\n");
+        assertEquals(GestureMap.NONE, read.action(Gesture.FOUR_DOWN));
+        assertEquals(GestureMap.ALL_APPS, read.action(Gesture.FOUR_UP));
+    }
+
+    @Test
     public void kindRecognisesOnlyAdjustments() {
         assertEquals(Kind.FAN, GestureMap.kind("FAN"));
         assertNull(GestureMap.kind(GestureMap.HOME));

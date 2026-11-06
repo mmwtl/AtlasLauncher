@@ -82,9 +82,6 @@ final class GestureActions {
             case GestureMap.RECENTS:
                 openRecents();
                 return true;
-            case GestureMap.NOTIFICATIONS:
-                keys.send(KeyEvent.KEYCODE_NOTIFICATION);
-                return true;
             case GestureMap.SCREENSHOT:
                 keys.send(KeyEvent.KEYCODE_SYSRQ);
                 return true;

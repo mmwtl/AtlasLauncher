@@ -90,7 +90,7 @@ public final class SettingsActivity extends ScaledActivity {
                     "TEMPERATURE_RIGHT", "Температура пассажира", "BRIGHTNESS", "Яркость", "FAN", "Обдув"},
             {"Система", GestureMap.HOME, "Главный экран", GestureMap.BACK, "Назад",
                     GestureMap.ALL_APPS, "Все приложения", GestureMap.RECENTS, "Недавние приложения",
-                    GestureMap.NOTIFICATIONS, "Шторка", GestureMap.SCREENSHOT, "Снимок экрана",
+                    GestureMap.SCREENSHOT, "Снимок экрана",
                     GestureMap.WIFI, "Wi-Fi вкл/выкл", GestureMap.BLUETOOTH, "Bluetooth вкл/выкл"},
             {"Музыка", GestureMap.PLAY_PAUSE, "Пауза и продолжение", GestureMap.NEXT_TRACK, "Следующий трек",
                     GestureMap.PREVIOUS_TRACK, "Предыдущий трек", GestureMap.MUTE, "Выключить звук"},

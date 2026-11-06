@@ -495,7 +495,7 @@ public class MultiFingerGesturesTest {
     @Test
     public void fourFingersSwipeInTheBoundDirections() {
         GestureMap map = new GestureMap();
-        map.set(GestureMap.Gesture.FOUR_DOWN, GestureMap.NOTIFICATIONS);
+        map.set(GestureMap.Gesture.FOUR_DOWN, GestureMap.SCREENSHOT);
         map.set(GestureMap.Gesture.FOUR_LEFT, GestureMap.BACK);
         gestures.setMap(map);
         fingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
@@ -503,7 +503,7 @@ public class MultiFingerGesturesTest {
         send(UP, 0, 600, 1160);
         fingersDown(600, 1000, 800, 1000, 600, 1200, 800, 1200);
         assertEquals(Decision.CLAIMED, send(MOVE, 0, 440, 1000, 640, 1000, 440, 1200, 640, 1200));
-        assertEquals(List.of("NOTIFICATIONS", "BACK"), events);
+        assertEquals(List.of("SCREENSHOT", "BACK"), events);
     }
 
     @Test
