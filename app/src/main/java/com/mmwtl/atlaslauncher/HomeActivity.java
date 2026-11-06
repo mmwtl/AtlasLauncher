@@ -202,9 +202,11 @@ public final class HomeActivity extends Activity {
     private static final int PAGE_EDGE_DP = 56;
     private static final long PAGE_EDGE_DELAY_MS = 500;
     private static final long PAGE_EDGE_REPEAT_MS = 1000;
-    // Per desktop page: [dim, blur] levels, 0 off, 1 weak, 2 strong; pages past the end have neither.
+    // Per desktop page: [tint, blur] levels, 0 off, 1 weak, 2 strong; pages past the end have neither.
     static final String PAGE_BACKDROPS = "page_backdrops";
-    private static final int[] DIM_ALPHAS = {0, 90, 160};
+    // The tint is milky in the day mode and dark at night, as the theme of the dock and the built-in widgets.
+    private static final int[] DAY_TINT_ALPHAS = {0, 80, 140};
+    private static final int[] NIGHT_TINT_ALPHAS = {0, 90, 160};
     // A blurred copy is the wallpaper drawn at 1/scale and blurred with this radius there.
     private static final int WEAK_BLUR_SCALE = 8, WEAK_BLUR_RADIUS = 3;
     private static final int STRONG_BLUR_SCALE = 16, STRONG_BLUR_RADIUS = 4;
@@ -247,7 +249,7 @@ public final class HomeActivity extends Activity {
     private ImageView previousWallpaperView;
     private ValueAnimator wallpaperFade;
     private VideoWallpaperView videoWallpaper;
-    // Above the wallpaper: its weakly and strongly blurred copies, then the dimming with the scrim.
+    // Above the wallpaper: its weakly and strongly blurred copies, then the page tint with the scrim.
     private ImageView weakBlurView;
     private ImageView strongBlurView;
     private View scrimView;
@@ -610,6 +612,8 @@ public final class HomeActivity extends Activity {
         switchWallpaperMode();
         loadApps();
         showWidgets();
+        // The page tint has changed between milky and dark.
+        updateStatusBarIcons();
         // The open widget list is drawn in the old mode's colors; open it again in the new ones.
         if (widgetPicker != null) {
             widgetPicker.dismiss();
@@ -1389,6 +1393,7 @@ public final class HomeActivity extends Activity {
         // Animation frames can change brightness: keep white status icons against a stronger top scrim.
         scrimView.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{Color.argb(animatedWallpaper() ? 160 : 45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
+        showBackdrop(backdropPosition);
         updateBlur();
         updateStatusBarIcons();
     }
@@ -1427,9 +1432,15 @@ public final class HomeActivity extends Activity {
         int page = (int) position;
         float fraction = position - page;
         int[] from = pageBackdrop(page), to = pageBackdrop(page + 1);
-        float dim = DIM_ALPHAS[from[0]] + (DIM_ALPHAS[to[0]] - DIM_ALPHAS[from[0]]) * fraction;
+        boolean night = ThemeMode.isNight(this);
+        int[] alphas = night ? NIGHT_TINT_ALPHAS : DAY_TINT_ALPHAS;
+        float tint = alphas[from[0]] + (alphas[to[0]] - alphas[from[0]]) * fraction;
         float blur = from[1] + (to[1] - from[1]) * fraction;
-        scrimView.setBackgroundColor(Color.argb(Math.round(dim), 0, 0, 0));
+        int shade = night ? 0 : 255;
+        scrimView.setBackgroundColor(Color.argb(Math.round(tint), shade, shade, shade));
+        // The dark scrim would turn a milky tint grey: it fades out as the tint grows.
+        Drawable scrim = scrimView.getForeground();
+        if (scrim != null) scrim.setAlpha(night ? 255 : Math.round(255 * (1 - tint / alphas[alphas.length - 1])));
         // The strong copy fades in over the weak one, so between the levels the blur grows evenly.
         weakBlurView.setImageAlpha(Math.round(255 * Math.min(1, blur)));
         strongBlurView.setImageAlpha(Math.round(255 * Math.max(0, Math.min(1, blur - 1))));
@@ -1644,7 +1655,7 @@ public final class HomeActivity extends Activity {
         }
     }
 
-    /** Dimming and blur of the wallpaper behind the page in view; each choice shows at once. */
+    /** Tint and blur of the wallpaper behind the page in view; each choice shows at once. */
     private void choosePageBackdrop() {
         int page = currentPage;
         LinearLayout content = new LinearLayout(this);
@@ -1662,7 +1673,11 @@ public final class HomeActivity extends Activity {
         close.setOnClickListener(v -> dialog.dismiss());
         titleRow.addView(close, new LinearLayout.LayoutParams(dp(64), dp(64)));
         content.addView(titleRow, new LinearLayout.LayoutParams(-1, dp(76)));
-        addBackdropLevels(content, "Затемнение", page, 0);
+        addBackdropLevels(content, "Тонирование", page, 0);
+        TextView tintNote = label("Днём — молочное, ночью — тёмное", 15, getColor(R.color.neutral_muted), false);
+        LinearLayout.LayoutParams tintNoteParams = new LinearLayout.LayoutParams(-1, -2);
+        tintNoteParams.topMargin = dp(6);
+        content.addView(tintNote, tintNoteParams);
         addBackdropLevels(content, "Размытие", page, 1);
         if (animatedWallpaper()) {
             TextView note = label("Видео и анимированный фон не размываются", 15, getColor(R.color.neutral_muted), false);
