@@ -23,6 +23,7 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -43,10 +44,16 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONException;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.Collator;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -65,7 +72,7 @@ public final class SettingsActivity extends ScaledActivity {
     static final int PAGE_CONNECTIVITY = 4;
     private static final String EXTRA_PAGE = "page";
     private static final String EXTRA_WIDGET = "widget";
-    private static final String TAB = "settings_tab";
+    static final String TAB = "settings_tab";
     private static final String EDIT_NIGHT = "edit_night";
     private static final int[] TAB_LABELS = {R.string.settings_tab_wallpaper, R.string.settings_tab_desktop,
             R.string.settings_tab_gestures, R.string.settings_tab_system};
@@ -88,6 +95,8 @@ public final class SettingsActivity extends ScaledActivity {
     private static final int PICK_WALLPAPER = 1;
     private static final int PICK_SLIDESHOW = 2;
     private static final int PICK_VIDEO = 3;
+    private static final int PICK_BACKUP = 4;
+    private static final int BACKUP_MAX_BYTES = 256 * 1024;
     private static final int LOCATION_PERMISSION = 4;
 
     private final List<TextView> tabs = new ArrayList<>();
@@ -666,6 +675,14 @@ public final class SettingsActivity extends ScaledActivity {
         scaleValue.setText(scaleText(scale.getProgress()));
         ui.addView(scale, margin(4, -2));
 
+        LinearLayout backup = card(page, "Импорт и экспорт настроек",
+                "JSON содержит все настройки лаунчера: фон, рабочий стол с виджетами, док, жесты, встроенные виджеты, "
+                        + "тему и масштаб. Экспорт отправляет файл через «Поделиться» — например, себе в Telegram. "
+                        + "Разрешения не переносятся. Свои картинки и видео фона и виджеты приложений восстанавливаются, "
+                        + "только пока они есть на этом ГУ: после переустановки виджеты приложений нужно добавить заново.");
+        action(backup, "Экспортировать настройки в JSON", this::exportBackup);
+        action(backup, "Импортировать настройки из JSON", this::chooseBackup);
+
         LinearLayout gstore = card(page, getString(R.string.gstore_title), getString(R.string.gstore_hint));
         action(gstore, getString(R.string.gstore_button), () -> GStoreDialog.show(this));
         LinearLayout support = card(page, getString(R.string.donate_title), getString(R.string.donate_hint));
@@ -931,10 +948,92 @@ public final class SettingsActivity extends ScaledActivity {
         catch (ActivityNotFoundException e) { Toast.makeText(this, "Выбор файла недоступен", Toast.LENGTH_SHORT).show(); }
     }
 
+    /** As in the Atlas widgets: a dated file in the cache, sent through the share sheet. */
+    private void exportBackup() {
+        String name = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(new Date())
+                + "_" + SettingsBackup.FILE_NAME;
+        Uri uri;
+        try {
+            uri = BackupProvider.publish(this, name, SettingsBackup.read(this).toJson(appVersion()));
+        } catch (IOException | RuntimeException e) {
+            Log.w("AtlasLauncher", "Cannot export settings", e);
+            Toast.makeText(this, "Не удалось экспортировать настройки", Toast.LENGTH_LONG).show();
+            return;
+        }
+        Intent send = new Intent(Intent.ACTION_SEND).setType(SettingsBackup.MIME)
+                .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        send.setClipData(ClipData.newRawUri(name, uri));
+        try {
+            startActivity(Intent.createChooser(send, "Экспорт настроек").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "Нет приложений, которые могут принять файл", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private String appVersion() {
+        try {
+            String name = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            return name == null ? "" : name;
+        } catch (PackageManager.NameNotFoundException e) {
+            return "";
+        }
+    }
+
+    /** The system document picker, any type: JSON sent through messengers often arrives without one. */
+    private void chooseBackup() {
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                .putExtra(Intent.EXTRA_MIME_TYPES, new String[]{SettingsBackup.MIME, "application/octet-stream",
+                        "text/plain", "*/*"});
+        try { startActivityForResult(picker, PICK_BACKUP); }
+        catch (ActivityNotFoundException e) { Toast.makeText(this, "В прошивке нет системного выбора файлов", Toast.LENGTH_LONG).show(); }
+    }
+
+    private void readBackup(Uri uri) {
+        String text;
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new IOException("Cannot open " + uri);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+                if (out.size() > BACKUP_MAX_BYTES) throw new IOException("Settings file is larger than 256 KB");
+            }
+            text = new String(out.toByteArray(), StandardCharsets.UTF_8);
+        } catch (IOException | RuntimeException e) {
+            Log.w("AtlasLauncher", "Cannot read settings " + uri, e);
+            Toast.makeText(this, "Не удалось прочитать настройки", Toast.LENGTH_LONG).show();
+            return;
+        }
+        SettingsBackup backup = SettingsBackup.parse(text);
+        if (backup == null) {
+            Toast.makeText(this, "Это не файл настроек AtlasLauncher", Toast.LENGTH_LONG).show();
+            return;
+        }
+        int lost = backup.widgets.size() - backup.restorableWidgets(this).size();
+        show(new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Импортировать настройки?")
+                .setMessage("Текущие настройки и рабочий стол будут заменены настройками из файла. Виджетов в файле — "
+                        + backup.widgets.size() + (lost > 0 ? ", из них " + lost + " не восстановятся: таких виджетов "
+                        + "приложений нет на этом ГУ, их нужно добавить заново." : "."))
+                .setPositiveButton("Импортировать", (dialog, which) -> {
+                    backup.apply(this);
+                    releaseUnusedFiles();
+                    Toast.makeText(this, "Настройки импортированы", Toast.LENGTH_SHORT).show();
+                    // The theme and the interface scale may have changed too.
+                    recreate();
+                })
+                .setNegativeButton("Отмена", null));
+    }
+
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (result != RESULT_OK || data == null) return;
+        if (request == PICK_BACKUP && data.getData() != null) {
+            readBackup(data.getData());
+            return;
+        }
         if ((request == PICK_WALLPAPER || request == PICK_VIDEO) && data.getData() != null) {
             Uri uri = data.getData();
             try {

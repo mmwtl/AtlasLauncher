@@ -104,5 +104,11 @@
             android:name=".GestureFilterService"
             android:exported="false"
             android:process=":gestures" />
+        <!-- Serves the settings export to the app picked in the share sheet. -->
+        <provider
+            android:name=".BackupProvider"
+            android:authorities="${applicationId}.backup"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

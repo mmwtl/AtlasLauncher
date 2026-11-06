@@ -130,8 +130,8 @@ public final class HomeActivity extends Activity {
     private static final int WIDGET_PREVIEW_DP = 150;
     static final String PREFS = "home";
     static final String FAVORITES = "favorites";
-    private static final String WIDGETS = "widgets";
-    private static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
+    static final String WIDGETS = "widgets";
+    static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
     static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
     // With this flag the night mode has its own wallpaper settings: the same keys with the NIGHT suffix.
     static final String WALLPAPER_BY_MODE = "wallpaper_by_mode";
@@ -146,8 +146,8 @@ public final class HomeActivity extends Activity {
     static final int[] SLIDESHOW_MAX_INTERVAL = {0, 60, 24};
     // File name prefix of the cached wallpaper copy in getFilesDir().
     private static final String WALLPAPER_CACHE = "wallpaper-";
-    private static final String SLIDESHOW_CHANGED_AT = "wallpaper_slideshow_changed_at";
-    private static final String SLIDESHOW_BOOT = "wallpaper_slideshow_boot";
+    static final String SLIDESHOW_CHANGED_AT = "wallpaper_slideshow_changed_at";
+    static final String SLIDESHOW_BOOT = "wallpaper_slideshow_boot";
     // Index 0 changes the wallpaper once per boot.
     // Slow enough that a change on the visible HOME does not draw the driver's eye.
     private static final long SLIDESHOW_FADE_MS = 3000;
@@ -181,7 +181,7 @@ public final class HomeActivity extends Activity {
     static final String GESTURES_MAP = "gestures_map";
     static final String GESTURES_DIRECT = "gestures_direct";
     private static final String DOCK_VISIBLE = "dock_visible";
-    private static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
+    static final String DOCK_WIDGET_MIGRATED = "dock_widget_migrated";
     static final String DOCK_APPS = "dock_apps";
     static final String DOCK_OPACITY = "dock_opacity";
     static final String DRAWER_ICON_SIZE = "drawer_icon_size";
@@ -193,7 +193,7 @@ public final class HomeActivity extends Activity {
     static final String HIDE_BY_DOUBLE_TAP = "hide_widgets_double_tap";
     static final String HIDE_BY_PANEL_HOME = "hide_widgets_panel_home";
     static final String MULTIPLE_PAGES = "multiple_desktop_pages";
-    private static final String WIDGETS_HIDDEN = "widgets_hidden";
+    static final String WIDGETS_HIDDEN = "widgets_hidden";
     private static final long PAGE_SNAP_MS = 250;
     // A widget dragged this close to the side of the grid moves to the next page after a pause.
     private static final int PAGE_EDGE_DP = 56;
@@ -203,7 +203,7 @@ public final class HomeActivity extends Activity {
     private static final String MEDIA_WIDGET_PACKAGE = "com.geely.mediawidget";
     private static final ComponentName SOURCE_LIST_PROVIDER = new ComponentName(MEDIA_WIDGET_PACKAGE,
             MEDIA_WIDGET_PACKAGE + ".customwidget.SourceListWidgetProvider");
-    private static final String SOURCE_LIST_WIDGET = "source_list_widget";
+    static final String SOURCE_LIST_WIDGET = "source_list_widget";
     // QNX hides the boot logo when this service reports boot complete (IDIMKey.notifyBootComplete, code 3).
     private static final ComponentName DIM_KEY_SERVICE = new ComponentName("com.autolink.diminteraction",
             "com.autolink.diminteraction.DIMKeyService");
@@ -371,6 +371,8 @@ public final class HomeActivity extends Activity {
             case WALLPAPER_BY_MODE: switchWallpaperMode(); break;
             // The theme is set on the resources when the activity starts.
             case ThemeMode.KEY: recreate(); break;
+            // An import replaced the desktop too; HOME starts over from the prefs, as after a reboot.
+            case SettingsBackup.IMPORTED: recreate(); break;
             case VIDEO_WALLPAPER: case WALLPAPER: case VIDEO_WALLPAPER + NIGHT: case WALLPAPER + NIGHT:
                 showChangedWallpaper();
                 scheduleSlideshow();
