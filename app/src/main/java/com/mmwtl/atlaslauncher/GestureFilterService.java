@@ -24,6 +24,7 @@ import android.os.Parcel;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.Display;
 import android.view.InputDevice;
@@ -110,6 +111,12 @@ public final class GestureFilterService extends Service {
     private static final int[][] CLIMATE_SWITCHES = {CLIMATE_POWER, CLIMATE_AUTO_SWITCH, AC, RECIRCULATION,
             DEFROST_FRONT, DEFROST_REAR};
     private static final int MAX_VOLUME_STEPS = 3;
+    // OneOS keeps the volume in the car's volume groups. Only adjustStreamVolume reaches them (AudioService hands
+    // it to CarAudioService); setStreamVolume changes an Android index nobody hears. CarAudioService stores the
+    // media group here, readable without its signature permission; there is no such key off the car.
+    private static final String CAR_MEDIA_VOLUME = "android.car.VOLUME_GROUP/0";
+    // maxVolume of the media group in /vendor/etc/int_amp_car_audio_configuration.xml.
+    private static final int CAR_VOLUME_MAX = 39;
     private static final long GIB_REFRESH_MS = 60_000;
     private static final String CHANNEL = "gestures";
     static final String EXTRA_PRIORITY = "priority";
@@ -197,6 +204,9 @@ public final class GestureFilterService extends Service {
     // Null while car values go through the bridge. Action thread, apart from the check in the receiver.
     private volatile DirectCar car;
     private long lastCarChange;
+    // The volume the scale last set and when, for the car may not have stored it yet. Action thread.
+    private int scaleVolume;
+    private long lastVolumeChange;
     // Dispatcher state belongs to the control thread.
     private IBinder dispatcher;
     private boolean registrationAttempted;
@@ -463,10 +473,19 @@ public final class GestureFilterService extends Service {
             boolean overlay = scaleOverlay && GestureScale.canShow(this);
             switch (kind) {
                 case VOLUME:
-                    int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                    int stored = Settings.System.getInt(getContentResolver(), CAR_MEDIA_VOLUME, -1);
+                    int max = stored < 0 ? audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) : CAR_VOLUME_MAX;
                     int volume = Math.round(level * max);
-                    if (volume != audio.getStreamVolume(AudioManager.STREAM_MUSIC)) {
-                        audio.setStreamVolume(AudioManager.STREAM_MUSIC, volume, overlay ? 0 : AudioManager.FLAG_SHOW_UI);
+                    int current = stored < 0 ? audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                            : SystemClock.uptimeMillis() - lastVolumeChange < DIRECT_SETTLE_MS ? scaleVolume : stored;
+                    if (volume != current) {
+                        int direction = volume > current ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER;
+                        for (int i = Math.abs(volume - current); i > 0; i--) {
+                            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction,
+                                    overlay ? 0 : AudioManager.FLAG_SHOW_UI);
+                        }
+                        scaleVolume = volume;
+                        lastVolumeChange = SystemClock.uptimeMillis();
                     }
                     if (overlay) {
                         showScale(kind, sideways, cross, R.drawable.ic_volume_up, "Громкость",
