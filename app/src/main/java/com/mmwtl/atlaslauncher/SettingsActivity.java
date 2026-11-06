@@ -816,7 +816,8 @@ public final class SettingsActivity extends ScaledActivity {
         for (int i = 0; i < 2; i++) {
             preview.addView(label(i == 0 ? "День" : "Ночь"));
             texts[i] = BuiltInWidgets.createText(modes[i], previewPlacement);
-            preview.addView(texts[i], margin(8, -2));
+            // Text shrinks only within a fixed height, as in a one-row widget.
+            preview.addView(texts[i], margin(8, dp(96)));
         }
         Runnable changed = () -> {
             for (int i = 0; i < 2; i++) BuiltInWidgets.updateText(modes[i], texts[i], previewPlacement);
@@ -848,7 +849,7 @@ public final class SettingsActivity extends ScaledActivity {
         look.addView(label("Шрифт"));
         choice(look, key(BuiltInWidgets.TEXT_FONT), new String[]{"Без засечек", "С засечками", "Моноширинный"}, 0, changed);
         LinearLayout head = new LinearLayout(this);
-        head.addView(Ui.text(this, "Размер", 14, Ui.TEXT), new LinearLayout.LayoutParams(0, -2, 1));
+        head.addView(Ui.text(this, "Наибольший размер", 14, Ui.TEXT), new LinearLayout.LayoutParams(0, -2, 1));
         TextView value = Ui.text(this, "", 14, Ui.TEXT_SECONDARY);
         head.addView(value);
         look.addView(head, margin(14, -2));

@@ -26,6 +26,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -55,6 +56,7 @@ final class BuiltInWidgets {
     static final String TEXT_OPACITY = "text_opacity";
     static final String TEXT_DEFAULT = "Текст";
     static final int TEXT_DEFAULT_SIZE = 32;
+    private static final int TEXT_MIN_SIZE = 8;
     static final String VOLUME_MUTE = "volume_mute";
     static final String VOLUME_ICONS = "volume_icons";
     static final String VOLUME_JOINED = "volume_joined";
@@ -197,7 +199,9 @@ final class BuiltInWidgets {
                 == Configuration.UI_MODE_NIGHT_YES;
         view.setText(prefs.getString(key(TEXT_CONTENT, placement.id), TEXT_DEFAULT));
         view.setTypeface(typeface(prefs.getInt(key(TEXT_FONT, placement.id), 0), prefs.getInt(key(TEXT_WEIGHT, placement.id), 1)));
-        view.setTextSize(prefs.getInt(key(TEXT_SIZE, placement.id), TEXT_DEFAULT_SIZE));
+        // The chosen size is the largest one: text that does not fit a small widget shrinks to fit it.
+        view.setAutoSizeTextTypeUniformWithConfiguration(TEXT_MIN_SIZE,
+                Math.max(TEXT_MIN_SIZE, prefs.getInt(key(TEXT_SIZE, placement.id), TEXT_DEFAULT_SIZE)), 1, TypedValue.COMPLEX_UNIT_SP);
         view.setTextColor(night ? prefs.getInt(key(TEXT_COLOR_NIGHT, placement.id), Color.WHITE)
                 : prefs.getInt(key(TEXT_COLOR_DAY, placement.id), Color.BLACK));
         view.setBackground(Ui.rounded(surface(context, R.color.tile_off, prefs, TEXT_OPACITY, placement.id), Ui.dp(context, 24)));
