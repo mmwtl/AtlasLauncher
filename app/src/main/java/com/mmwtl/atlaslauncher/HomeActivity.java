@@ -42,6 +42,7 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.TransitionDrawable;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
@@ -63,6 +64,7 @@ import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.VelocityTracker;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.WindowInsets;
 import android.widget.BaseAdapter;
 import android.widget.Button;
@@ -200,6 +202,12 @@ public final class HomeActivity extends Activity {
     private static final int PAGE_EDGE_DP = 56;
     private static final long PAGE_EDGE_DELAY_MS = 500;
     private static final long PAGE_EDGE_REPEAT_MS = 1000;
+    // Per desktop page: [dim, blur] levels, 0 off, 1 weak, 2 strong; pages past the end have neither.
+    static final String PAGE_BACKDROPS = "page_backdrops";
+    private static final int[] DIM_ALPHAS = {0, 90, 160};
+    // A blurred copy is the wallpaper drawn at 1/scale and blurred with this radius there.
+    private static final int WEAK_BLUR_SCALE = 8, WEAK_BLUR_RADIUS = 3;
+    private static final int STRONG_BLUR_SCALE = 16, STRONG_BLUR_RADIUS = 4;
     // The OneOS media widget asks Launcher3 to show its source list; Atlas hosts that list itself.
     private static final String MEDIA_WIDGET_PACKAGE = "com.geely.mediawidget";
     private static final ComponentName SOURCE_LIST_PROVIDER = new ComponentName(MEDIA_WIDGET_PACKAGE,
@@ -239,6 +247,14 @@ public final class HomeActivity extends Activity {
     private ImageView previousWallpaperView;
     private ValueAnimator wallpaperFade;
     private VideoWallpaperView videoWallpaper;
+    // Above the wallpaper: its weakly and strongly blurred copies, then the dimming with the scrim.
+    private ImageView weakBlurView;
+    private ImageView strongBlurView;
+    private View scrimView;
+    private final List<int[]> pageBackdrops = new ArrayList<>();
+    // The page position the backdrop shows, fractional while the pages slide.
+    private float backdropPosition;
+    private ValueAnimator backdropSlide;
     private LinearLayout favoritePanel;
     private LinearLayout appsTile;
     private boolean editingWidgets;
@@ -383,6 +399,12 @@ public final class HomeActivity extends Activity {
                 scheduleSlideshow();
                 break;
             case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
+            case PAGE_BACKDROPS:
+                loadPageBackdrops();
+                updateBlur();
+                showBackdrop(backdropPosition);
+                updateStatusBarIcons();
+                break;
             case MULTIPLE_PAGES:
                 currentPage = 0;
                 scheduleShowWidgets();
@@ -666,8 +688,10 @@ public final class HomeActivity extends Activity {
         previousWallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
         backdrop.addView(previousWallpaperView, new FrameLayout.LayoutParams(-1, -1));
         wallpaperView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                updateBlur();
                 updateStatusBarIcons();
+            }
         });
         // At boot HOME may be laid out before the status bar window exists: its height arrives later as an inset.
         wallpaperView.setOnApplyWindowInsetsListener((v, insets) -> {
@@ -675,6 +699,17 @@ public final class HomeActivity extends Activity {
             return insets;
         });
         backdrop.addView(wallpaperView, new FrameLayout.LayoutParams(-1, -1));
+        weakBlurView = new ImageView(this);
+        weakBlurView.setScaleType(ImageView.ScaleType.FIT_XY);
+        backdrop.addView(weakBlurView, new FrameLayout.LayoutParams(-1, -1));
+        strongBlurView = new ImageView(this);
+        strongBlurView.setScaleType(ImageView.ScaleType.FIT_XY);
+        backdrop.addView(strongBlurView, new FrameLayout.LayoutParams(-1, -1));
+        scrimView = new View(this);
+        backdrop.addView(scrimView, new FrameLayout.LayoutParams(-1, -1));
+        loadPageBackdrops();
+        backdropPosition = currentPage;
+        showBackdrop(backdropPosition);
         showWallpaper();
         setContentView(backdrop);
         FrameLayout content = new FrameLayout(this);
@@ -723,6 +758,14 @@ public final class HomeActivity extends Activity {
         add.setBackground(round(SURFACE, Color.TRANSPARENT, 38));
         add.setOnClickListener(v -> chooseWidget());
         widgetControls.addView(add, new LinearLayout.LayoutParams(dp(76), dp(76)));
+        Button pageBackdrop = button("◐");
+        pageBackdrop.setContentDescription("Фон этого стола");
+        pageBackdrop.setTextSize(40);
+        pageBackdrop.setBackground(round(SURFACE, Color.TRANSPARENT, 38));
+        pageBackdrop.setOnClickListener(v -> choosePageBackdrop());
+        LinearLayout.LayoutParams backdropParams = new LinearLayout.LayoutParams(dp(76), dp(76));
+        backdropParams.setMargins(dp(8), 0, 0, 0);
+        widgetControls.addView(pageBackdrop, backdropParams);
         Button done = button("✓");
         done.setContentDescription("Завершить редактирование");
         done.setTextSize(28);
@@ -1192,6 +1235,7 @@ public final class HomeActivity extends Activity {
             Drawable cached = cachedWallpaper(saved);
             if (cached != null) wallpaperView.setImageDrawable(cached);
             else if (wallpaperView.getDrawable() == null) wallpaperView.setImageResource(R.drawable.coastal_twilight);
+            updateWallpaperStyle();
             // A picked image comes from its document provider, which may take seconds to start right after boot.
             // The original still loads: the cache holds only the first frame of an animation.
             wallpaperLoader.execute(() -> {
@@ -1299,7 +1343,10 @@ public final class HomeActivity extends Activity {
     /** Keeps the previous image under the new one; the scrim stays still because only the image fades. */
     private void crossfadeWallpaper(Drawable image) {
         Drawable previous = wallpaperView.getDrawable();
+        Drawable weakBlur = weakBlurView.getDrawable(), strongBlur = strongBlurView.getDrawable();
         applyWallpaper(image);
+        fadeBlur(weakBlurView, weakBlur);
+        fadeBlur(strongBlurView, strongBlur);
         previousWallpaperView.setImageDrawable(previous);
         wallpaperView.setImageAlpha(0);
         wallpaperFade = ValueAnimator.ofInt(0, 255).setDuration(SLIDESHOW_FADE_MS);
@@ -1340,9 +1387,98 @@ public final class HomeActivity extends Activity {
 
     private void updateWallpaperStyle() {
         // Animation frames can change brightness: keep white status icons against a stronger top scrim.
-        wallpaperView.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+        scrimView.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{Color.argb(animatedWallpaper() ? 160 : 45, 2, 10, 24), Color.argb(8, 2, 10, 24), Color.argb(175, 2, 9, 21)}));
+        updateBlur();
         updateStatusBarIcons();
+    }
+
+    private void loadPageBackdrops() {
+        pageBackdrops.clear();
+        try {
+            JSONArray saved = new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE).getString(PAGE_BACKDROPS, "[]"));
+            for (int i = 0; i < saved.length(); i++) {
+                JSONArray levels = saved.getJSONArray(i);
+                pageBackdrops.add(new int[]{Math.max(0, Math.min(2, levels.getInt(0))), Math.max(0, Math.min(2, levels.getInt(1)))});
+            }
+        } catch (JSONException e) {
+            Log.w("AtlasLauncher", "Cannot read desktop backgrounds", e);
+        }
+    }
+
+    private void savePageBackdrops() {
+        // Pages past the last one with a setting need no entries.
+        int count = pageBackdrops.size();
+        while (count > 0 && pageBackdrops.get(count - 1)[0] == 0 && pageBackdrops.get(count - 1)[1] == 0) count--;
+        JSONArray saved = new JSONArray();
+        for (int i = 0; i < count; i++) saved.put(new JSONArray().put(pageBackdrops.get(i)[0]).put(pageBackdrops.get(i)[1]));
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PAGE_BACKDROPS, saved.toString()).apply();
+    }
+
+    /** The [dim, blur] levels of a page. */
+    private int[] pageBackdrop(int page) {
+        return page < pageBackdrops.size() ? pageBackdrops.get(page) : new int[2];
+    }
+
+    /** Draws the levels between the pages in view: at 1.5 half of page 1's and half of page 2's. */
+    private void showBackdrop(float position) {
+        backdropPosition = position;
+        position = Math.max(0, Math.min(Math.max(0, pages.size() - 1), position));
+        int page = (int) position;
+        float fraction = position - page;
+        int[] from = pageBackdrop(page), to = pageBackdrop(page + 1);
+        float dim = DIM_ALPHAS[from[0]] + (DIM_ALPHAS[to[0]] - DIM_ALPHAS[from[0]]) * fraction;
+        float blur = from[1] + (to[1] - from[1]) * fraction;
+        scrimView.setBackgroundColor(Color.argb(Math.round(dim), 0, 0, 0));
+        // The strong copy fades in over the weak one, so between the levels the blur grows evenly.
+        weakBlurView.setImageAlpha(Math.round(255 * Math.min(1, blur)));
+        strongBlurView.setImageAlpha(Math.round(255 * Math.max(0, Math.min(1, blur - 1))));
+    }
+
+    /** Slides the backdrop to the page in view, as the pages slide to it. */
+    private void slideBackdrop() {
+        if (backdropSlide != null) backdropSlide.cancel();
+        backdropSlide = ValueAnimator.ofFloat(backdropPosition, currentPage).setDuration(PAGE_SNAP_MS);
+        backdropSlide.addUpdateListener(slide -> showBackdrop((float) slide.getAnimatedValue()));
+        backdropSlide.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator animation) {
+                updateStatusBarIcons();
+            }
+        });
+        backdropSlide.start();
+    }
+
+    /** Video and animations are not blurred: their copies would have to follow every frame. */
+    private void updateBlur() {
+        boolean blurred = !animatedWallpaper() && wallpaperView.getWidth() > 0
+                && pageBackdrops.stream().anyMatch(levels -> levels[1] > 0);
+        weakBlurView.setImageBitmap(blurred ? blurredWallpaper(WEAK_BLUR_SCALE, WEAK_BLUR_RADIUS) : null);
+        strongBlurView.setImageBitmap(blurred ? blurredWallpaper(STRONG_BLUR_SCALE, STRONG_BLUR_RADIUS) : null);
+    }
+
+    /** The wallpaper on screen drawn small and blurred there; it is only a few thousand pixels, so this takes milliseconds. */
+    private Bitmap blurredWallpaper(int scale, int radius) {
+        Bitmap bitmap = Bitmap.createBitmap((wallpaperView.getWidth() + scale - 1) / scale,
+                (wallpaperView.getHeight() + scale - 1) / scale, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.scale(1f / scale, 1f / scale);
+        wallpaperView.draw(canvas);
+        int[] pixels = new int[bitmap.getWidth() * bitmap.getHeight()];
+        bitmap.getPixels(pixels, 0, bitmap.getWidth(), 0, 0, bitmap.getWidth(), bitmap.getHeight());
+        BoxBlur.blur(pixels, bitmap.getWidth(), bitmap.getHeight(), radius);
+        bitmap.setPixels(pixels, 0, bitmap.getWidth(), 0, 0, bitmap.getWidth(), bitmap.getHeight());
+        return bitmap;
+    }
+
+    /** Fades from the previous blurred copy to the new one together with the wallpaper. */
+    private void fadeBlur(ImageView view, Drawable previous) {
+        Drawable next = view.getDrawable();
+        if (previous == null || next == null) return;
+        if (previous instanceof TransitionDrawable) previous = ((TransitionDrawable) previous).getDrawable(1);
+        TransitionDrawable fade = new TransitionDrawable(new Drawable[]{previous, next});
+        fade.setCrossFadeEnabled(true);
+        view.setImageDrawable(fade);
+        fade.startTransition((int) SLIDESHOW_FADE_MS);
     }
 
     private void updateStatusBarIcons() {
@@ -1353,11 +1489,14 @@ public final class HomeActivity extends Activity {
         WindowInsets insets = wallpaperView.getRootWindowInsets();
         int width = wallpaperView.getWidth();
         if (insets == null || width == 0 || insets.getStableInsetTop() == 0) return;
-        // Sample the scrimmed wallpaper under the status bar at 1/8 scale.
+        // Sample the blurred, dimmed and scrimmed wallpaper under the status bar at 1/8 scale.
         Bitmap sample = Bitmap.createBitmap((width + 7) / 8, (insets.getStableInsetTop() + 7) / 8, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(sample);
         canvas.scale(1 / 8f, 1 / 8f);
         wallpaperView.draw(canvas);
+        weakBlurView.draw(canvas);
+        strongBlurView.draw(canvas);
+        scrimView.draw(canvas);
         int[] pixels = new int[sample.getWidth() * sample.getHeight()];
         sample.getPixels(pixels, 0, sample.getWidth(), 0, 0, sample.getWidth(), sample.getHeight());
         sample.recycle();
@@ -1503,6 +1642,77 @@ public final class HomeActivity extends Activity {
             window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels - dp(32), dp(1200)),
                     Math.min(getResources().getDisplayMetrics().heightPixels - dp(64), dp(1400)));
         }
+    }
+
+    /** Dimming and blur of the wallpaper behind the page in view; each choice shows at once. */
+    private void choosePageBackdrop() {
+        int page = currentPage;
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(22), dp(20), dp(22), dp(24));
+        content.setBackground(round(getColor(R.color.neutral_surface), Color.TRANSPARENT, 32));
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(label("Фон этого стола", 24, getColor(R.color.neutral_text), true), new LinearLayout.LayoutParams(0, -2, 1));
+        Button close = neutralButton("×");
+        close.setContentDescription("Закрыть");
+        close.setTextSize(22);
+        close.setOnClickListener(v -> dialog.dismiss());
+        titleRow.addView(close, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        content.addView(titleRow, new LinearLayout.LayoutParams(-1, dp(76)));
+        addBackdropLevels(content, "Затемнение", page, 0);
+        addBackdropLevels(content, "Размытие", page, 1);
+        if (animatedWallpaper()) {
+            TextView note = label("Видео и анимированный фон не размываются", 15, getColor(R.color.neutral_muted), false);
+            LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(-1, -2);
+            noteParams.topMargin = dp(10);
+            content.addView(note, noteParams);
+        }
+        dialog.setContentView(content);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            // The desktop behind shows each choice as it is made.
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels - dp(32), dp(720)), -2);
+        }
+    }
+
+    /** A titled row of off, weak and strong for one of a page's levels. */
+    private void addBackdropLevels(LinearLayout content, String title, int page, int kind) {
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
+        titleParams.topMargin = dp(12);
+        titleParams.bottomMargin = dp(8);
+        content.addView(label(title, 17, getColor(R.color.neutral_text), true), titleParams);
+        LinearLayout row = new LinearLayout(this);
+        String[] names = {"Выкл", "Слабое", "Сильное"};
+        Button[] segments = new Button[names.length];
+        for (int level = 0; level < names.length; level++) {
+            int chosen = level;
+            Button segment = neutralButton(names[level]);
+            segment.setOnClickListener(v -> {
+                while (pageBackdrops.size() <= page) pageBackdrops.add(new int[2]);
+                pageBackdrops.get(page)[kind] = chosen;
+                savePageBackdrops();
+                for (int i = 0; i < segments.length; i++) selectSegment(segments[i], i == chosen);
+            });
+            segments[level] = segment;
+            selectSegment(segment, level == pageBackdrop(page)[kind]);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(64), 1);
+            if (level > 0) params.leftMargin = dp(8);
+            row.addView(segment, params);
+        }
+        content.addView(row, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void selectSegment(Button segment, boolean selected) {
+        segment.setSelected(selected);
+        segment.setTextColor(selected ? Color.WHITE : getColor(R.color.neutral_text));
+        segment.setBackground(new RippleDrawable(getColorStateList(R.color.neutral_ripple),
+                round(selected ? getColor(R.color.atlas_accent) : getColor(R.color.neutral_raised), Color.TRANSPARENT, 20), null));
     }
 
     private View widgetPreviewTile(View preview, String title, String details) {
@@ -1940,6 +2150,7 @@ public final class HomeActivity extends Activity {
             pages.get(i).addView(empty, new FrameLayout.LayoutParams(dp(220), dp(64), Gravity.CENTER));
         }
         updateIndicator(false);
+        if (backdropSlide == null || !backdropSlide.isRunning()) showBackdrop(currentPage);
     }
 
     private int pageCount() {
@@ -1987,6 +2198,17 @@ public final class HomeActivity extends Activity {
             changed |= page != placement.page;
             placement.page = page;
         }
+        // Page backgrounds move with their widgets; those of the pages left without widgets go.
+        List<int[]> backdrops = new ArrayList<>();
+        for (int page : used) backdrops.add(pageBackdrop(page));
+        if (used.isEmpty()) backdrops.add(pageBackdrop(0));
+        boolean moved = backdrops.size() != pageBackdrops.size();
+        for (int i = 0; i < backdrops.size() && !moved; i++) moved = backdrops.get(i) != pageBackdrops.get(i);
+        if (moved) {
+            pageBackdrops.clear();
+            pageBackdrops.addAll(backdrops);
+            savePageBackdrops();
+        }
         // An empty page in view gives way to the page before it.
         int kept = 0;
         for (int i = 0; i < used.size(); i++) if (used.get(i) <= currentPage) kept = i;
@@ -2002,12 +2224,15 @@ public final class HomeActivity extends Activity {
 
     private void layoutPages(float offset) {
         for (int i = 0; i < pages.size(); i++) pages.get(i).setTranslationX((i - currentPage) * widgetRow.getWidth() + offset);
+        if (backdropSlide != null) backdropSlide.cancel();
+        showBackdrop(currentPage - offset / widgetRow.getWidth());
     }
 
     private void snapToPage(int page) {
         currentPage = Math.max(0, Math.min(pages.size() - 1, page));
         for (int i = 0; i < pages.size(); i++)
             pages.get(i).animate().translationX((i - currentPage) * widgetRow.getWidth()).setDuration(PAGE_SNAP_MS).start();
+        slideBackdrop();
         updateIndicator(true);
     }
 
