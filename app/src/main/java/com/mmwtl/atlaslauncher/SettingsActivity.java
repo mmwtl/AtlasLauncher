@@ -14,6 +14,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -22,7 +23,9 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.Display;
 import android.view.Gravity;
@@ -70,6 +73,10 @@ public final class SettingsActivity extends ScaledActivity {
     static final int PAGE_CLOCK = 2;
     static final int PAGE_VOLUME = 3;
     static final int PAGE_CONNECTIVITY = 4;
+    static final int PAGE_TEXT = 5;
+    // Swatches of the text widget's colors; any other color is entered as hex.
+    private static final int[] TEXT_COLORS = {Color.BLACK, Color.WHITE, 0xFF9AA0A6, 0xFFE53935, 0xFFFB8C00,
+            0xFFFDD835, 0xFF43A047, 0xFF1E88E5, 0xFF8E24AA};
     private static final String EXTRA_PAGE = "page";
     private static final String EXTRA_WIDGET = "widget";
     static final String TAB = "settings_tab";
@@ -122,7 +129,7 @@ public final class SettingsActivity extends ScaledActivity {
     // Index of the finger count shown in the gesture table: two, three, four.
     private int gestureFingers;
     private Runnable connectivityChanged;
-    /** The clock, volume or Wi-Fi/Bluetooth widget whose page is open. */
+    /** The clock, volume, Wi-Fi/Bluetooth or text widget whose page is open. */
     private int widgetId;
 
     static void open(Context context, int page) {
@@ -156,11 +163,12 @@ public final class SettingsActivity extends ScaledActivity {
         content.setPadding(dp(24), dp(8), dp(24), dp(24) + HomeActivity.CLIMATE_PANEL_PX);
         scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        // Dock, clock, volume and Wi-Fi/Bluetooth are widgets: their pages open only from the widget's own settings button.
+        // Dock, clock, volume, Wi-Fi/Bluetooth and text are widgets: their pages open only from the widget's own settings button.
         if (page == PAGE_DOCK) buildDockPage(content);
         else if (page == PAGE_CLOCK) buildClockPage(content);
         else if (page == PAGE_VOLUME) buildVolumePage(content);
         else if (page == PAGE_CONNECTIVITY) buildConnectivityPage(content);
+        else if (page == PAGE_TEXT) buildTextPage(content);
         else {
             buildWallpaperTab(page(content));
             buildDesktopTab(page(content));
@@ -201,7 +209,8 @@ public final class SettingsActivity extends ScaledActivity {
         titleRow.setBaselineAligned(false);
         int title = page == PAGE_DOCK ? R.string.settings_dock : page == PAGE_CLOCK ? R.string.settings_clock
                 : page == PAGE_VOLUME ? R.string.settings_volume
-                : page == PAGE_CONNECTIVITY ? R.string.settings_connectivity : R.string.app_name;
+                : page == PAGE_CONNECTIVITY ? R.string.settings_connectivity
+                : page == PAGE_TEXT ? R.string.settings_text : R.string.app_name;
         titleRow.addView(Ui.heading(this, title, 24));
         TextView versionView = Ui.text(this, page == PAGE_MAIN ? version() : "", 12, Ui.TEXT_SECONDARY);
         versionView.setPadding(dp(8), dp(6), 0, 0);
@@ -797,6 +806,159 @@ public final class SettingsActivity extends ScaledActivity {
                 + "и при включённой геолокации; без них плитка пишет «Подключено». Точке доступа нужно разрешение "
                 + "на изменение системных настроек: его попросят при первом нажатии.", 13, Ui.TEXT_SECONDARY), margin(10, -2));
         opacitySlider(preview, key(BuiltInWidgets.CONNECTIVITY_OPACITY), changed);
+    }
+
+    private void buildTextPage(LinearLayout content) {
+        LinearLayout preview = card(content, "Предпросмотр", "Днём текст показывается дневным цветом, ночью — ночным.");
+        HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(widgetId, 0, 0, 288, 96);
+        Context[] modes = {modeContext(false), modeContext(true)};
+        View[] texts = new View[2];
+        for (int i = 0; i < 2; i++) {
+            preview.addView(label(i == 0 ? "День" : "Ночь"));
+            texts[i] = BuiltInWidgets.createText(modes[i], previewPlacement);
+            preview.addView(texts[i], margin(8, -2));
+        }
+        Runnable changed = () -> {
+            for (int i = 0; i < 2; i++) BuiltInWidgets.updateText(modes[i], texts[i], previewPlacement);
+        };
+        EditText input = new EditText(this);
+        input.setText(prefs.getString(key(BuiltInWidgets.TEXT_CONTENT), BuiltInWidgets.TEXT_DEFAULT));
+        input.setTextColor(Ui.TEXT);
+        input.setTextSize(16);
+        input.setHint("Текст виджета");
+        input.setHintTextColor(Ui.TEXT_SECONDARY);
+        input.setBackground(Ui.rounded(Ui.SURFACE_RAISED, dp(12)));
+        input.setPadding(dp(14), dp(12), dp(14), dp(12));
+        input.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) { }
+
+            @Override public void onTextChanged(CharSequence text, int start, int before, int count) { }
+
+            @Override public void afterTextChanged(Editable text) {
+                prefs.edit().putString(key(BuiltInWidgets.TEXT_CONTENT), text.toString()).apply();
+                changed.run();
+            }
+        });
+        preview.addView(label("Текст"));
+        preview.addView(input, margin(10, -2));
+
+        LinearLayout look = card(content, "Шрифт", null);
+        look.addView(label("Начертание"));
+        choice(look, key(BuiltInWidgets.TEXT_WEIGHT), new String[]{"Тонкий", "Обычный", "Жирный"}, 1, changed);
+        look.addView(label("Шрифт"));
+        choice(look, key(BuiltInWidgets.TEXT_FONT), new String[]{"Без засечек", "С засечками", "Моноширинный"}, 0, changed);
+        LinearLayout head = new LinearLayout(this);
+        head.addView(Ui.text(this, "Размер", 14, Ui.TEXT), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView value = Ui.text(this, "", 14, Ui.TEXT_SECONDARY);
+        head.addView(value);
+        look.addView(head, margin(14, -2));
+        // 12 to 120 sp in steps of 4.
+        SeekBar size = new SeekBar(this);
+        size.setMax(27);
+        size.setProgress((Math.max(12, Math.min(120, prefs.getInt(key(BuiltInWidgets.TEXT_SIZE), BuiltInWidgets.TEXT_DEFAULT_SIZE))) - 12) / 4);
+        size.setContentDescription("Размер текста");
+        value.setText(String.valueOf(12 + size.getProgress() * 4));
+        size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                value.setText(String.valueOf(12 + progress * 4));
+                if (!user) return;
+                prefs.edit().putInt(key(BuiltInWidgets.TEXT_SIZE), 12 + progress * 4).apply();
+                changed.run();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        look.addView(size, margin(4, -2));
+
+        LinearLayout colors = card(content, "Цвет и подложка", null);
+        colors.addView(label("Цвет днём"));
+        colorChoice(colors, key(BuiltInWidgets.TEXT_COLOR_DAY), Color.BLACK, changed);
+        colors.addView(label("Цвет ночью"));
+        colorChoice(colors, key(BuiltInWidgets.TEXT_COLOR_NIGHT), Color.WHITE, changed);
+        opacitySlider(colors, key(BuiltInWidgets.TEXT_OPACITY), changed);
+    }
+
+    /** A context of this activity with the day or the night resources, for a preview of that mode. */
+    private Context modeContext(boolean night) {
+        Configuration config = new Configuration(getResources().getConfiguration());
+        config.uiMode = (config.uiMode & ~Configuration.UI_MODE_NIGHT_MASK)
+                | (night ? Configuration.UI_MODE_NIGHT_YES : Configuration.UI_MODE_NIGHT_NO);
+        return createConfigurationContext(config);
+    }
+
+    /** A row of color swatches and a button for any other color; the color is saved under the key. */
+    private void colorChoice(LinearLayout parent, String key, int defaultColor, Runnable changed) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        List<View> swatches = new ArrayList<>();
+        TextView other = Ui.text(this, "#", 18, Ui.TEXT);
+        other.setGravity(Gravity.CENTER);
+        other.setContentDescription("Другой цвет");
+        Runnable mark = () -> {
+            int color = prefs.getInt(key, defaultColor);
+            boolean known = false;
+            for (int i = 0; i < TEXT_COLORS.length; i++) {
+                boolean selected = TEXT_COLORS[i] == color;
+                known |= selected;
+                swatches.get(i).setBackground(swatch(TEXT_COLORS[i], selected));
+            }
+            other.setBackground(swatch(known ? Ui.SURFACE_RAISED : color, !known));
+            other.setTextColor(known || Color.luminance(color) < 0.5f ? Ui.TEXT : Color.BLACK);
+        };
+        Consumer<Integer> choose = color -> {
+            prefs.edit().putInt(key, color).apply();
+            mark.run();
+            changed.run();
+        };
+        for (int color : TEXT_COLORS) {
+            View swatch = new View(this);
+            swatch.setContentDescription(String.format("#%06X", color & 0xFFFFFF));
+            swatch.setOnClickListener(v -> choose.accept(color));
+            swatches.add(swatch);
+            row.addView(swatch, swatchParams());
+        }
+        other.setOnClickListener(v -> enterColor(prefs.getInt(key, defaultColor), choose));
+        row.addView(other, swatchParams());
+        mark.run();
+        parent.addView(row, margin(10, -2));
+    }
+
+    private LinearLayout.LayoutParams swatchParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(40), dp(40));
+        params.rightMargin = dp(8);
+        return params;
+    }
+
+    private GradientDrawable swatch(int color, boolean selected) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.OVAL);
+        drawable.setColor(color);
+        drawable.setStroke(dp(selected ? 3 : 1), selected ? Ui.ACCENT : Ui.SURFACE_RAISED);
+        return drawable;
+    }
+
+    private void enterColor(int current, Consumer<Integer> chosen) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("RRGGBB");
+        input.setText(String.format("%06X", current & 0xFFFFFF));
+        input.setPadding(dp(24), dp(16), dp(24), dp(16));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Цвет текста")
+                .setMessage("Шестнадцатеричный код цвета, например FF8800.")
+                .setView(input).setNegativeButton("Отмена", null).setPositiveButton("Сохранить", null).create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String hex = input.getText().toString().trim().replaceFirst("^#", "");
+            if (!hex.matches("[0-9A-Fa-f]{6}")) {
+                input.setError("Формат: RRGGBB");
+                return;
+            }
+            chosen.accept(0xFF000000 | Integer.parseInt(hex, 16));
+            dialog.dismiss();
+        }));
+        dialog.show();
+        sized(dialog);
     }
 
     /** Opacity of the widget cards in steps of 5%. */
