@@ -129,8 +129,9 @@ public final class GestureFilterService extends Service {
     private static final long HOLD_MAX_MS = 500;
     // Within this time of a change the car may not report it yet, so a direct read could undo steps.
     private static final long DIRECT_SETTLE_MS = 1500;
-    // The car applies every value it gets in turn, slowly: a drag across the scale would play back long after the
-    // fingers lift. So a gesture's car values wait until the fingers pause this long or lift, and only the last goes.
+    // The climate applies every value it gets in turn, slowly: a drag across the scale would play back long after
+    // the fingers lift. So temperature and fan values wait until the fingers pause this long or lift, and only the
+    // last goes.
     private static final long CAR_WRITE_DELAY_MS = 400;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -594,14 +595,21 @@ public final class GestureFilterService extends Service {
         }
         // The bridge reports the real value back and corrects this guess.
         gibValues.put(key, target);
-        writeCar(key, () -> {
+        Runnable write = () -> {
             DirectCar direct = car;
             if (direct != null) {
                 direct.setFloat(id, area, target);
             } else {
                 sendGib("SET_FLOAT_PROPERTY", id, area, target);
             }
-        });
+        };
+        if (id == BRIGHTNESS) {
+            // The screen keeps up, and the driver wants to see the brightness while choosing it.
+            lastCarChange = SystemClock.uptimeMillis();
+            write.run();
+        } else {
+            writeCar(key, write);
+        }
     }
 
     /** Keeps {@code write} as the property's next car value, sent once the fingers pause or lift. */
