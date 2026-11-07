@@ -195,8 +195,6 @@ public final class HomeActivity extends Activity {
     private static final long[] EDIT_DELAYS_MS = {0, 1000, 2000, 3000};
     static final String HIDE_BY_DOUBLE_TAP = "hide_widgets_double_tap";
     static final String HIDE_BY_PANEL_HOME = "hide_widgets_panel_home";
-    // The pages stay swipeable while the widgets are hidden, to look at each page's wallpaper.
-    static final String PAGE_WHILE_HIDDEN = "page_while_widgets_hidden";
     static final String MULTIPLE_PAGES = "multiple_desktop_pages";
     static final String WIDGETS_HIDDEN = "widgets_hidden";
     private static final long PAGE_SNAP_MS = 250;
@@ -631,14 +629,17 @@ public final class HomeActivity extends Activity {
         if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_OPEN_ALL_APPS, false)) AllAppsActivity.open(this);
         else if (intent.getBooleanExtra(StockHomeRedirectService.EXTRA_PANEL_HOME, false)
                 && getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(HIDE_BY_PANEL_HOME, false)) {
-            // As in Launcher3: first return to the main desktop, then toggle its widgets on another press.
-            // Returning from another desktop keeps the widgets as they were; from an app it shows them.
+            // As in Launcher3: first return to the main desktop with its widgets, then toggle them on another press.
             boolean popup = sourceListPopup != null && sourceListPopup.isShowing();
-            boolean hidden = !pausedSinceResume && !AllAppsActivity.shown && (onMainPage ? !widgetsHidden : widgetsHidden);
+            boolean hidden = !pausedSinceResume && onMainPage && !AllAppsActivity.shown && !widgetsHidden;
             if (popup) sourceListPopup.dismiss();
             if (hidden != widgetsHidden) setWidgetsHidden(hidden);
             snapToPage(0);
-        } else if (!pausedSinceResume) snapToPage(0);
+        } else if (!pausedSinceResume) {
+            // The widgets may have been hidden to look through the pages; Home brings back the whole main desktop.
+            if (!onMainPage && widgetsHidden) setWidgetsHidden(false);
+            snapToPage(0);
+        }
     }
 
     @Override public void onPause() {
@@ -2279,13 +2280,9 @@ public final class HomeActivity extends Activity {
             params.setMargins(dp(5), 0, dp(5), 0);
             pageIndicator.addView(dot, params);
         }
-        boolean show = pages.size() > 1 && (!widgetsHidden || pagingWhileHidden()) && (editingWidgets || flash);
+        boolean show = pages.size() > 1 && (editingWidgets || flash);
         pageIndicator.setVisibility(show ? View.VISIBLE : View.GONE);
         if (show && !editingWidgets) pageIndicator.postDelayed(hideIndicator, 1500);
-    }
-
-    private boolean pagingWhileHidden() {
-        return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PAGE_WHILE_HIDDEN, false);
     }
 
     private void onEmptyTap() {
@@ -2871,7 +2868,8 @@ public final class HomeActivity extends Activity {
                 downX = event.getX();
                 downY = event.getY();
                 paging = false;
-                blocked = pages.size() < 2 || widgetsHidden && !pagingWhileHidden();
+                // Hidden widgets leave the pages swipeable: each page's wallpaper tint and blur stay in view.
+                blocked = pages.size() < 2;
             }
             velocity.addMovement(event);
             if (action == MotionEvent.ACTION_POINTER_DOWN) {
