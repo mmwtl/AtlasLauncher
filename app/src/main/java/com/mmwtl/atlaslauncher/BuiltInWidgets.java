@@ -41,12 +41,12 @@ import java.util.concurrent.Executor;
 
 /** The clock, volume, Wi-Fi/Bluetooth/hotspot and text widgets built into HOME; settings show them as previews. */
 final class BuiltInWidgets {
-    private static final int TEXT = Color.rgb(250, 252, 255);
-    private static final int MUTED = Color.rgb(188, 204, 224);
     static final String CLOCK_FORMAT = "clock_format";
     static final String CLOCK_WEIGHT = "clock_weight";
     static final String CLOCK_FONT = "clock_font";
     static final String CLOCK_DATE = "clock_date";
+    static final String CLOCK_COLOR_DAY = "clock_color_day";
+    static final String CLOCK_COLOR_NIGHT = "clock_color_night";
     static final String TEXT_CONTENT = "text_content";
     static final String TEXT_FONT = "text_font";
     static final String TEXT_WEIGHT = "text_weight";
@@ -114,13 +114,11 @@ final class BuiltInWidgets {
         TextClock clock = new TextClock(context);
         clock.setFormat24Hour("HH:mm");
         clock.setFormat12Hour("h:mm");
-        clock.setTextColor(TEXT);
         clock.setGravity(Gravity.CENTER);
         timeLine.addView(clock);
         TextClock period = new TextClock(context);
         period.setFormat24Hour("a");
         period.setFormat12Hour("a");
-        period.setTextColor(MUTED);
         LinearLayout.LayoutParams periodParams = new LinearLayout.LayoutParams(-2, -2);
         periodParams.leftMargin = Ui.dp(context, 6);
         timeLine.addView(period, periodParams);
@@ -129,7 +127,6 @@ final class BuiltInWidgets {
         date.setFormat24Hour("EEE, d MMM, yyyy");
         date.setFormat12Hour("EEE, d MMM, yyyy");
         date.setTextSize(18);
-        date.setTextColor(MUTED);
         date.setGravity(Gravity.CENTER);
         group.addView(date, new LinearLayout.LayoutParams(-1, -2));
         updateClock(context, group, placement);
@@ -163,6 +160,13 @@ final class BuiltInWidgets {
         clock.setTypeface(face);
         ((TextClock) timeLine.getChildAt(1)).setTypeface(face);
         date.setTypeface(face);
+        // Like the text widget, the color follows the day or night resources; AM/PM and the date are dimmer.
+        int color = night(context) ? prefs.getInt(key(CLOCK_COLOR_NIGHT, placement.id), Color.WHITE)
+                : prefs.getInt(key(CLOCK_COLOR_DAY, placement.id), Color.BLACK);
+        int muted = Color.argb(Color.alpha(color) * 3 / 4, Color.red(color), Color.green(color), Color.blue(color));
+        clock.setTextColor(color);
+        ((TextClock) timeLine.getChildAt(1)).setTextColor(muted);
+        date.setTextColor(muted);
         date.setVisibility(showDate && prefs.getBoolean(key(CLOCK_DATE, placement.id), true) ? View.VISIBLE : View.GONE);
         TextClock period = (TextClock) timeLine.getChildAt(1);
         float availableWidth = Ui.dp(context, Math.max(1, placement.width - 16));
@@ -195,19 +199,22 @@ final class BuiltInWidgets {
     static void updateText(Context context, View hostView, HomeActivity.WidgetPlacement placement) {
         TextView view = (TextView) hostView;
         SharedPreferences prefs = context.getSharedPreferences(HomeActivity.PREFS, Context.MODE_PRIVATE);
-        boolean night = (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                == Configuration.UI_MODE_NIGHT_YES;
         view.setText(prefs.getString(key(TEXT_CONTENT, placement.id), TEXT_DEFAULT));
         view.setTypeface(typeface(prefs.getInt(key(TEXT_FONT, placement.id), 0), prefs.getInt(key(TEXT_WEIGHT, placement.id), 1)));
         // The chosen size is the largest one: text that does not fit a small widget shrinks to fit it.
         view.setAutoSizeTextTypeUniformWithConfiguration(TEXT_MIN_SIZE,
                 Math.max(TEXT_MIN_SIZE, prefs.getInt(key(TEXT_SIZE, placement.id), TEXT_DEFAULT_SIZE)), 1, TypedValue.COMPLEX_UNIT_SP);
-        view.setTextColor(night ? prefs.getInt(key(TEXT_COLOR_NIGHT, placement.id), Color.WHITE)
+        view.setTextColor(night(context) ? prefs.getInt(key(TEXT_COLOR_NIGHT, placement.id), Color.WHITE)
                 : prefs.getInt(key(TEXT_COLOR_DAY, placement.id), Color.BLACK));
         view.setBackground(Ui.rounded(surface(context, R.color.tile_off, prefs, TEXT_OPACITY, placement.id), Ui.dp(context, 24)));
         // Text shrinks to the space inside the padding; the font's own extra spacing would leave even less.
         view.setIncludeFontPadding(false);
         view.setPadding(Ui.dp(context, 12), Ui.dp(context, 2), Ui.dp(context, 12), Ui.dp(context, 2));
+    }
+
+    private static boolean night(Context context) {
+        return (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
     }
 
     static float clockTimeWidth(Context context, TextClock clock, TextClock period) {

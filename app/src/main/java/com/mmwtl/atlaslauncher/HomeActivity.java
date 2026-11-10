@@ -425,7 +425,8 @@ public final class HomeActivity extends Activity {
             case DOCK_LABELS: case DOCK_APPS: case DRAWER_ICON_SIZE: scheduleShowWidgets(); break;
             case DOCK_OPACITY: updateDock(); break;
             case BuiltInWidgets.CLOCK_FORMAT: case BuiltInWidgets.CLOCK_WEIGHT: case BuiltInWidgets.CLOCK_FONT:
-            case BuiltInWidgets.CLOCK_DATE: updateDesktopClock(); break;
+            case BuiltInWidgets.CLOCK_DATE: case BuiltInWidgets.CLOCK_COLOR_DAY: case BuiltInWidgets.CLOCK_COLOR_NIGHT:
+                updateDesktopClock(); break;
             case BuiltInWidgets.VOLUME_MUTE: case BuiltInWidgets.VOLUME_ICONS: case BuiltInWidgets.VOLUME_JOINED:
             case BuiltInWidgets.VOLUME_OPACITY:
                 updateDesktopVolume(); break;

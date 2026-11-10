@@ -731,12 +731,21 @@ public final class SettingsActivity extends ScaledActivity {
     }
 
     private void buildClockPage(LinearLayout content) {
-        LinearLayout preview = card(content, "Предпросмотр", "Параметры применяются к часам на рабочем столе.");
+        LinearLayout preview = card(content, "Предпросмотр", "Днём часы показываются дневным цветом, ночью — ночным.");
         HomeActivity.WidgetPlacement previewPlacement = new HomeActivity.WidgetPlacement(widgetId, 0, 0, 280, 192);
         previewPlacement.clockSize = 64;
-        View clock = BuiltInWidgets.createClock(this, previewPlacement);
-        preview.addView(clock, margin(12, dp(156)));
-        Runnable changed = () -> BuiltInWidgets.updateClock(this, clock, previewPlacement);
+        Context[] modes = {modeContext(false), modeContext(true)};
+        View[] clocks = new View[2];
+        for (int i = 0; i < 2; i++) {
+            preview.addView(label(i == 0 ? "День" : "Ночь"));
+            clocks[i] = BuiltInWidgets.createClock(modes[i], previewPlacement);
+            // The clock has no card of its own: show it on the mode's tile color, close to the page tint.
+            clocks[i].setBackground(Ui.rounded(modes[i].getColor(R.color.tile_off), dp(24)));
+            preview.addView(clocks[i], margin(8, dp(156)));
+        }
+        Runnable changed = () -> {
+            for (int i = 0; i < 2; i++) BuiltInWidgets.updateClock(modes[i], clocks[i], previewPlacement);
+        };
         toggle(preview, "Показывать дату", key(BuiltInWidgets.CLOCK_DATE), true, changed);
         preview.addView(label("Формат времени"));
         choice(preview, key(BuiltInWidgets.CLOCK_FORMAT), new String[]{"Как в системе", "24 часа", "12 часов"}, 0, changed);
@@ -744,6 +753,12 @@ public final class SettingsActivity extends ScaledActivity {
         choice(preview, key(BuiltInWidgets.CLOCK_WEIGHT), new String[]{"Тонкий", "Обычный", "Жирный"}, 0, changed);
         preview.addView(label("Шрифт"));
         choice(preview, key(BuiltInWidgets.CLOCK_FONT), new String[]{"Без засечек", "С засечками", "Моноширинный"}, 0, changed);
+
+        LinearLayout colors = card(content, "Цвет", null);
+        colors.addView(label("Цвет днём"));
+        colorChoice(colors, key(BuiltInWidgets.CLOCK_COLOR_DAY), Color.BLACK, changed);
+        colors.addView(label("Цвет ночью"));
+        colorChoice(colors, key(BuiltInWidgets.CLOCK_COLOR_NIGHT), Color.WHITE, changed);
     }
 
     private void buildVolumePage(LinearLayout content) {
