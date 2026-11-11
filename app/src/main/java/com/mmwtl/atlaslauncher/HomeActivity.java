@@ -1871,17 +1871,31 @@ public final class HomeActivity extends Activity {
             finishAddingWidget();
             return;
         }
-        // The host API also opens configuration activities that are not exported.
         configureStartedAt = SystemClock.uptimeMillis();
-        Log.w("AtlasWidgetDebug", "Opening " + provider.configure + " for " + pendingWidgetId);
-        try { widgetHost.startAppWidgetConfigureActivityForResult(this, pendingWidgetId, 0, CONFIGURE_WIDGET, null); }
+        try { startConfigureActivity(pendingWidgetId, provider.configure, CONFIGURE_WIDGET); }
         catch (RuntimeException e) { cancelPendingWidget(); widgetDebug("Настройка виджета недоступна: " + e); }
     }
 
     private void reconfigureWidget(WidgetPlacement placement) {
-        try { widgetHost.startAppWidgetConfigureActivityForResult(this, placement.id, 0, RECONFIGURE_WIDGET, null); }
-        catch (ActivityNotFoundException | SecurityException e) {
-            Toast.makeText(this, "Настройка виджета недоступна", Toast.LENGTH_SHORT).show();
+        AppWidgetProviderInfo info = widgetManager.getAppWidgetInfo(placement.id);
+        try { startConfigureActivity(placement.id, info == null ? null : info.configure, RECONFIGURE_WIDGET); }
+        catch (RuntimeException e) { widgetDebug("Настройка виджета недоступна: " + e); }
+    }
+
+    private void startConfigureActivity(int id, ComponentName configure, int request) {
+        boolean exported = false;
+        if (configure != null) {
+            try { exported = getPackageManager().getActivityInfo(configure, 0).exported; }
+            catch (PackageManager.NameNotFoundException ignored) { }
+        }
+        Log.w("AtlasWidgetDebug", "Opening " + configure + " for " + id + (exported ? " directly" : " through the host"));
+        if (exported) {
+            // OneOS may drop the system PendingIntent the host API starts it with.
+            startActivityForResult(new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)
+                    .setComponent(configure).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id), request);
+        } else {
+            // The host API also opens configuration activities that are not exported.
+            widgetHost.startAppWidgetConfigureActivityForResult(this, id, 0, request, null);
         }
     }
 
