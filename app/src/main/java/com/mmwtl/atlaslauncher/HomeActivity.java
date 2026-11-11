@@ -286,6 +286,7 @@ public final class HomeActivity extends Activity {
     private int wallpaperGeneration;
     private int slideshowGeneration;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
+    private long configureStartedAt;
     // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
     private final ExecutorService wallpaperLoader = Executors.newSingleThreadExecutor();
@@ -1847,14 +1848,22 @@ public final class HomeActivity extends Activity {
     private void addProviderWidget(AppWidgetProviderInfo provider) {
         pendingWidgetId = widgetHost.allocateAppWidgetId();
         if (widgetManager.bindAppWidgetIdIfAllowed(pendingWidgetId, provider.provider)) {
+            Log.w("AtlasWidgetDebug", "Bound " + pendingWidgetId + " to " + provider.provider + " directly, configure=" + provider.configure);
             configureWidget(provider);
         } else {
             Intent bind = new Intent(AppWidgetManager.ACTION_APPWIDGET_BIND);
             bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId);
             bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider.provider);
+            Log.w("AtlasWidgetDebug", "Bind of " + pendingWidgetId + " to " + provider.provider + " needs the system dialog");
             try { startActivityForResult(bind, BIND_WIDGET); }
-            catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Привязка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+            catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); widgetDebug("Привязка виджета недоступна: " + e); }
         }
+    }
+
+    // Diagnostic build: says why a widget was not added.
+    private void widgetDebug(String message) {
+        Log.w("AtlasWidgetDebug", message);
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 
     private void configureWidget(AppWidgetProviderInfo provider) {
@@ -1863,8 +1872,10 @@ public final class HomeActivity extends Activity {
             return;
         }
         // The host API also opens configuration activities that are not exported.
+        configureStartedAt = SystemClock.uptimeMillis();
+        Log.w("AtlasWidgetDebug", "Opening " + provider.configure + " for " + pendingWidgetId);
         try { widgetHost.startAppWidgetConfigureActivityForResult(this, pendingWidgetId, 0, CONFIGURE_WIDGET, null); }
-        catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Настройка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+        catch (RuntimeException e) { cancelPendingWidget(); widgetDebug("Настройка виджета недоступна: " + e); }
     }
 
     private void reconfigureWidget(WidgetPlacement placement) {
@@ -1882,15 +1893,20 @@ public final class HomeActivity extends Activity {
             return;
         }
         if (request == BIND_WIDGET) {
-            if (result != RESULT_OK) { cancelPendingWidget(); return; }
+            if (result != RESULT_OK) { widgetDebug("Привязка отклонена, код " + result); cancelPendingWidget(); return; }
             int id = data == null ? pendingWidgetId : data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId);
             pendingWidgetId = id;
             AppWidgetProviderInfo provider = widgetManager.getAppWidgetInfo(id);
             if (provider != null) configureWidget(provider);
-            else cancelPendingWidget();
+            else { widgetDebug("После привязки виджет " + id + " без поставщика"); cancelPendingWidget(); }
         } else if (request == CONFIGURE_WIDGET) {
             if (result == RESULT_OK) finishAddingWidget();
-            else cancelPendingWidget();
+            else {
+                AppWidgetProviderInfo info = widgetManager.getAppWidgetInfo(pendingWidgetId);
+                widgetDebug("Настройка вернула код " + result + " через " + (SystemClock.uptimeMillis() - configureStartedAt)
+                        + " мс; виджет " + pendingWidgetId + " → " + (info == null ? "не привязан" : info.provider.flattenToShortString()));
+                cancelPendingWidget();
+            }
         }
     }
 
@@ -1972,7 +1988,7 @@ public final class HomeActivity extends Activity {
     private void finishAddingWidget() {
         if (pendingWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
         AppWidgetProviderInfo info = fitFixedWidget(widgetManager.getAppWidgetInfo(pendingWidgetId));
-        if (info == null) { cancelPendingWidget(); return; }
+        if (info == null) { widgetDebug("Виджет " + pendingWidgetId + " пропал после настройки"); cancelPendingWidget(); return; }
         WidgetGrid grid = widgetGrid();
         if (grid == null) { widgetRow.post(this::finishAddingWidget); return; }
         Point padding = widgetPaddingDp(info);
