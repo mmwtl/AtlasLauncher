@@ -286,8 +286,11 @@ final class BuiltInWidgets {
             image.setImageTintList(context.getColorStateList(R.color.neutral_text));
             button.addView(image, new FrameLayout.LayoutParams(Ui.dp(context, iconSize), Ui.dp(context, iconSize), Gravity.CENTER));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
-            int margin = joined ? 0 : Ui.dp(context, 3);
-            params.setMargins(margin, margin, margin, margin);
+            // Separate cards keep a gap between them but reach the widget edges, level with the neighbours.
+            if (!joined && panel.getChildCount() > 0) {
+                if (horizontal) params.leftMargin = Ui.dp(context, 6);
+                else params.topMargin = Ui.dp(context, 6);
+            }
             panel.addView(button, params);
         }
         updateVolumeMute(context, panel);
@@ -420,8 +423,11 @@ final class BuiltInWidgets {
                 button.addView(tileText(context, status, 14, statusColor), textParams);
             }
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(horizontal ? 0 : -1, horizontal ? -1 : 0, 1);
-            int margin = Ui.dp(context, 3);
-            params.setMargins(margin, margin, margin, margin);
+            // A gap between the tiles, none at the widget edges, level with the neighbours.
+            if (panel.getChildCount() > 0) {
+                if (horizontal) params.leftMargin = Ui.dp(context, 6);
+                else params.topMargin = Ui.dp(context, 6);
+            }
             panel.addView(button, params);
         }
     }
