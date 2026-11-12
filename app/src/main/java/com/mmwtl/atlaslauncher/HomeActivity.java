@@ -1853,8 +1853,14 @@ public final class HomeActivity extends Activity {
             bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId);
             bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider.provider);
             try { startActivityForResult(bind, BIND_WIDGET); }
-            catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Привязка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+            catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); showBindUnavailable(); }
         }
+    }
+
+    // Some OneOS firmware has no system dialog that allows binding; only ADB can grant it.
+    private void showBindUnavailable() {
+        Toast.makeText(this, "Привязка виджетов не разрешена. Выдайте разрешение через ADB:\nadb shell appwidget grantbind --package "
+                + getPackageName() + " --user 0", Toast.LENGTH_LONG).show();
     }
 
     private void configureWidget(AppWidgetProviderInfo provider) {
@@ -2395,7 +2401,7 @@ public final class HomeActivity extends Activity {
                 bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
                 bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, SOURCE_LIST_PROVIDER);
                 try { startActivityForResult(bind, BIND_SOURCE_LIST); }
-                catch (ActivityNotFoundException | SecurityException e) { Toast.makeText(this, "Привязка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+                catch (ActivityNotFoundException | SecurityException e) { showBindUnavailable(); }
                 return;
             }
             info = widgetManager.getAppWidgetInfo(id);
