@@ -1859,7 +1859,8 @@ public final class HomeActivity extends Activity {
 
     // Some OneOS firmware has no system dialog that allows binding; only ADB can grant it.
     private void showBindUnavailable() {
-        Toast.makeText(this, "Привязка виджетов не разрешена. Выдайте разрешение через ADB:\nadb shell appwidget grantbind --package "
+        Toast.makeText(this, "Привязка виджетов не разрешена. Выдайте её в настройках Atlas («Система» → «Разрешить через GIB») или командой ADB:\n"
+                + "adb shell appwidget grantbind --package "
                 + getPackageName() + " --user 0", Toast.LENGTH_LONG).show();
     }
 

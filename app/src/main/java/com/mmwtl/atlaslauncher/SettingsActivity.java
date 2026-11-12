@@ -633,6 +633,13 @@ public final class SettingsActivity extends ScaledActivity {
             catch (ActivityNotFoundException e) { Toast.makeText(this, "Настройки недоступны", Toast.LENGTH_SHORT).show(); }
         });
 
+        LinearLayout appWidgets = card(page, "Виджеты приложений",
+                "Нужно на автомобилях 2026 года, если при добавлении виджета другого приложения появляется ошибка "
+                        + "«Привязка виджетов не разрешена»: в их прошивке нет системного окна с этим разрешением. "
+                        + "Кнопка выдаёт его командой ADB через GInputBridge; в GIB должен быть подключён ADB. "
+                        + "Повторять нужно только после переустановки Atlas или очистки его данных.");
+        action(appWidgets, "Разрешить через GIB", this::grantWidgetBinding);
+
         LinearLayout cluster = card(page, "Приборная панель",
                 "Яркость приборки меняется вместе с яркостью экрана: ползунки в шторке встают на одно деление. "
                         + "Ползунок приборки по-прежнему работает, но до следующего изменения яркости экрана.");
@@ -1529,6 +1536,18 @@ public final class SettingsActivity extends ScaledActivity {
         content.addView(page, new LinearLayout.LayoutParams(-1, -2));
         panels.add(page);
         return page;
+    }
+
+    private void grantWidgetBinding() {
+        // GIB runs the command through its own ADB connection and shows a toast when ADB is not connected.
+        Intent command = new Intent("com.salat.gbinder.ADB_COMMAND").setPackage("com.salat.gbinder")
+                .putExtra("command", "appwidget grantbind --package " + getPackageName() + " --user 0");
+        if (getPackageManager().queryBroadcastReceivers(command, 0).isEmpty()) {
+            Toast.makeText(this, "GInputBridge не установлен", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        sendBroadcast(command);
+        Toast.makeText(this, "Команда отправлена в GInputBridge", Toast.LENGTH_SHORT).show();
     }
 
     private LinearLayout card(LinearLayout parent, String title, String description) {
