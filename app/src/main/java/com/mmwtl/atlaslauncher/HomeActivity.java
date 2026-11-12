@@ -767,9 +767,10 @@ public final class HomeActivity extends Activity {
         add.setBackground(round(SURFACE, Color.TRANSPARENT, 38));
         add.setOnClickListener(v -> chooseWidget());
         widgetControls.addView(add, new LinearLayout.LayoutParams(dp(76), dp(76)));
-        Button pageBackdrop = button("◐");
+        ImageView pageBackdrop = new ImageView(this);
+        pageBackdrop.setImageResource(R.drawable.ic_page_backdrop);
+        pageBackdrop.setScaleType(ImageView.ScaleType.CENTER);
         pageBackdrop.setContentDescription("Фон этого стола");
-        pageBackdrop.setTextSize(40);
         pageBackdrop.setBackground(round(SURFACE, Color.TRANSPARENT, 38));
         pageBackdrop.setOnClickListener(v -> choosePageBackdrop());
         LinearLayout.LayoutParams backdropParams = new LinearLayout.LayoutParams(dp(76), dp(76));
