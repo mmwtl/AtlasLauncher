@@ -2377,16 +2377,29 @@ public final class HomeActivity extends Activity {
     private boolean touchesSourceSwitch(View widget, MotionEvent event) {
         Resources resources;
         try { resources = getPackageManager().getResourcesForApplication(MEDIA_WIDGET_PACKAGE); }
-        catch (PackageManager.NameNotFoundException e) { return false; }
+        catch (PackageManager.NameNotFoundException e) {
+            Log.d("AtlasLauncher", "Source switch: " + MEDIA_WIDGET_PACKAGE + " not found");
+            return false;
+        }
         Rect bounds = new Rect();
+        StringBuilder log = new StringBuilder("Source switch tap ")
+                .append((int) event.getRawX()).append(',').append((int) event.getRawY()).append(':');
         // The media widget sends its source-switch broadcast from these views.
         for (String name : new String[] {"rl_swicth_area", "iv_mediaWidget_switch", "iv_marker"}) {
             int id = resources.getIdentifier(name, "id", MEDIA_WIDGET_PACKAGE);
             View view = id == 0 ? null : widget.findViewById(id);
+            log.append(' ').append(name).append(" id=0x").append(Integer.toHexString(id))
+                    .append(view == null ? " missing" : view.isShown() ? " shown" : " hidden");
             // Visible bounds include the scale applied by FittedWidgetView; HOME fills the screen.
-            if (view != null && view.isShown() && view.getGlobalVisibleRect(bounds)
-                    && bounds.contains((int) event.getRawX(), (int) event.getRawY())) return true;
+            if (view != null && view.isShown() && view.getGlobalVisibleRect(bounds)) {
+                log.append(' ').append(bounds.toShortString());
+                if (bounds.contains((int) event.getRawX(), (int) event.getRawY())) {
+                    Log.d("AtlasLauncher", log.append(" hit").toString());
+                    return true;
+                }
+            }
         }
+        Log.d("AtlasLauncher", log.append(" miss").toString());
         return false;
     }
 
@@ -2428,7 +2441,21 @@ public final class HomeActivity extends Activity {
         content.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         Rect bounds = new Rect();
         card.getGlobalVisibleRect(bounds);
-        popup.setContentView(new ScaledFrame(this, content, (float) bounds.width() / content.getMeasuredWidth()));
+        // Until its rows arrive, the host shows a default or error view much narrower than the list, so scale by
+        // the fixed width of the list layout. Failing that, never scale the list more than the card itself.
+        int listWidth = 0;
+        try {
+            Context context = createPackageContext(info.provider.getPackageName(), 0);
+            listWidth = LayoutInflater.from(context)
+                    .inflate(info.initialLayout, new FrameLayout(context), false).getLayoutParams().width;
+        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
+            Log.w("AtlasLauncher", "Cannot read the source list width", e);
+        }
+        if (listWidth <= 0) listWidth = Math.max(content.getMeasuredWidth(), card.getWidth());
+        float scale = (float) bounds.width() / listWidth;
+        Log.d("AtlasLauncher", "Source list: layout width " + listWidth + ", measured " + content.getMeasuredWidth()
+                + ", card " + card.getWidth() + " shown " + bounds.toShortString() + ", scale " + scale);
+        popup.setContentView(new ScaledFrame(this, content, scale));
         // Bottom gravity keeps the list on the card while its rows load and it grows upwards.
         popup.showAtLocation(widgetRow, Gravity.BOTTOM | Gravity.START, bounds.left,
                 getWindow().getDecorView().getHeight() - bounds.top);
