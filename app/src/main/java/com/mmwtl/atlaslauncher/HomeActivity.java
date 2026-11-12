@@ -1854,8 +1854,15 @@ public final class HomeActivity extends Activity {
             bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId);
             bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider.provider);
             try { startActivityForResult(bind, BIND_WIDGET); }
-            catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Привязка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+            catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); showBindUnavailable(); }
         }
+    }
+
+    // Some OneOS firmware has no system dialog that allows binding; only ADB can grant it.
+    private void showBindUnavailable() {
+        Toast.makeText(this, "Привязка виджетов не разрешена. Выдайте её в настройках Atlas («Система» → «Разрешить через GIB») или командой ADB:\n"
+                + "adb shell appwidget grantbind --package "
+                + getPackageName() + " --user 0", Toast.LENGTH_LONG).show();
     }
 
     private void configureWidget(AppWidgetProviderInfo provider) {
@@ -1863,15 +1870,31 @@ public final class HomeActivity extends Activity {
             finishAddingWidget();
             return;
         }
-        // The host API also opens configuration activities that are not exported.
-        try { widgetHost.startAppWidgetConfigureActivityForResult(this, pendingWidgetId, 0, CONFIGURE_WIDGET, null); }
+        try { startConfigureActivity(pendingWidgetId, provider.configure, CONFIGURE_WIDGET); }
         catch (ActivityNotFoundException | SecurityException e) { cancelPendingWidget(); Toast.makeText(this, "Настройка виджета недоступна", Toast.LENGTH_SHORT).show(); }
     }
 
     private void reconfigureWidget(WidgetPlacement placement) {
-        try { widgetHost.startAppWidgetConfigureActivityForResult(this, placement.id, 0, RECONFIGURE_WIDGET, null); }
+        AppWidgetProviderInfo info = widgetManager.getAppWidgetInfo(placement.id);
+        try { startConfigureActivity(placement.id, info == null ? null : info.configure, RECONFIGURE_WIDGET); }
         catch (ActivityNotFoundException | SecurityException e) {
             Toast.makeText(this, "Настройка виджета недоступна", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void startConfigureActivity(int id, ComponentName configure, int request) {
+        boolean exported = false;
+        if (configure != null) {
+            try { exported = getPackageManager().getActivityInfo(configure, 0).exported; }
+            catch (PackageManager.NameNotFoundException ignored) { }
+        }
+        if (exported) {
+            // OneOS silently drops the system PendingIntent the host API starts it with; the setup screen never shows.
+            startActivityForResult(new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)
+                    .setComponent(configure).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id), request);
+        } else {
+            // The host API also opens configuration activities that are not exported.
+            widgetHost.startAppWidgetConfigureActivityForResult(this, id, 0, request, null);
         }
     }
 
@@ -2380,7 +2403,7 @@ public final class HomeActivity extends Activity {
                 bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
                 bind.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, SOURCE_LIST_PROVIDER);
                 try { startActivityForResult(bind, BIND_SOURCE_LIST); }
-                catch (ActivityNotFoundException | SecurityException e) { Toast.makeText(this, "Привязка виджета недоступна", Toast.LENGTH_SHORT).show(); }
+                catch (ActivityNotFoundException | SecurityException e) { showBindUnavailable(); }
                 return;
             }
             info = widgetManager.getAppWidgetInfo(id);
