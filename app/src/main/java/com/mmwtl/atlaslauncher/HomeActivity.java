@@ -103,7 +103,6 @@ import java.io.InputStream;
 import java.io.IOException;
 
 public final class HomeActivity extends Activity {
-    private static final int BACKGROUND = Color.rgb(5, 17, 34);
     private static final int SURFACE = Color.argb(220, 9, 26, 47);
     private static final int SURFACE_RAISED = Color.argb(224, 27, 47, 73);
     private static final int ACCENT = Color.rgb(46, 150, 246);
@@ -679,11 +678,13 @@ public final class HomeActivity extends Activity {
     }
 
     private void buildHome() {
-        // Like Launcher3: draw the wallpaper under a transparent status bar.
+        // Like Launcher3: draw the wallpaper under transparent system bars. On 2026 cars the climate panel takes
+        // a navigation bar inset; the plugin hides the panel only for HIDE_NAVIGATION, not LAYOUT_HIDE_NAVIGATION.
         getWindow().setStatusBarColor(Color.TRANSPARENT);
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
-        getWindow().setNavigationBarColor(BACKGROUND);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getWindow().setNavigationBarContrastEnforced(false);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         FrameLayout backdrop = new FrameLayout(this);
         wallpaperView = new ImageView(this);
         wallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
