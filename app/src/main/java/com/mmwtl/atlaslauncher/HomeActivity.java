@@ -124,7 +124,6 @@ public final class HomeActivity extends Activity {
     static final int WIDGET_CELL_DP = 96;
     // The OneOS climate panel overlays the bottom of HOME; physical pixels, not dp.
     static final int CLIMATE_PANEL_PX = 150;
-    private static final int HIDDEN_CLIMATE_PANEL_PX = 24;
     // Width of the screen edges where a swipe becomes the OneOS Back gesture; physical pixels, not dp.
     private static final int BACK_SWIPE_EDGE_PX = 50;
     // OneOS flag for white status icons; with neither this nor LIGHT_STATUS_BAR they follow the system day/night mode.
@@ -136,6 +135,8 @@ public final class HomeActivity extends Activity {
     static final String WIDGETS = "widgets";
     static final String WIDGET_PADDING_MIGRATED = "widget_padding_migrated";
     static final String WIDGET_SIDE_MARGIN = "widget_side_margin";
+    // Physical pixels, like CLIMATE_PANEL_PX.
+    static final String WIDGET_BOTTOM_MARGIN = "widget_bottom_margin";
     // With this flag the night mode has its own wallpaper settings: the same keys with the NIGHT suffix.
     static final String WALLPAPER_BY_MODE = "wallpaper_by_mode";
     private static final String NIGHT = "_night";
@@ -400,7 +401,7 @@ public final class HomeActivity extends Activity {
             case SLIDESHOW_UNIT: case SLIDESHOW_INTERVAL:
                 scheduleSlideshow();
                 break;
-            case WIDGET_SIDE_MARGIN: applyWidgetSideMargin(); break;
+            case WIDGET_SIDE_MARGIN: case WIDGET_BOTTOM_MARGIN: applyWidgetMargins(); break;
             case PAGE_BACKDROPS:
                 loadPageBackdrops();
                 updateBlur();
@@ -727,7 +728,7 @@ public final class HomeActivity extends Activity {
         widgetRow = new PagedRow(this);
         content.addView(widgetRow, new FrameLayout.LayoutParams(-1, -1));
         applyClimatePanel();
-        applyWidgetSideMargin();
+        applyWidgetMargins();
         widgetRow.setClickable(true);
         widgetRow.setOnClickListener(v -> onEmptyTap());
         widgetRow.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -1074,12 +1075,14 @@ public final class HomeActivity extends Activity {
         });
     }
 
-    private void applyWidgetSideMargin() {
+    private void applyWidgetMargins() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         // Stored in half cells, so a screen that fits whole cells keeps whole cells.
-        int margin = dp(getSharedPreferences(PREFS, MODE_PRIVATE).getInt(WIDGET_SIDE_MARGIN, 0) * WIDGET_CELL_DP / 2);
+        int margin = dp(prefs.getInt(WIDGET_SIDE_MARGIN, 0) * WIDGET_CELL_DP / 2);
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) widgetRow.getLayoutParams();
         params.leftMargin = margin;
         params.rightMargin = margin;
+        params.bottomMargin = prefs.getInt(WIDGET_BOTTOM_MARGIN, CLIMATE_PANEL_PX);
         widgetRow.setLayoutParams(params);
     }
 
@@ -1157,9 +1160,6 @@ public final class HomeActivity extends Activity {
         int flags = decor.getSystemUiVisibility() & ~hide;
         boolean hidden = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(CLIMATE_PANEL_HIDDEN, false);
         decor.setSystemUiVisibility(hidden ? flags | hide : flags);
-        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) widgetRow.getLayoutParams();
-        params.bottomMargin = hidden ? HIDDEN_CLIMATE_PANEL_PX : CLIMATE_PANEL_PX;
-        widgetRow.setLayoutParams(params);
     }
 
     // Holding a finger anywhere on HOME starts editing after the delay chosen in settings; a view long press

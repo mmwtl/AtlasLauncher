@@ -105,6 +105,8 @@ public final class SettingsActivity extends ScaledActivity {
     private static final int PICK_BACKUP = 4;
     private static final int BACKUP_MAX_BYTES = 256 * 1024;
     private static final int LOCATION_PERMISSION = 4;
+    private static final int BOTTOM_MARGIN_STEP_PX = 10;
+    private static final int MAX_BOTTOM_MARGIN_PX = 300;
 
     private final List<TextView> tabs = new ArrayList<>();
     private final List<LinearLayout> panels = new ArrayList<>();
@@ -382,6 +384,33 @@ public final class SettingsActivity extends ScaledActivity {
                 "Сужает сетку с обеих сторон. Виджеты, которые больше не помещаются, переносятся.");
         choice(margin, HomeActivity.WIDGET_SIDE_MARGIN, new String[]{"Нет", "½ ячейки", "1 ячейка"}, 0, () -> { });
 
+        LinearLayout bottom = card(page, "Отступ виджетов снизу",
+                "Расстояние от нижнего края экрана до сетки, шаг 10 px. 150 px — над панелью климата; если панель "
+                        + "скрыта на вкладке «Система», отступ можно уменьшить. Виджеты, которые больше не помещаются, переносятся.");
+        TextView bottomValue = Ui.text(this, "", 14, Ui.TEXT);
+        SeekBar bottomSlider = new SeekBar(this);
+        bottomSlider.setContentDescription("Отступ виджетов снизу");
+        bottomSlider.setMax(MAX_BOTTOM_MARGIN_PX / BOTTOM_MARGIN_STEP_PX);
+        Runnable showBottom = () -> bottomValue.setText(getString(R.string.pixels,
+                bottomSlider.getProgress() * BOTTOM_MARGIN_STEP_PX));
+        bottomSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                showBottom.run();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+
+            // Each change reflows the grid, so it is saved once the finger lifts.
+            @Override public void onStopTrackingTouch(SeekBar bar) {
+                prefs.edit().putInt(HomeActivity.WIDGET_BOTTOM_MARGIN, bar.getProgress() * BOTTOM_MARGIN_STEP_PX).apply();
+            }
+        });
+        bottomSlider.setProgress(prefs.getInt(HomeActivity.WIDGET_BOTTOM_MARGIN, HomeActivity.CLIMATE_PANEL_PX)
+                / BOTTOM_MARGIN_STEP_PX);
+        showBottom.run();
+        bottom.addView(bottomValue, margin(14, -2));
+        bottom.addView(bottomSlider, margin(4, -2));
+
         LinearLayout drawer = card(page, "Все приложения",
                 "Что открывают кнопка «Все приложения» в доке и такая же кнопка на панели климата.");
         Button action = action(drawer, "", () -> { });
@@ -651,6 +680,7 @@ public final class SettingsActivity extends ScaledActivity {
                         + "их сразу по нажатию: «Домой» откроет рабочий стол Atlas, «Все приложения» — то же, что кнопка в доке, "
                         + "а при обеих включённых функциях — поверх текущего приложения. Когда функции выключены, служба не получает событий.");
         toggle(redirect, "Скрывать панель на главном экране", HomeActivity.CLIMATE_PANEL_HIDDEN, false, () -> { });
+        redirect.addView(hint("Отступ виджетов от нижнего края при этом не меняется: он настраивается на вкладке «Рабочий стол»."));
         toggle(redirect, "«Домой»: возвращать на AtlasLauncher", StockHomeRedirectService.ENABLED, false,
                 this::updateRedirectState);
         toggle(redirect, "«Все приложения»: как кнопка в доке", StockHomeRedirectService.ALL_APPS_ENABLED, false,

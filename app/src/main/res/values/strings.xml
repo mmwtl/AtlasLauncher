@@ -27,4 +27,5 @@
     <string name="donate_open">Открыть ссылку</string>
     <string name="donate_close">Закрыть</string>
     <string name="donate_no_browser">Нет браузера — отсканируйте QR-код телефоном</string>
+    <string name="pixels">%d px</string>
 </resources>
