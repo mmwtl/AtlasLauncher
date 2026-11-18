@@ -680,7 +680,14 @@ public final class HomeActivity extends Activity {
     private void buildHome() {
         // Let the existing system wallpaper show through areas outside Atlas's backdrop on OneOS.
         if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+            Point display = new Point();
+            getWindowManager().getDefaultDisplay().getRealSize(display);
+            WindowManager.LayoutParams window = getWindow().getAttributes();
+            window.flags |= WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
+            window.height = display.y;
+            window.gravity = Gravity.TOP | Gravity.START;
+            getWindow().setAttributes(window);
             getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
         getWindow().setStatusBarColor(Color.TRANSPARENT);
@@ -725,6 +732,21 @@ public final class HomeActivity extends Activity {
         backdropPosition = currentPage;
         showBackdrop(backdropPosition);
         showWallpaper();
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+            View marker = new View(this);
+            marker.setBackgroundColor(Color.MAGENTA);
+            marker.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            backdrop.addView(marker, new FrameLayout.LayoutParams(-1, dp(12), Gravity.BOTTOM));
+            marker.addOnLayoutChangeListener((v, l, t, r, b, oldL, oldT, oldR, oldB) -> {
+                Point display = new Point();
+                getWindowManager().getDefaultDisplay().getRealSize(display);
+                int[] location = new int[2];
+                v.getLocationOnScreen(location);
+                Log.i("AtlasFx11", "displayHeight=" + display.y
+                        + " decorHeight=" + getWindow().getDecorView().getHeight()
+                        + " backdropBottom=" + (location[1] + v.getHeight()));
+            });
+        }
         setContentView(backdrop);
         FrameLayout content = new FrameLayout(this);
         content.setFitsSystemWindows(true);
