@@ -678,8 +678,11 @@ public final class HomeActivity extends Activity {
     }
 
     private void buildHome() {
-        // Like Launcher3: draw the wallpaper under transparent system bars. On 2026 cars the climate panel takes
-        // a navigation bar inset; the plugin hides the panel only for HIDE_NAVIGATION, not LAYOUT_HIDE_NAVIGATION.
+        // OneOS can constrain HOME to the navigation area even with LAYOUT_HIDE_NAVIGATION.
+        // Extend the window without requesting that the climate panel be hidden.
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+        }
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getWindow().setNavigationBarContrastEnforced(false);
