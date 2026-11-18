@@ -737,17 +737,26 @@ public final class SettingsActivity extends ScaledActivity {
     }
 
     private void buildDockPage(LinearLayout parent) {
-        LinearLayout look = card(parent, "Внешний вид", "Размер значков, плотность и фон дока на рабочем столе.");
+        LinearLayout look = card(parent, "Внешний вид", "В режиме «Авто» значки подстраиваются под высоту дока.");
         toggle(look, "Подписи в доке", HomeActivity.DOCK_LABELS, true, () -> { });
-        look.addView(Ui.text(this, "Размер значков", 14, Ui.TEXT), margin(14, -2));
-        int size = Math.max(40, Math.min(HomeActivity.MAX_ICON_DP, prefs.getInt(HomeActivity.DRAWER_ICON_SIZE, 64)));
+        int minSize = HomeActivity.MIN_ICON_DP;
+        int size = prefs.contains(HomeActivity.DRAWER_ICON_SIZE)
+                ? Math.max(minSize, Math.min(HomeActivity.MAX_ICON_DP, prefs.getInt(HomeActivity.DRAWER_ICON_SIZE, minSize)))
+                : 0;
+        TextView sizeLabel = Ui.text(this, dockIconSizeLabel(size), 14, Ui.TEXT);
+        look.addView(sizeLabel, margin(14, -2));
         SeekBar sizeSlider = new SeekBar(this);
-        sizeSlider.setMax((HomeActivity.MAX_ICON_DP - 40) / 8);
-        sizeSlider.setProgress((size - 40) / 8);
-        sizeSlider.setContentDescription("Размер значков дока");
+        sizeSlider.setMax(1 + (HomeActivity.MAX_ICON_DP - minSize) / 8);
+        sizeSlider.setProgress(size == 0 ? 0 : 1 + (size - minSize) / 8);
+        sizeSlider.setContentDescription(sizeLabel.getText());
         sizeSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                if (user) prefs.edit().putInt(HomeActivity.DRAWER_ICON_SIZE, 40 + progress * 8).apply();
+                if (!user) return;
+                int limit = progress == 0 ? 0 : minSize + (progress - 1) * 8;
+                if (limit == 0) prefs.edit().remove(HomeActivity.DRAWER_ICON_SIZE).apply();
+                else prefs.edit().putInt(HomeActivity.DRAWER_ICON_SIZE, limit).apply();
+                sizeLabel.setText(dockIconSizeLabel(limit));
+                bar.setContentDescription(sizeLabel.getText());
             }
 
             @Override public void onStartTrackingTouch(SeekBar bar) { }
@@ -766,6 +775,10 @@ public final class SettingsActivity extends ScaledActivity {
         pinned.addView(selectedApps);
         showFavorites(selectedApps);
         action(pinned, "＋  Добавить приложение", () -> pickFavorite(selectedApps));
+    }
+
+    private String dockIconSizeLabel(int limit) {
+        return "Размер значков · " + (limit == 0 ? "Авто" : "до " + limit + " dp");
     }
 
     private void buildClockPage(LinearLayout content) {
