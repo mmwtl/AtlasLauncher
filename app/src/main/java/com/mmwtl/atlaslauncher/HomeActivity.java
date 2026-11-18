@@ -678,10 +678,10 @@ public final class HomeActivity extends Activity {
     }
 
     private void buildHome() {
-        // OneOS can constrain HOME to the navigation area even with LAYOUT_HIDE_NAVIGATION.
-        // Extend the window without requesting that the climate panel be hidden.
+        // Let the existing system wallpaper show through areas outside Atlas's backdrop on OneOS.
         if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+            getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
