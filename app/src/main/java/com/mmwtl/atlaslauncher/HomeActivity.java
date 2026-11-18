@@ -679,17 +679,17 @@ public final class HomeActivity extends Activity {
     }
 
     private void buildHome() {
-        // FX11 limits MATCH_PARENT to the area above the climate panel; request the full display height.
+        // Like Launcher3: draw the wallpaper under transparent system bars. On 2026 cars (FX11) the climate panel
+        // takes a navigation bar inset and limits MATCH_PARENT above it, so request the full display height directly;
+        // the plugin hides the panel only for HIDE_NAVIGATION, not LAYOUT_HIDE_NAVIGATION.
         if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
             Point display = new Point();
             getWindowManager().getDefaultDisplay().getRealSize(display);
             WindowManager.LayoutParams window = getWindow().getAttributes();
-            window.flags |= WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
+            window.flags |= WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
             window.height = display.y;
             window.gravity = Gravity.TOP | Gravity.START;
             getWindow().setAttributes(window);
-            getWindow().setBackgroundDrawableResource(android.R.color.transparent);
         }
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
@@ -898,7 +898,10 @@ public final class HomeActivity extends Activity {
             row.setGravity(Gravity.CENTER);
             addView(row, new FrameLayout.LayoutParams(-2, -1));
             appsTile = tile(getDrawable(R.drawable.ic_apps), "Все приложения");
-            appsTile.getChildAt(0).setBackground(round(getColor(R.color.neutral_raised), Color.TRANSPARENT, 34));
+            GradientDrawable appsBackground = new GradientDrawable();
+            appsBackground.setShape(GradientDrawable.OVAL);
+            appsBackground.setColor(getColor(R.color.neutral_raised));
+            appsTile.getChildAt(0).setBackground(appsBackground);
             appsTile.setOnClickListener(v -> AllAppsActivity.open(HomeActivity.this));
             appsTile.setVisibility(prefs.getBoolean(DOCK_APPS, true) ? View.VISIBLE : View.GONE);
         }
@@ -963,7 +966,17 @@ public final class HomeActivity extends Activity {
             int count = row.getChildCount() - (emptyHint == null ? 0 : 1)
                     - (appsTile.getVisibility() == View.GONE ? 1 : 0);
             int minTileWidth = iconSize + 2 * tileSidePadding;
-            int spacePerTile = count > 0 ? (width - (emptyHint == null ? 0 : dp(DOCK_HINT_DP))) / count : 0;
+            int hintWidth = 0;
+            if (emptyHint != null) {
+                int maxHintWidth = count > 0 ? Math.max(Math.min(width, dp(120)), width - minTileWidth) : width;
+                hintWidth = Math.max(0, Math.min(dp(DOCK_HINT_DP), maxHintWidth));
+                ViewGroup.LayoutParams hintParams = emptyHint.getLayoutParams();
+                if (hintParams.width != hintWidth) {
+                    hintParams.width = hintWidth;
+                    emptyHint.setLayoutParams(hintParams);
+                }
+            }
+            int spacePerTile = count > 0 ? (width - hintWidth) / count : 0;
             // Use less spacing in a narrow dock and center the row when there is extra room.
             int tileWidth = minTileWidth + Math.max(0, Math.min(dp(lines > 0 ? 20 : 12), spacePerTile - minTileWidth));
             for (int i = 0; i < row.getChildCount(); i++) {
