@@ -127,7 +127,10 @@ public final class HomeActivity extends Activity {
     private static final int BACK_SWIPE_EDGE_PX = 50;
     // OneOS flag for white status icons; with neither this nor LIGHT_STATUS_BAR they follow the system day/night mode.
     private static final int DARK_STATUS_BAR = 0x4000;
+    static final int MIN_ICON_DP = 40;
     static final int MAX_ICON_DP = 160;
+    private static final int DOCK_HINT_DP = 240;
+    private static final int DOCK_SIDE_PADDING_DP = 12;
     private static final int WIDGET_PREVIEW_DP = 150;
     static final String PREFS = "home";
     static final String FAVORITES = "favorites";
@@ -240,7 +243,6 @@ public final class HomeActivity extends Activity {
     // The view the host made last: createView registers it before it fetches the widget's views.
     private AppWidgetHostView createdWidgetView;
     private Dialog widgetPicker;
-    private LinearLayout favoriteRow;
     private FrameLayout widgetRow;
     private View dropTarget;
     private LinearLayout widgetControls;
@@ -257,8 +259,7 @@ public final class HomeActivity extends Activity {
     // The page position the backdrop shows, fractional while the pages slide.
     private float backdropPosition;
     private ValueAnimator backdropSlide;
-    private LinearLayout favoritePanel;
-    private LinearLayout appsTile;
+    private DockView favoritePanel;
     private boolean editingWidgets;
     private boolean startupPending;
     private boolean homeVisible;
@@ -790,21 +791,8 @@ public final class HomeActivity extends Activity {
     }
 
     private View createDockWidget() {
-        favoritePanel = new LinearLayout(this);
-        favoritePanel.setGravity(Gravity.CENTER_VERTICAL);
+        favoritePanel = new DockView(getSharedPreferences(PREFS, MODE_PRIVATE));
         favoritePanel.setElevation(editingWidgets ? 0 : dp(8));
-        HorizontalScrollView favoriteScroll = new HorizontalScrollView(this);
-        favoriteScroll.setFillViewport(true);
-        favoriteScroll.setHorizontalScrollBarEnabled(false);
-        favoritePanel.addView(favoriteScroll, new LinearLayout.LayoutParams(-1, -1));
-        favoriteRow = new LinearLayout(this);
-        favoriteRow.setGravity(Gravity.CENTER_VERTICAL);
-        favoriteScroll.addView(favoriteRow, new FrameLayout.LayoutParams(-2, -1));
-        appsTile = dockTile(getDrawable(R.drawable.ic_apps), "Все приложения");
-        ImageView appsIcon = (ImageView) appsTile.getChildAt(0);
-        appsIcon.setBackground(round(getColor(R.color.neutral_raised), Color.TRANSPARENT, 34));
-        appsIcon.setPadding(dp(18), dp(18), dp(18), dp(18));
-        appsTile.setOnClickListener(v -> AllAppsActivity.open(this));
         updateDock();
         showFavorites();
         return favoritePanel;
@@ -873,64 +861,136 @@ public final class HomeActivity extends Activity {
     }
 
     private void showFavorites() {
-        if (favoriteRow == null) return;
-        favoriteRow.removeAllViews();
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
-        boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
-        int tilePadding = showLabels ? 8 : 4;
-        int tileWidth = Math.max(112, iconSize + 12);
-        int tileHeight = iconSize + 2 * tilePadding + (showLabels ? 44 : 0);
-        ((ImageView) appsTile.getChildAt(0)).setLayoutParams(new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
-        appsTile.setPadding(dp(6), dp(tilePadding), dp(6), dp(tilePadding));
-        ((TextView) appsTile.getChildAt(1)).setVisibility(showLabels ? View.VISIBLE : View.GONE);
-        // Unavailable apps stay pinned: they may be disabled or updating, not uninstalled.
-        for (String name : favorites) {
-            AppEntry app = findApp(name);
-            if (app == null) continue;
-            View item = dockTile(app.icon, app.label);
-            item.setOnClickListener(v -> launch(app));
-            favoriteRow.addView(item, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
-        }
-        int shownApps = favoriteRow.getChildCount();
-        // Until the app list has loaded, pinned apps cannot be found yet; skip the hint instead of flashing it.
-        if (shownApps == 0 && !apps.isEmpty()) {
-            TextView empty = label("Добавьте приложения кнопкой ⚙ дока в режиме редактирования", 14, getColor(R.color.neutral_muted), false);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(dp(14), dp(14), dp(14), dp(14));
-            favoriteRow.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
-        }
-        favoriteRow.addView(appsTile, new LinearLayout.LayoutParams(0, dp(tileHeight), 1));
-        int visibleTiles = shownApps + (appsTile.getVisibility() == View.VISIBLE ? 1 : 0);
-        favoriteRow.setMinimumWidth(dp(visibleTiles * tileWidth + (shownApps == 0 ? 240 : 0)));
+        if (favoritePanel != null) favoritePanel.showFavorites();
     }
 
-    private LinearLayout dockTile(Drawable drawable, String title) {
-        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
-        int verticalPadding = showLabels ? 8 : 4;
-        LinearLayout tile = new LinearLayout(this);
-        tile.setOrientation(LinearLayout.VERTICAL);
-        tile.setGravity(Gravity.CENTER);
-        tile.setPadding(dp(6), dp(verticalPadding), dp(6), dp(verticalPadding));
-        tile.setBackground(new RippleDrawable(getColorStateList(R.color.neutral_ripple),
-                null, round(Color.WHITE, Color.TRANSPARENT, 24)));
-        tile.setFocusable(true);
-        tile.setContentDescription(title);
-        ImageView icon = new ImageView(this);
-        icon.setImageDrawable(drawable);
-        int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
-        tile.addView(icon, new LinearLayout.LayoutParams(dp(iconSize), dp(iconSize)));
-        TextView titleView = label(title, 14, getColor(R.color.neutral_text), false);
-        titleView.setGravity(Gravity.CENTER);
-        titleView.setMaxLines(2);
-        titleView.setEllipsize(TextUtils.TruncateAt.END);
-        titleView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        titleView.setVisibility(showLabels ? View.VISIBLE : View.GONE);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, dp(36));
-        titleParams.topMargin = dp(8);
-        tile.addView(titleView, titleParams);
-        return tile;
+    private final class DockView extends HorizontalScrollView {
+        private final LinearLayout row;
+        private final LinearLayout appsTile;
+        private final boolean showLabels;
+        private final int iconLimit;
+        private final int tileSidePadding = dp(6);
+        private final int verticalPadding;
+        private TextView emptyHint;
+
+        DockView(SharedPreferences prefs) {
+            super(HomeActivity.this);
+            showLabels = prefs.getBoolean(DOCK_LABELS, true);
+            iconLimit = prefs.contains(DRAWER_ICON_SIZE)
+                    ? dp(Math.max(MIN_ICON_DP, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, MIN_ICON_DP))))
+                    : Integer.MAX_VALUE;
+            verticalPadding = dp(showLabels ? 8 : 4);
+            int sidePadding = dp(DOCK_SIDE_PADDING_DP);
+            setPadding(sidePadding, verticalPadding, sidePadding, verticalPadding);
+            setFillViewport(true);
+            setHorizontalScrollBarEnabled(false);
+            row = new LinearLayout(HomeActivity.this);
+            row.setGravity(Gravity.CENTER);
+            addView(row, new FrameLayout.LayoutParams(-2, -1));
+            appsTile = tile(getDrawable(R.drawable.ic_apps), "Все приложения");
+            appsTile.getChildAt(0).setBackground(round(getColor(R.color.neutral_raised), Color.TRANSPARENT, 34));
+            appsTile.setOnClickListener(v -> AllAppsActivity.open(HomeActivity.this));
+            appsTile.setVisibility(prefs.getBoolean(DOCK_APPS, true) ? View.VISIBLE : View.GONE);
+        }
+
+        void showFavorites() {
+            row.removeAllViews();
+            emptyHint = null;
+            // Unavailable apps stay pinned: they may be disabled or updating, not uninstalled.
+            for (String name : favorites) {
+                AppEntry app = findApp(name);
+                if (app == null) continue;
+                LinearLayout item = tile(app.icon, app.label);
+                item.setOnClickListener(v -> launch(app));
+                row.addView(item, new LinearLayout.LayoutParams(0, -1));
+            }
+            // Skip the hint until the list of installed apps has loaded.
+            if (row.getChildCount() == 0 && !apps.isEmpty()) {
+                int padding = dp(14);
+                emptyHint = label("Добавьте приложения кнопкой ⚙ дока в режиме редактирования", 14,
+                        getColor(R.color.neutral_muted), false);
+                emptyHint.setGravity(Gravity.CENTER);
+                emptyHint.setPadding(padding, padding, padding, padding);
+                row.addView(emptyHint, new LinearLayout.LayoutParams(dp(DOCK_HINT_DP), -2));
+            }
+            row.addView(appsTile, new LinearLayout.LayoutParams(0, -1));
+        }
+
+        private LinearLayout tile(Drawable drawable, String title) {
+            LinearLayout tile = new LinearLayout(HomeActivity.this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setGravity(Gravity.CENTER);
+            tile.setBackground(new RippleDrawable(getColorStateList(R.color.neutral_ripple),
+                    null, round(Color.WHITE, Color.TRANSPARENT, 24)));
+            tile.setFocusable(true);
+            tile.setContentDescription(title);
+            ImageView icon = new ImageView(HomeActivity.this);
+            icon.setImageDrawable(drawable);
+            tile.addView(icon, new LinearLayout.LayoutParams(0, 0));
+            TextView titleView = label(title, 14, getColor(R.color.neutral_text), false);
+            titleView.setGravity(Gravity.CENTER);
+            titleView.setIncludeFontPadding(false);
+            titleView.setEllipsize(TextUtils.TruncateAt.END);
+            titleView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            tile.addView(titleView, new LinearLayout.LayoutParams(-1, 0));
+            return tile;
+        }
+
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            int width = MeasureSpec.getSize(widthSpec) - getPaddingLeft() - getPaddingRight();
+            int height = MeasureSpec.getSize(heightSpec) - getPaddingTop() - getPaddingBottom();
+            int lineHeight = ((TextView) appsTile.getChildAt(1)).getLineHeight();
+            int lines = 0;
+            if (showLabels && height > lineHeight + dp(4)) {
+                lines = height >= dp(MIN_ICON_DP) + 2 * (verticalPadding + lineHeight) + dp(8) ? 2 : 1;
+            }
+            // In a compact labeled dock the panel padding already insets the tile contents.
+            int tilePadding = showLabels && lines < 2 ? 0 : verticalPadding;
+            int labelGap = dp(4 * lines);
+            int labelHeight = lines * lineHeight;
+            int iconSize = Math.max(0, Math.min(iconLimit,
+                    Math.min(height - 2 * tilePadding - labelHeight - labelGap, width - 2 * tileSidePadding)));
+            int count = row.getChildCount() - (emptyHint == null ? 0 : 1)
+                    - (appsTile.getVisibility() == View.GONE ? 1 : 0);
+            int minTileWidth = iconSize + 2 * tileSidePadding;
+            int spacePerTile = count > 0 ? (width - (emptyHint == null ? 0 : dp(DOCK_HINT_DP))) / count : 0;
+            // Use less spacing in a narrow dock and center the row when there is extra room.
+            int tileWidth = minTileWidth + Math.max(0, Math.min(dp(lines > 0 ? 20 : 12), spacePerTile - minTileWidth));
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View child = row.getChildAt(i);
+                if (child == emptyHint || child.getVisibility() == View.GONE) continue;
+                LinearLayout tile = (LinearLayout) child;
+                if (tile.getPaddingTop() != tilePadding || tile.getPaddingLeft() != tileSidePadding) {
+                    tile.setPadding(tileSidePadding, tilePadding, tileSidePadding, tilePadding);
+                }
+                ViewGroup.LayoutParams tileParams = tile.getLayoutParams();
+                if (tileParams.width != tileWidth) {
+                    tileParams.width = tileWidth;
+                    tile.setLayoutParams(tileParams);
+                }
+                View icon = tile.getChildAt(0);
+                ViewGroup.LayoutParams iconParams = icon.getLayoutParams();
+                if (iconParams.width != iconSize) {
+                    iconParams.width = iconSize;
+                    iconParams.height = iconSize;
+                    icon.setLayoutParams(iconParams);
+                    if (tile == appsTile) {
+                        int padding = Math.min(dp(18), iconSize / 5);
+                        icon.setPadding(padding, padding, padding, padding);
+                    }
+                }
+                TextView title = (TextView) tile.getChildAt(1);
+                title.setVisibility(lines > 0 ? View.VISIBLE : View.GONE);
+                LinearLayout.LayoutParams textParams = (LinearLayout.LayoutParams) title.getLayoutParams();
+                if (textParams.height != labelHeight || textParams.topMargin != labelGap) {
+                    title.setMaxLines(lines);
+                    textParams.height = labelHeight;
+                    textParams.topMargin = labelGap;
+                    title.setLayoutParams(textParams);
+                }
+            }
+            super.onMeasure(widthSpec, heightSpec);
+        }
     }
 
     private Button neutralButton(String title) {
@@ -1540,18 +1600,6 @@ public final class HomeActivity extends Activity {
         if (favoritePanel == null) return;
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         favoritePanel.setBackground(round(BuiltInWidgets.surface(this, R.color.neutral_surface, prefs, DOCK_OPACITY, DOCK_WIDGET_ID), Color.TRANSPARENT, 32));
-        int verticalPadding = prefs.getBoolean(DOCK_LABELS, true) ? 8 : 4;
-        favoritePanel.setPadding(dp(12), dp(verticalPadding), dp(12), dp(verticalPadding));
-        appsTile.setVisibility(prefs.getBoolean(DOCK_APPS, true) ? View.VISIBLE : View.GONE);
-    }
-
-    private int dockRequiredHeight(SharedPreferences prefs) {
-        int iconSize = Math.max(40, Math.min(MAX_ICON_DP, prefs.getInt(DRAWER_ICON_SIZE, 64)));
-        boolean showLabels = prefs.getBoolean(DOCK_LABELS, true);
-        int padding = showLabels ? 8 : 4;
-        Rect inset = dockInset();
-        return iconSize + 4 * padding + (showLabels ? 44 : 0)
-                + pxToDp(inset.top + inset.bottom);
     }
 
     private Rect dockInset() {
@@ -1942,18 +1990,20 @@ public final class HomeActivity extends Activity {
     }
 
     private WidgetPlacement newDockPlacement(WidgetGrid grid) {
-        int iconSize = Math.max(40, Math.min(MAX_ICON_DP, getSharedPreferences(PREFS, MODE_PRIVATE).getInt(DRAWER_ICON_SIZE, 64)));
-        int tileWidth = Math.max(112, iconSize + 12);
-        int contentWidth = favorites.isEmpty() ? 240 + tileWidth : (favorites.size() + 1) * tileWidth;
-        int columns = Math.min(grid.columns, Math.max(2,
-                (int) Math.ceil((double) (contentWidth + 24) / grid.cellWidth)));
-        int rows = grid.span(dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)), grid.cellHeight, grid.rows);
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        // Approximate the preferred tile width in a one-row dock, including space between icons.
+        int tileWidth = prefs.getBoolean(DOCK_LABELS, true) ? 64 : 88;
+        int tiles = favorites.size() + (prefs.getBoolean(DOCK_APPS, true) ? 1 : 0);
+        Rect inset = dockInset();
+        int width = tiles * tileWidth + (favorites.isEmpty() ? DOCK_HINT_DP : 0)
+                + 2 * DOCK_SIDE_PADDING_DP + pxToDp(inset.left + inset.right);
+        int columns = Math.max(Math.min(2, grid.columns), grid.span(width, grid.cellWidth, grid.columns));
         int x = (grid.columns - columns) * grid.cellWidth / 2;
-        int y = Math.max(0, grid.rows - rows - 1) * grid.cellHeight;
-        Point slot = findGridSlot(grid, x, y, columns, rows, onPage(widgets, currentPage));
+        int y = Math.max(0, grid.rows - 2) * grid.cellHeight;
+        Point slot = findGridSlot(grid, x, y, columns, 1, onPage(widgets, currentPage));
         if (slot == null) return null;
         WidgetPlacement placement = new WidgetPlacement(DOCK_WIDGET_ID, 0, 0, 0, 0);
-        setGridPlacement(placement, grid, slot, columns, rows);
+        setGridPlacement(placement, grid, slot, columns, 1);
         placement.page = currentPage;
         return placement;
     }
@@ -2060,8 +2110,6 @@ public final class HomeActivity extends Activity {
             prefs.edit().putBoolean(DOCK_WIDGET_MIGRATED, true).apply();
         }
         favoritePanel = null;
-        favoriteRow = null;
-        appsTile = null;
         List<WidgetPlacement> occupied = new ArrayList<>();
         Iterator<WidgetPlacement> iterator = widgets.iterator();
         while (iterator.hasNext()) {
@@ -2093,8 +2141,7 @@ public final class HomeActivity extends Activity {
                         : connectivityWidget ? 4 * WIDGET_CELL_DP
                         : pxToDp(Math.max(info.minWidth, info.minResizeWidth)) + padding.x);
                 placement.height = Math.min(availableHeight, clockWidget ? 2 * WIDGET_CELL_DP
-                        : buttonsWidget ? WIDGET_CELL_DP
-                        : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows) * grid.cellHeight
+                        : dockWidget || buttonsWidget ? WIDGET_CELL_DP
                         : pxToDp(Math.max(info.minHeight, info.minResizeHeight)) + padding.y);
                 changed = true;
             }
@@ -2111,7 +2158,7 @@ public final class HomeActivity extends Activity {
             Point minSize = info == null ? null : minWidgetSizeDp(info);
             int minColumns = clockWidget || buttonsWidget ? 1 : dockWidget ? Math.min(2, grid.columns)
                     : grid.span(minSize.x, grid.cellWidth, grid.columns);
-            int minRows = clockWidget || buttonsWidget ? 1 : dockWidget ? grid.span(dockRequiredHeight(prefs), grid.cellHeight, grid.rows)
+            int minRows = builtIn ? 1
                     : grid.span(minSize.y, grid.cellHeight, grid.rows);
             int columns = Math.max(minColumns, grid.span(placement.width, grid.cellWidth, grid.columns));
             int rows = Math.max(minRows, grid.span(placement.height, grid.cellHeight, grid.rows));
@@ -2652,8 +2699,7 @@ public final class HomeActivity extends Activity {
                                              AppWidgetProviderInfo info, boolean resizing) {
         Point minSize = info == null ? null : minWidgetSizeDp(info);
         int minWidth = info == null ? (placement.id == DOCK_WIDGET_ID ? 2 : 1) * WIDGET_CELL_DP : minSize.x;
-        int minHeight = info == null ? placement.id == DOCK_WIDGET_ID
-                ? dockRequiredHeight(getSharedPreferences(PREFS, MODE_PRIVATE)) : WIDGET_CELL_DP : minSize.y;
+        int minHeight = info == null ? WIDGET_CELL_DP : minSize.y;
         return new View.OnTouchListener() {
             float startX;
             float startY;
