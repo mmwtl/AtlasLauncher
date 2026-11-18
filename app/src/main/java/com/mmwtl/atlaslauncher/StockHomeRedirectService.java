@@ -35,6 +35,9 @@ public final class StockHomeRedirectService extends AccessibilityService {
     static final String EXTRA_PANEL_HOME = "panel_home";
     private static final String STOCK_PACKAGE = "com.android.launcher3";
     private static final String STOCK_LAUNCHER = STOCK_PACKAGE + ".Launcher";
+    // On 2026 OneOS firmware the bottom dock lives in com.geely.dockbar and launches Launcher3 with
+    // setLaunchDisplayId(0), pulling it back onto the main screen even if preloaded on a hidden display.
+    private static final String DOCKBAR_PACKAGE = "com.geely.dockbar";
     // The plugin pins its All apps item first in this list and does not let the user move it.
     private static final String PANEL_SUB_LIST = ":id/rv_nav_sub";
     // Home is the first, fixed item of this list (dock_main, item_position 0).
@@ -87,11 +90,12 @@ public final class StockHomeRedirectService extends AccessibilityService {
         // Launcher3 is drawn. The window check below stays as a fallback.
         if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             AccessibilityNodeInfo item = event.getSource();
+            boolean allowHiddenOverlay = !DOCKBAR_PACKAGE.equals(String.valueOf(event.getPackageName()));
             if (isFirstItemOf(item, PANEL_SUB_LIST) && prefs.getBoolean(ALL_APPS_ENABLED, false)) {
                 allAppsOpenedAt = now;
-                openAtlasIfHome(true, false);
+                openAtlasIfHome(true, false, allowHiddenOverlay);
             } else if (isFirstItemOf(item, PANEL_MAIN_LIST) && prefs.getBoolean(ENABLED, false)) {
-                openAtlasIfHome(false, true);
+                openAtlasIfHome(false, true, false);
             }
             return;
         }
@@ -99,17 +103,17 @@ public final class StockHomeRedirectService extends AccessibilityService {
         if (now < allowStockLauncherUntil || !prefs.getBoolean(ENABLED, false)) return;
         // Opening AtlasLauncher again would close the All apps view just opened, or start the chosen activity twice.
         if (now - allAppsOpenedAt < ALL_APPS_CLICK_TIMEOUT_MS) return;
-        openAtlasIfHome(false, false);
+        openAtlasIfHome(false, false, false);
     }
 
-    private void openAtlasIfHome(boolean allApps, boolean panelHome) {
+    private void openAtlasIfHome(boolean allApps, boolean panelHome, boolean allowHiddenOverlay) {
         // After a rollback to the stock HOME the panel buttons must keep opening it.
         ResolveInfo home = getPackageManager().resolveActivity(
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
         if (home == null || !getPackageName().equals(home.activityInfo.packageName)) return;
         // The click brings Launcher3 forward on the display it is on. On the hidden one nobody sees it, so nothing
         // has to cover it; on the main screen only AtlasLauncher does.
-        if (allApps && isStockLauncherHidden()) {
+        if (allApps && allowHiddenOverlay && isStockLauncherHidden()) {
             AllAppsActivity.open(this);
             return;
         }

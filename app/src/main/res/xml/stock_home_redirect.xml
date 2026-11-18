@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Event types are set at runtime from AtlasLauncher settings; none are requested while both features are off.
-     Only Launcher3 and climate panel (SystemUI plugin) events can reach the service. It reads window content
-     only to check whether a clicked panel item is the All apps button and which display shows Launcher3. -->
+     Only Launcher3 and climate panel (SystemUI plugin / Geely dockbar) events can reach the service. It reads window
+     content only to check whether a clicked panel item is the All apps button and which display shows Launcher3. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagReportViewIds"
     android:canRetrieveWindowContent="true"
     android:description="@string/stock_home_redirect_description"
     android:notificationTimeout="0"
-    android:packageNames="com.android.launcher3,com.ecarx.systemui.plugin,com.android.systemui" />
+    android:packageNames="com.android.launcher3,com.ecarx.systemui.plugin,com.android.systemui,com.geely.dockbar" />
