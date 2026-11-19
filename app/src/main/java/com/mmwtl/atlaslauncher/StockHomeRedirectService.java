@@ -2,6 +2,7 @@ package com.mmwtl.atlaslauncher;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.ActivityOptions;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -46,6 +47,8 @@ public final class StockHomeRedirectService extends AccessibilityService {
     // Set before AtlasLauncher opens the stock launcher on purpose.
     static volatile long allowStockLauncherUntil;
     private long allAppsOpenedAt;
+    // Cached so panel clicks do not wait on a PackageManager IPC before racing Launcher3.
+    private boolean isDefaultHome;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
         if (ENABLED.equals(key) || ALL_APPS_ENABLED.equals(key)) applyEnabled(prefs);
@@ -63,6 +66,7 @@ public final class StockHomeRedirectService extends AccessibilityService {
     @Override protected void onServiceConnected() {
         SharedPreferences prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
+        isDefaultHome = checkDefaultHome();
         applyEnabled(prefs);
     }
 
@@ -93,9 +97,9 @@ public final class StockHomeRedirectService extends AccessibilityService {
             boolean allowHiddenOverlay = !DOCKBAR_PACKAGE.equals(String.valueOf(event.getPackageName()));
             if (isFirstItemOf(item, PANEL_SUB_LIST) && prefs.getBoolean(ALL_APPS_ENABLED, false)) {
                 allAppsOpenedAt = now;
-                openAtlasIfHome(true, false, allowHiddenOverlay);
+                openAtlasIfHome(true, false, allowHiddenOverlay, false);
             } else if (isFirstItemOf(item, PANEL_MAIN_LIST) && prefs.getBoolean(ENABLED, false)) {
-                openAtlasIfHome(false, true, false);
+                openAtlasIfHome(false, true, false, false);
             }
             return;
         }
@@ -103,24 +107,36 @@ public final class StockHomeRedirectService extends AccessibilityService {
         if (now < allowStockLauncherUntil || !prefs.getBoolean(ENABLED, false)) return;
         // Opening AtlasLauncher again would close the All apps view just opened, or start the chosen activity twice.
         if (now - allAppsOpenedAt < ALL_APPS_CLICK_TIMEOUT_MS) return;
-        openAtlasIfHome(false, false, false);
+        openAtlasIfHome(false, false, false, true);
     }
 
-    private void openAtlasIfHome(boolean allApps, boolean panelHome, boolean allowHiddenOverlay) {
+    private void openAtlasIfHome(boolean allApps, boolean panelHome, boolean allowHiddenOverlay, boolean verifyHomeNow) {
         // After a rollback to the stock HOME the panel buttons must keep opening it.
-        ResolveInfo home = getPackageManager().resolveActivity(
-                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
-        if (home == null || !getPackageName().equals(home.activityInfo.packageName)) return;
+        if (verifyHomeNow || !isDefaultHome) {
+            isDefaultHome = checkDefaultHome();
+            if (!isDefaultHome) return;
+        }
         // The click brings Launcher3 forward on the display it is on. On the hidden one nobody sees it, so nothing
         // has to cover it; on the main screen only AtlasLauncher does.
         if (allApps && allowHiddenOverlay && isStockLauncherHidden()) {
             AllAppsActivity.open(this);
+            if (!verifyHomeNow) isDefaultHome = checkDefaultHome();
             return;
         }
         // Launcher3 now covers an open catalog, which then closes itself; a second press only returns to HOME.
-        startActivity(new Intent(this, HomeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ActivityOptions options = ActivityOptions.makeCustomAnimation(this, 0, 0);
+        options.setLaunchDisplayId(Display.DEFAULT_DISPLAY);
+        startActivity(new Intent(this, HomeActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION)
                 .putExtra(EXTRA_OPEN_ALL_APPS, allApps && !AllAppsActivity.shown)
-                .putExtra(EXTRA_PANEL_HOME, panelHome));
+                .putExtra(EXTRA_PANEL_HOME, panelHome), options.toBundle());
+        if (!verifyHomeNow) isDefaultHome = checkDefaultHome();
+    }
+
+    private boolean checkDefaultHome() {
+        ResolveInfo home = getPackageManager().resolveActivity(
+                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
+        return home != null && getPackageName().equals(home.activityInfo.packageName);
     }
 
     private boolean isStockLauncherHidden() {
