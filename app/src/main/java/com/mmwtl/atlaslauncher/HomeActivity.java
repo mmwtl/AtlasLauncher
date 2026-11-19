@@ -287,6 +287,7 @@ public final class HomeActivity extends Activity {
     private String shownVideo;
     private int wallpaperGeneration;
     private int slideshowGeneration;
+    private int climateTitleNonce;
     private int pendingWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     // Icons and labels of every app take long to load right after boot; HOME draws without waiting for them.
     private final ExecutorService appLoader = Executors.newSingleThreadExecutor();
@@ -627,6 +628,7 @@ public final class HomeActivity extends Activity {
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        applyClimatePanel();
         // Home returns to a clean desktop, like the stock launcher; the settings above HOME close with its task.
         boolean onMainPage = currentPage == 0;
         if (editingWidgets) setEditingWidgets(false);
@@ -1245,8 +1247,10 @@ public final class HomeActivity extends Activity {
 
     private void applyClimatePanel() {
         // The OneOS SystemUI plugin hides the climate panel for com.geely.* windows that hide navigation.
-        // Sticky immersive keeps the flag after touches; re-applying on resume/focus and via WindowInsetsController
-        // restores it after apps or system windows raise the panel.
+        // DynamicControlManager skips windowChange when {pkgName, title, displayId, dockState} matches its last
+        // saved csdWindowState — which happens after apps with systemUiVisibility == 0 (ignored as "same app reset")
+        // or manual bottom swipes (DynamicDockBar.show(1) bypassing DynamicControlManager). Updating the window title
+        // invalidates that cache so the plugin re-applies DOCK_HIDE (a no-op in DynamicDockBar if already hidden).
         int hide = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         View decor = getWindow().getDecorView();
         int flags = decor.getSystemUiVisibility() & ~hide;
@@ -1262,6 +1266,11 @@ public final class HomeActivity extends Activity {
                     controller.show(WindowInsets.Type.navigationBars());
                 }
             }
+        }
+        if (hidden) {
+            WindowManager.LayoutParams window = getWindow().getAttributes();
+            window.setTitle(getComponentName().flattenToShortString() + "#" + (++climateTitleNonce));
+            getWindow().setAttributes(window);
         }
     }
 
