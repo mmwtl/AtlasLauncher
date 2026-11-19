@@ -66,6 +66,7 @@ import android.view.VelocityTracker;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.GridView;
@@ -558,6 +559,7 @@ public final class HomeActivity extends Activity {
         updateDesktopClock();
         // Location access, which the network name needs, may have been granted or switched meanwhile.
         updateDesktopConnectivity();
+        applyClimatePanel();
         // Like Launcher3: OneOS LifeControlService starts its last boot stage (hvac, settings, gesture and
         // other OEM services, night mode) only on this broadcast from the first resume of HOME.
         if (startupPending) {
@@ -642,6 +644,11 @@ public final class HomeActivity extends Activity {
             if (!onMainPage && widgetsHidden) setWidgetsHidden(false);
             snapToPage(0);
         }
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applyClimatePanel();
     }
 
     @Override public void onPause() {
@@ -1238,12 +1245,24 @@ public final class HomeActivity extends Activity {
 
     private void applyClimatePanel() {
         // The OneOS SystemUI plugin hides the climate panel for com.geely.* windows that hide navigation.
-        // Sticky immersive keeps the flag after touches.
+        // Sticky immersive keeps the flag after touches; re-applying on resume/focus and via WindowInsetsController
+        // restores it after apps or system windows raise the panel.
         int hide = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         View decor = getWindow().getDecorView();
         int flags = decor.getSystemUiVisibility() & ~hide;
         boolean hidden = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(CLIMATE_PANEL_HIDDEN, false);
         decor.setSystemUiVisibility(hidden ? flags | hide : flags);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                if (hidden) {
+                    controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    controller.hide(WindowInsets.Type.navigationBars());
+                } else {
+                    controller.show(WindowInsets.Type.navigationBars());
+                }
+            }
+        }
     }
 
     // Holding a finger anywhere on HOME starts editing after the delay chosen in settings; a view long press
