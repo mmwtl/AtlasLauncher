@@ -3,9 +3,11 @@ package com.mmwtl.atlaslauncher;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.ActivityOptions;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -38,7 +40,16 @@ public final class StockHomeRedirectService extends AccessibilityService {
     private static final String STOCK_LAUNCHER = STOCK_PACKAGE + ".Launcher";
     // On 2026 OneOS firmware the bottom dock lives in com.geely.dockbar and launches Launcher3 with
     // setLaunchDisplayId(0), pulling it back onto the main screen even if preloaded on a hidden display.
+    // When the dock is pulled up from hidden/transient mode, Android 11 may not deliver TYPE_VIEW_CLICKED
+    // with a valid source node, so we also listen to the dock's DOCK_CLICK_EVENT broadcast.
     private static final String DOCKBAR_PACKAGE = "com.geely.dockbar";
+    private static final String ACTION_DOCK_CLICK = "com.geely.systemui.DOCK_CLICK_EVENT";
+    private static final String EXTRA_DOCK_PACKAGE = "package";
+    private static final String EXTRA_DOCK_DISPLAY_ID = "displayId";
+    private static final String EXTRA_DOCK_SCREEN_ID = "screenId";
+    private static final int SCREEN_ID_HOME = 0;
+    private static final int SCREEN_ID_ALL_APPS = 2;
+    private static final long PANEL_CLICK_DEDUP_MS = 300;
     // The plugin pins its All apps item first in this list and does not let the user move it.
     private static final String PANEL_SUB_LIST = ":id/rv_nav_sub";
     // Home is the first, fixed item of this list (dock_main, item_position 0).
@@ -47,8 +58,35 @@ public final class StockHomeRedirectService extends AccessibilityService {
     // Set before AtlasLauncher opens the stock launcher on purpose.
     static volatile long allowStockLauncherUntil;
     private long allAppsOpenedAt;
+    private long lastPanelClickAt;
+    private boolean lastPanelClickAllApps;
+    private boolean dockClickRegistered;
     // Cached so panel clicks do not wait on a PackageManager IPC before racing Launcher3.
     private boolean isDefaultHome;
+
+    private final BroadcastReceiver dockClickReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent == null || !ACTION_DOCK_CLICK.equals(intent.getAction())) return;
+            if (!STOCK_PACKAGE.equals(intent.getStringExtra(EXTRA_DOCK_PACKAGE))) return;
+            if (intent.getIntExtra(EXTRA_DOCK_DISPLAY_ID, Display.DEFAULT_DISPLAY) != Display.DEFAULT_DISPLAY) return;
+            int screenId = intent.getIntExtra(EXTRA_DOCK_SCREEN_ID, -1);
+            boolean allApps = screenId == SCREEN_ID_ALL_APPS;
+            if (!allApps && screenId != SCREEN_ID_HOME) return;
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastPanelClickAt < PANEL_CLICK_DEDUP_MS && lastPanelClickAllApps == allApps) return;
+            SharedPreferences prefs = getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE);
+            if (allApps && prefs.getBoolean(ALL_APPS_ENABLED, false)) {
+                lastPanelClickAt = now;
+                lastPanelClickAllApps = true;
+                allAppsOpenedAt = now;
+                openAtlasIfHome(true, false, false, false);
+            } else if (!allApps && prefs.getBoolean(ENABLED, false)) {
+                lastPanelClickAt = now;
+                lastPanelClickAllApps = false;
+                openAtlasIfHome(false, true, false, false);
+            }
+        }
+    };
 
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (prefs, key) -> {
         if (ENABLED.equals(key) || ALL_APPS_ENABLED.equals(key)) applyEnabled(prefs);
@@ -72,19 +110,35 @@ public final class StockHomeRedirectService extends AccessibilityService {
 
     @Override public boolean onUnbind(Intent intent) {
         getSharedPreferences(HomeActivity.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefsListener);
+        unregisterDockClickReceiver();
         return super.onUnbind(intent);
     }
 
     private void applyEnabled(SharedPreferences prefs) {
         boolean home = prefs.getBoolean(ENABLED, false);
         boolean allApps = prefs.getBoolean(ALL_APPS_ENABLED, false);
+        boolean any = home || allApps;
         AccessibilityServiceInfo info = getServiceInfo();
-        info.eventTypes = home || allApps
+        info.eventTypes = any
                 ? AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED | AccessibilityEvent.TYPE_VIEW_CLICKED : 0;
         // Windows of other displays are listed only with this flag; All apps needs them to find Launcher3.
         if (allApps) info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         else info.flags &= ~AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         setServiceInfo(info);
+        if (any && !dockClickRegistered) {
+            registerReceiver(dockClickReceiver, new IntentFilter(ACTION_DOCK_CLICK));
+            dockClickRegistered = true;
+        } else if (!any && dockClickRegistered) {
+            unregisterDockClickReceiver();
+        }
+    }
+
+    private void unregisterDockClickReceiver() {
+        if (!dockClickRegistered) return;
+        dockClickRegistered = false;
+        try {
+            unregisterReceiver(dockClickReceiver);
+        } catch (IllegalArgumentException ignored) { }
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
@@ -96,9 +150,15 @@ public final class StockHomeRedirectService extends AccessibilityService {
             AccessibilityNodeInfo item = event.getSource();
             boolean allowHiddenOverlay = !DOCKBAR_PACKAGE.equals(String.valueOf(event.getPackageName()));
             if (isFirstItemOf(item, PANEL_SUB_LIST) && prefs.getBoolean(ALL_APPS_ENABLED, false)) {
+                if (now - lastPanelClickAt < PANEL_CLICK_DEDUP_MS && lastPanelClickAllApps) return;
+                lastPanelClickAt = now;
+                lastPanelClickAllApps = true;
                 allAppsOpenedAt = now;
                 openAtlasIfHome(true, false, allowHiddenOverlay, false);
             } else if (isFirstItemOf(item, PANEL_MAIN_LIST) && prefs.getBoolean(ENABLED, false)) {
+                if (now - lastPanelClickAt < PANEL_CLICK_DEDUP_MS && !lastPanelClickAllApps) return;
+                lastPanelClickAt = now;
+                lastPanelClickAllApps = false;
                 openAtlasIfHome(false, true, false, false);
             }
             return;
