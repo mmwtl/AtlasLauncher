@@ -414,7 +414,10 @@ public final class HomeActivity extends Activity {
                 currentPage = 0;
                 scheduleShowWidgets();
                 break;
-            case CLIMATE_PANEL_HIDDEN: applyClimatePanel(); break;
+            case CLIMATE_PANEL_HIDDEN:
+                applyClimatePanel();
+                widgetRow.requestApplyInsets();
+                break;
             case CLUSTER_BRIGHTNESS: applyClusterBrightness(); break;
             case HIDE_BY_DOUBLE_TAP: case HIDE_BY_PANEL_HOME:
                 if (widgetsHidden && !prefs.getBoolean(HIDE_BY_DOUBLE_TAP, false)
@@ -745,6 +748,15 @@ public final class HomeActivity extends Activity {
         setContentView(backdrop);
         FrameLayout content = new FrameLayout(this);
         content.setFitsSystemWindows(true);
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        content.setOnApplyWindowInsetsListener((view, insets) -> {
+            // Ignore bottom navigation insets while climate hiding is enabled, including during Recents.
+            if (prefs.getBoolean(CLIMATE_PANEL_HIDDEN, false) && insets.getSystemWindowInsetBottom() != 0) {
+                insets = insets.replaceSystemWindowInsets(insets.getSystemWindowInsetLeft(),
+                        insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), 0);
+            }
+            return view.onApplyWindowInsets(insets);
+        });
         backdrop.addView(content, new FrameLayout.LayoutParams(-1, -1));
         widgetRow = new PagedRow(this);
         content.addView(widgetRow, new FrameLayout.LayoutParams(-1, -1));
