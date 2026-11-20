@@ -691,10 +691,9 @@ public final class HomeActivity extends Activity {
     }
 
     private void buildHome() {
-        // Like Launcher3: draw the wallpaper under transparent system bars. On 2026 cars (FX11) the climate panel
-        // takes a navigation bar inset and limits MATCH_PARENT above it, so request the full display height directly;
-        // the plugin hides the panel only for HIDE_NAVIGATION, not LAYOUT_HIDE_NAVIGATION.
-        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+        // FX11 needs an explicit height to draw behind the climate panel. G636 updates the display's navigation
+        // layout on focus only for fullscreen windows, which require MATCH_PARENT in both dimensions.
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && !"G636".equals(Build.MODEL)) {
             Point display = new Point();
             getWindowManager().getDefaultDisplay().getRealSize(display);
             WindowManager.LayoutParams window = getWindow().getAttributes();
