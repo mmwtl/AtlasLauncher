@@ -244,7 +244,10 @@ public final class HomeActivity extends Activity {
     // The view the host made last: createView registers it before it fetches the widget's views.
     private AppWidgetHostView createdWidgetView;
     private Dialog widgetPicker;
+    private FrameLayout desktopContent;
     private FrameLayout widgetRow;
+    private int renderedGridHeight;
+    private int renderedBottomMargin;
     private View dropTarget;
     private LinearLayout widgetControls;
     private Button settingsButton;
@@ -416,6 +419,7 @@ public final class HomeActivity extends Activity {
                 break;
             case CLIMATE_PANEL_HIDDEN:
                 applyClimatePanel();
+                applyDesktopContentHeight(prefs.getBoolean(CLIMATE_PANEL_HIDDEN, false));
                 widgetRow.requestApplyInsets();
                 break;
             case CLUSTER_BRIGHTNESS: applyClusterBrightness(); break;
@@ -691,7 +695,7 @@ public final class HomeActivity extends Activity {
     }
 
     private void buildHome() {
-        // FX11 needs an explicit height to draw behind the climate panel. G636 updates the display's navigation
+        // FX11 2026 needs an explicit height to draw behind the climate panel. G636 updates display navigation
         // layout on focus only for fullscreen windows, which require MATCH_PARENT in both dimensions.
         if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && !"G636".equals(Build.MODEL)) {
             Point display = new Point();
@@ -745,18 +749,23 @@ public final class HomeActivity extends Activity {
         showBackdrop(backdropPosition);
         showWallpaper();
         setContentView(backdrop);
-        FrameLayout content = new FrameLayout(this);
+        FrameLayout content = desktopContent = new FrameLayout(this);
         content.setFitsSystemWindows(true);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         content.setOnApplyWindowInsetsListener((view, insets) -> {
             // Ignore bottom navigation insets while climate hiding is enabled, including during Recents.
-            if (prefs.getBoolean(CLIMATE_PANEL_HIDDEN, false) && insets.getSystemWindowInsetBottom() != 0) {
-                insets = insets.replaceSystemWindowInsets(insets.getSystemWindowInsetLeft(),
-                        insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), 0);
+            if (prefs.getBoolean(CLIMATE_PANEL_HIDDEN, false)) {
+                int top = insets.getSystemWindowInsetTop();
+                if ("G636".equals(Build.MODEL)) top = Math.max(top, insets.getStableInsetTop());
+                if (top != insets.getSystemWindowInsetTop() || insets.getSystemWindowInsetBottom() != 0) {
+                    insets = insets.replaceSystemWindowInsets(insets.getSystemWindowInsetLeft(),
+                            top, insets.getSystemWindowInsetRight(), 0);
+                }
             }
             return view.onApplyWindowInsets(insets);
         });
         backdrop.addView(content, new FrameLayout.LayoutParams(-1, -1));
+        applyDesktopContentHeight(prefs.getBoolean(CLIMATE_PANEL_HIDDEN, false));
         widgetRow = new PagedRow(this);
         content.addView(widgetRow, new FrameLayout.LayoutParams(-1, -1));
         applyClimatePanel();
@@ -1177,6 +1186,22 @@ public final class HomeActivity extends Activity {
                 if (!isDestroyed() && generation == slideshowGeneration) showChangedWallpaper();
             });
         });
+    }
+
+    private void applyDesktopContentHeight(boolean climateHidden) {
+        if (Build.VERSION.SDK_INT != Build.VERSION_CODES.R || !"G636".equals(Build.MODEL)) return;
+        // Keep the widget area at display height when Recents temporarily shortens the Home window.
+        // The window itself uses MATCH_PARENT so OneOS continues to treat it as fullscreen.
+        int height = FrameLayout.LayoutParams.MATCH_PARENT;
+        if (climateHidden) {
+            Point display = new Point();
+            getWindowManager().getDefaultDisplay().getRealSize(display);
+            height = display.y;
+        }
+        ViewGroup.LayoutParams params = desktopContent.getLayoutParams();
+        if (params.height == height) return;
+        params.height = height;
+        desktopContent.setLayoutParams(params);
     }
 
     private void applyWidgetMargins() {
@@ -2139,10 +2164,20 @@ public final class HomeActivity extends Activity {
     }
 
     private void showWidgets() {
-        if (sourceListPopup != null) sourceListPopup.dismiss();
-        widgetRow.removeAllViews();
         WidgetGrid grid = widgetGrid();
         if (grid == null) return;
+        int bottomMargin = ((FrameLayout.LayoutParams) widgetRow.getLayoutParams()).bottomMargin;
+        boolean bottomMarginChanged = renderedGridHeight > 0 && bottomMargin != renderedBottomMargin;
+        if (bottomMarginChanged && widgetRow.isLayoutRequested()) {
+            scheduleShowWidgets();
+            return;
+        }
+        // In a bottom-aligned grid, a new row goes above the existing widgets.
+        int yShift = bottomMarginChanged ? grid.height - renderedGridHeight : 0;
+        renderedGridHeight = grid.height;
+        renderedBottomMargin = bottomMargin;
+        if (sourceListPopup != null) sourceListPopup.dismiss();
+        widgetRow.removeAllViews();
         // Whole rows end at the climate panel; the leftover goes above them.
         widgetRow.setPadding(0, widgetRow.getHeight() - dp(grid.height), 0, 0);
         // Shows where a dragged or resized widget will land; stays below the widgets.
@@ -2176,7 +2211,12 @@ public final class HomeActivity extends Activity {
         Iterator<WidgetPlacement> iterator = widgets.iterator();
         while (iterator.hasNext()) {
             WidgetPlacement placement = iterator.next();
-            if (!multiplePages && placement.page != 0) continue;
+            int oldY = placement.y;
+            if (yShift != 0) placement.y = Math.max(0, oldY + yShift);
+            if (!multiplePages && placement.page != 0) {
+                changed |= placement.y != oldY;
+                continue;
+            }
             boolean clockWidget = isBuiltIn(placement.id, CLOCK_WIDGET_ID);
             boolean dockWidget = placement.id == DOCK_WIDGET_ID;
             boolean volumeWidget = isBuiltIn(placement.id, VOLUME_WIDGET_ID);
@@ -2195,7 +2235,7 @@ public final class HomeActivity extends Activity {
             int availableWidth = grid.width;
             int availableHeight = grid.height;
             Point padding = info == null ? new Point(0, 0) : widgetPaddingDp(info);
-            int oldX = placement.x, oldY = placement.y;
+            int oldX = placement.x;
             int oldWidth = placement.width, oldHeight = placement.height;
             if (placement.width == 0 || placement.height == 0) {
                 placement.width = Math.min(availableWidth, clockWidget ? 4 * WIDGET_CELL_DP
