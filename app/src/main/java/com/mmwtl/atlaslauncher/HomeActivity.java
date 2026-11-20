@@ -245,6 +245,7 @@ public final class HomeActivity extends Activity {
     private AppWidgetHostView createdWidgetView;
     private Dialog widgetPicker;
     private FrameLayout desktopContent;
+    private int desktopStatusBarInset;
     private FrameLayout widgetRow;
     private int renderedGridHeight;
     private int renderedBottomMargin;
@@ -753,13 +754,19 @@ public final class HomeActivity extends Activity {
         content.setFitsSystemWindows(true);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         content.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top = insets.getSystemWindowInsetTop();
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && "G636".equals(Build.MODEL)) {
+                int stableTop = insets.getStableInsetTop();
+                if (stableTop > 0) desktopStatusBarInset = stableTop;
+                else if (desktopStatusBarInset == 0) desktopStatusBarInset = top;
+            }
             // Ignore bottom navigation insets while climate hiding is enabled, including during Recents.
             if (prefs.getBoolean(CLIMATE_PANEL_HIDDEN, false)) {
-                int top = insets.getSystemWindowInsetTop();
-                if ("G636".equals(Build.MODEL)) top = Math.max(top, insets.getStableInsetTop());
-                if (top != insets.getSystemWindowInsetTop() || insets.getSystemWindowInsetBottom() != 0) {
+                // Keep transient space above the grid even when OneOS drops both top insets.
+                int reservedTop = Math.max(top, desktopStatusBarInset);
+                if (reservedTop != top || insets.getSystemWindowInsetBottom() != 0) {
                     insets = insets.replaceSystemWindowInsets(insets.getSystemWindowInsetLeft(),
-                            top, insets.getSystemWindowInsetRight(), 0);
+                            reservedTop, insets.getSystemWindowInsetRight(), 0);
                 }
             }
             return view.onApplyWindowInsets(insets);
