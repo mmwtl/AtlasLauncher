@@ -1024,9 +1024,10 @@ public final class HomeActivity extends Activity {
                     emptyHint.setLayoutParams(hintParams);
                 }
             }
-            int spacePerTile = count > 0 ? (width - hintWidth) / count : 0;
-            // Use less spacing in a narrow dock and center the row when there is extra room.
-            int tileWidth = minTileWidth + Math.max(0, Math.min(dp(lines > 0 ? 20 : 12), spacePerTile - minTileWidth));
+            int availableWidth = width - hintWidth;
+            // Fill the viewport when the tiles fit, or keep their minimum width for scrolling.
+            int tileWidth = count > 0 ? Math.max(minTileWidth, availableWidth / count) : minTileWidth;
+            int extraPixels = Math.max(0, availableWidth - count * tileWidth);
             for (int i = 0; i < row.getChildCount(); i++) {
                 View child = row.getChildAt(i);
                 if (child == emptyHint || child.getVisibility() == View.GONE) continue;
@@ -1035,8 +1036,13 @@ public final class HomeActivity extends Activity {
                     tile.setPadding(tileSidePadding, tilePadding, tileSidePadding, tilePadding);
                 }
                 ViewGroup.LayoutParams tileParams = tile.getLayoutParams();
-                if (tileParams.width != tileWidth) {
-                    tileParams.width = tileWidth;
+                int childWidth = tileWidth;
+                if (extraPixels > 0) {
+                    childWidth++;
+                    extraPixels--;
+                }
+                if (tileParams.width != childWidth) {
+                    tileParams.width = childWidth;
                     tile.setLayoutParams(tileParams);
                 }
                 View icon = tile.getChildAt(0);
