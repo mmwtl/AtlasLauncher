@@ -245,6 +245,7 @@ public final class HomeActivity extends Activity {
     private AppWidgetHostView createdWidgetView;
     private Dialog widgetPicker;
     private FrameLayout desktopContent;
+    private boolean standaloneClimateDock;
     private int desktopStatusBarInset;
     private FrameLayout widgetRow;
     private int renderedGridHeight;
@@ -695,10 +696,21 @@ public final class HomeActivity extends Activity {
         // non-Launcher3 app, so a swipe from the screen edge would end editing.
     }
 
+    private boolean hasStandaloneClimateDock() {
+        try {
+            getPackageManager().getApplicationInfo(StockHomeRedirectService.DOCKBAR_PACKAGE,
+                    PackageManager.MATCH_SYSTEM_ONLY);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
     private void buildHome() {
-        // FX11 2026 needs an explicit height to draw behind the climate panel. G636 updates display navigation
-        // layout on focus only for fullscreen windows, which require MATCH_PARENT in both dimensions.
-        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && !"G636".equals(Build.MODEL)) {
+        standaloneClimateDock = Build.VERSION.SDK_INT == Build.VERSION_CODES.R && hasStandaloneClimateDock();
+        // The standalone dock on FX11 2026 needs an explicit height to draw wallpaper behind it.
+        // Keep MATCH_PARENT by default so OneOS recognizes Home as fullscreen on focus changes.
+        if (standaloneClimateDock) {
             Point display = new Point();
             getWindowManager().getDefaultDisplay().getRealSize(display);
             WindowManager.LayoutParams window = getWindow().getAttributes();
@@ -755,7 +767,7 @@ public final class HomeActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         content.setOnApplyWindowInsetsListener((view, insets) -> {
             int top = insets.getSystemWindowInsetTop();
-            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && "G636".equals(Build.MODEL)) {
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && !standaloneClimateDock) {
                 int stableTop = insets.getStableInsetTop();
                 if (stableTop > 0) desktopStatusBarInset = stableTop;
                 else if (desktopStatusBarInset == 0) desktopStatusBarInset = top;
@@ -1196,7 +1208,7 @@ public final class HomeActivity extends Activity {
     }
 
     private void applyDesktopContentHeight(boolean climateHidden) {
-        if (Build.VERSION.SDK_INT != Build.VERSION_CODES.R || !"G636".equals(Build.MODEL)) return;
+        if (Build.VERSION.SDK_INT != Build.VERSION_CODES.R || standaloneClimateDock) return;
         // Keep the widget area at display height when Recents temporarily shortens the Home window.
         // The window itself uses MATCH_PARENT so OneOS continues to treat it as fullscreen.
         int height = FrameLayout.LayoutParams.MATCH_PARENT;

@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <queries>
         <package android:name="com.android.launcher3" />
+        <!-- Standalone climate dock installed by 2026 OneOS firmware. -->
+        <package android:name="com.geely.dockbar" />
         <!-- OneOS media center for the media widget. -->
         <package android:name="com.geely.mediacenterservice" />
         <!-- DIM key service: reports boot complete so QNX hides the boot logo. -->

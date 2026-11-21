@@ -42,7 +42,7 @@ public final class StockHomeRedirectService extends AccessibilityService {
     // setLaunchDisplayId(0), pulling it back onto the main screen even if preloaded on a hidden display.
     // When the dock is pulled up from hidden/transient mode, Android 11 may not deliver TYPE_VIEW_CLICKED
     // with a valid source node, so we also listen to the dock's DOCK_CLICK_EVENT broadcast.
-    private static final String DOCKBAR_PACKAGE = "com.geely.dockbar";
+    static final String DOCKBAR_PACKAGE = "com.geely.dockbar";
     private static final String ACTION_DOCK_CLICK = "com.geely.systemui.DOCK_CLICK_EVENT";
     private static final String EXTRA_DOCK_PACKAGE = "package";
     private static final String EXTRA_DOCK_DISPLAY_ID = "displayId";
