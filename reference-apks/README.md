@@ -108,3 +108,17 @@ adb -s 192.168.1.86:5555 shell 'find /system/priv-app /product/app /product/priv
 - `qnx/ls-lR.txt` — `ivi-anim` и ролик лого `IVIBootAnimation.mp4` в `/apps/cluster/FX11_J1`.
 
 Подписи этих APK и что они значат для правок: [docs/oneos/firmware-signatures.md](../docs/oneos/firmware-signatures.md).
+
+### Дополнено 2026-11-21 (разбор сидений, VHAL и PSIS)
+
+В игнорируемую папку `g636-20250623G312/` добавлены бинарники с того же ГУ для анализа Vehicle HAL, конфигурации PSIS и управления креслами (выводы — [docs/oneos/seat-control.md](../docs/oneos/seat-control.md)):
+
+| Файл в `g636-20250623G312/` | Источник на ГУ | SHA-256 |
+| --- | --- | --- |
+| `fs/vendor/bin/hw/vendor.ecarx.automotive.vehicle@1.0-service` | Android, `/vendor/bin/hw/vendor.ecarx.automotive.vehicle@1.0-service` | `73ef0b51f266152dcf58f544320976e60da0ed3ddeceed49e7b98b004dc47c65` |
+| `fs/vendor/lib64/vendor.ecarx.xma.automotive.vehicle@1.0-libproto-vendor-pa-native.so` | Android, `/vendor/lib64/vendor.ecarx.xma.automotive.vehicle@1.0-libproto-vendor-pa-native.so` | `e8f1340b83fcaffc634db2e4ac4f01d352c3be166bc405bf4f67214d82573916` |
+| `qnx/bin/psis_server` | QNX, `/bin/psis_server` | `e1b6ded50923174ef0e45f1698a06e9792003f25302ebeab8b3293e1ee348cbc` |
+| `qnx/bin/psis_client` | QNX, `/bin/psis_client` | `a066570fbe03f5659dc6bea024efb3bf6f80e5ef696b1d65e16224fff876d291` |
+| `qnx/bin/test_psis_car_cfg` | QNX, `test_psis_car_cfg` | `70866d43603bef9f30b94c2c8ede9dd69285eac68dd7c0b9db9826fda7fb5829` |
+| `qnx/lib/libpsis.so` | QNX, `libpsis.so` | `cc1346954116bcf517c4796c24a34936d58d470c6241ab73840f506d857f3e40` |
+| `apks/third-party/com.geely.seatsettings2.apk` | Android, стороннее приложение `com.geely.seatsettings2` | `03526e374ded0823062c5138dac7bb562c45622d7b462a121704b77b607a8350` |
